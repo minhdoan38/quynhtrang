@@ -130,8 +130,9 @@ export const PRODUCTS: Readonly<Record<ProductId, ProductConfig>> = Object.freez
     name: 'Sticker cắt rời',
     defaultVariant: 'die-cut',
     variants: Object.freeze([
-      Object.freeze({ id: 'die-cut', name: 'Cắt theo hình', price: 19000 }),
-      Object.freeze({ id: 'sheet', name: 'Tấm sticker', price: 35000 }),
+      Object.freeze({ id: 'die-cut', name: 'Cắt theo hình (Die-cut)', price: 19000 }),
+      Object.freeze({ id: 'fixed-shape', name: 'Hình cố định (Fixed Shape)', price: 19000 }),
+      Object.freeze({ id: 'phone', name: 'Sticker điện thoại (Phone Sticker)', price: 25000 }),
     ]),
     defaultOptions: Object.freeze({
       borderWidth: 4,
@@ -151,24 +152,37 @@ export const PRODUCTS: Readonly<Record<ProductId, ProductConfig>> = Object.freez
   }),
 });
 
+export type TemplateCategory = 'all' | 'birthday' | 'cute' | 'floral' | 'minimal' | 'love' | 'thanks';
+
 export interface TemplateConfig {
+  name: string;
+  category: TemplateCategory;
+  productIds?: readonly ProductId[];
+  variantIds?: readonly string[];
   text: string;
   color: string;
   backgroundColor: string;
+  previewHint?: string;
   productOptions: Readonly<Partial<Record<ProductId, Readonly<Record<string, unknown>>>>>;
 }
 
 export const TEMPLATES: Readonly<Record<string, TemplateConfig>> = Object.freeze({
   blank: Object.freeze({
+    name: 'Trống',
+    category: 'minimal',
     text: '',
     color: '#111827',
     backgroundColor: '#ffffff',
+    previewHint: 'Bắt đầu từ trang trắng',
     productOptions: Object.freeze({}),
   }),
   minimal: Object.freeze({
+    name: 'Tối giản',
+    category: 'minimal',
     text: 'Dành riêng cho bạn',
     color: '#243447',
     backgroundColor: '#f5f1e8',
+    previewHint: 'Đường nét thanh lịch, gam màu trung tính',
     productOptions: Object.freeze({
       wrapping: Object.freeze({ mode: 'single', repeatStyle: 'regular', patternScale: 90 }),
       card: Object.freeze({ surface: 'front', fold: 'half' }),
@@ -177,9 +191,12 @@ export const TEMPLATES: Readonly<Record<string, TemplateConfig>> = Object.freeze
     }),
   }),
   celebrate: Object.freeze({
+    name: 'Tiệc tùng',
+    category: 'birthday',
     text: 'Chúc mừng!',
     color: '#7c2d12',
     backgroundColor: '#fef3c7',
+    previewHint: 'Rực rỡ cho các dịp sinh nhật và kỷ niệm',
     productOptions: Object.freeze({
       wrapping: Object.freeze({ mode: 'repeat', repeatStyle: 'brick', patternScale: 125 }),
       card: Object.freeze({ surface: 'inside', fold: 'half' }),
@@ -187,7 +204,191 @@ export const TEMPLATES: Readonly<Record<string, TemplateConfig>> = Object.freeze
       notebook: Object.freeze({ finish: 'glossy' }),
     }),
   }),
+  // Thêm template chuyên biệt theo yêu cầu Screen 03
+  'card-h-birthday': Object.freeze({
+    name: 'Sinh nhật ấm áp',
+    category: 'birthday',
+    productIds: ['card'] as const,
+    variantIds: ['horizontal'] as const,
+    text: 'Happy Birthday to You',
+    color: '#B86C84',
+    backgroundColor: '#FFFDF8',
+    previewHint: 'Thiết kế thiệp ngang nhẹ nhàng',
+    productOptions: Object.freeze({
+      card: Object.freeze({ surface: 'front', fold: 'half' }),
+    }),
+  }),
+  'card-h-cute': Object.freeze({
+    name: 'Gấu con đáng yêu',
+    category: 'cute',
+    productIds: ['card'] as const,
+    variantIds: ['horizontal'] as const,
+    text: 'You are so special!',
+    color: '#315F86',
+    backgroundColor: '#F8F3E8',
+    previewHint: 'Hình vẽ ngọt ngào cho người thương',
+    productOptions: Object.freeze({
+      card: Object.freeze({ surface: 'front', fold: 'half' }),
+    }),
+  }),
+  'card-h-love': Object.freeze({
+    name: 'Tình yêu dịu êm',
+    category: 'love',
+    productIds: ['card'] as const,
+    variantIds: ['horizontal'] as const,
+    text: 'Forever & Always',
+    color: '#B3535D',
+    backgroundColor: '#FFF8F8',
+    previewHint: 'Tông hoa hồng lãng mạn',
+    productOptions: Object.freeze({
+      card: Object.freeze({ surface: 'front', fold: 'half' }),
+    }),
+  }),
+  'card-v-floral': Object.freeze({
+    name: 'Nhành hoa nhỏ',
+    category: 'floral',
+    productIds: ['card'] as const,
+    variantIds: ['vertical'] as const,
+    text: 'Lời chúc yêu thương',
+    color: '#2E3338',
+    backgroundColor: '#FAF7F0',
+    previewHint: 'Thiệp đứng họa tiết thực vật tinh tế',
+    productOptions: Object.freeze({
+      card: Object.freeze({ surface: 'front', fold: 'half' }),
+    }),
+  }),
+  'card-thanks': Object.freeze({
+    name: 'Lời cảm ơn',
+    category: 'thanks',
+    productIds: ['card'] as const,
+    text: 'Thank you so much',
+    color: '#5F7E67',
+    backgroundColor: '#F3F6F3',
+    previewHint: 'Gam xanh xô thơm trang nhã',
+    productOptions: Object.freeze({
+      card: Object.freeze({ surface: 'front', fold: 'half' }),
+    }),
+  }),
+  'wrapping-a1-cute': Object.freeze({
+    name: 'Họa tiết Cute A1',
+    category: 'cute',
+    productIds: ['wrapping'] as const,
+    variantIds: ['a1'] as const,
+    text: 'Sweet Gift',
+    color: '#315F86',
+    backgroundColor: '#F4EAE1',
+    previewHint: 'Lưới hoa văn nhỏ xinh vừa khổ A1',
+    productOptions: Object.freeze({
+      wrapping: Object.freeze({ mode: 'repeat', repeatStyle: 'half-drop', patternScale: 110 }),
+    }),
+  }),
+  'wrapping-a1-floral': Object.freeze({
+    name: 'Vườn hoa Pastel A1',
+    category: 'floral',
+    productIds: ['wrapping'] as const,
+    variantIds: ['a1'] as const,
+    text: 'For You',
+    color: '#7c2d12',
+    backgroundColor: '#F9F4EE',
+    previewHint: 'Họa tiết hoa rải đều khổ A1',
+    productOptions: Object.freeze({
+      wrapping: Object.freeze({ mode: 'repeat', repeatStyle: 'brick', patternScale: 130 }),
+    }),
+  }),
+  'wrapping-a2-minimal': Object.freeze({
+    name: 'Kẻ sọc Minimal A2',
+    category: 'minimal',
+    productIds: ['wrapping'] as const,
+    variantIds: ['a2'] as const,
+    text: 'Simple Joy',
+    color: '#2E3338',
+    backgroundColor: '#EFECE6',
+    previewHint: 'Họa tiết kẻ sọc tối giản vừa vặn khổ A2',
+    productOptions: Object.freeze({
+      wrapping: Object.freeze({ mode: 'repeat', repeatStyle: 'regular', patternScale: 85 }),
+    }),
+  }),
+  'sticker-diecut-love': Object.freeze({
+    name: 'Trái tim viền trắng',
+    category: 'love',
+    productIds: ['sticker'] as const,
+    variantIds: ['die-cut'] as const,
+    text: 'Love',
+    color: '#B3535D',
+    backgroundColor: '#FFFFFF',
+    previewHint: 'Tạo đường cắt die-cut ôm sát hình',
+    productOptions: Object.freeze({
+      sticker: Object.freeze({ hasWhiteBorder: true, borderWidth: 8, cutLineMode: 'die-cut' }),
+    }),
+  }),
+  'sticker-cute-pack': Object.freeze({
+    name: 'Sticker Mèo con',
+    category: 'cute',
+    productIds: ['sticker'] as const,
+    text: 'Meow',
+    color: '#2E3338',
+    backgroundColor: '#FFFFFF',
+    previewHint: 'Họa tiết nhí nhảnh dán điện thoại & vở',
+    productOptions: Object.freeze({
+      sticker: Object.freeze({ hasWhiteBorder: true, borderWidth: 6 }),
+    }),
+  }),
+  'notebook-floral': Object.freeze({
+    name: 'Khu vườn bí mật',
+    category: 'floral',
+    productIds: ['notebook'] as const,
+    text: 'My Daily Journal',
+    color: '#2E3338',
+    backgroundColor: '#EDE8DF',
+    previewHint: 'Bìa sổ tay họa tiết thực vật nhã nhặn',
+    productOptions: Object.freeze({
+      notebook: Object.freeze({ finish: 'matte' }),
+    }),
+  }),
 });
+
+export interface FilterTemplatesParams {
+  productId: ProductId;
+  variantId: string;
+  category?: string;
+  searchQuery?: string;
+}
+
+export function getCompatibleTemplates({
+  productId,
+  variantId,
+  category = 'all',
+  searchQuery = '',
+}: FilterTemplatesParams): Array<{ id: string; template: TemplateConfig }> {
+  const query = searchQuery.trim().toLowerCase();
+
+  return Object.entries(TEMPLATES)
+    .filter(([, tpl]) => {
+      // Product compatibility
+      if (tpl.productIds && !tpl.productIds.includes(productId)) {
+        return false;
+      }
+      // Variant compatibility
+      if (tpl.variantIds && !tpl.variantIds.includes(variantId)) {
+        return false;
+      }
+      // Category filter
+      if (category && category !== 'all' && tpl.category !== category) {
+        return false;
+      }
+      // Search query filter
+      if (query) {
+        const matchName = tpl.name.toLowerCase().includes(query);
+        const matchText = tpl.text.toLowerCase().includes(query);
+        const matchHint = (tpl.previewHint || '').toLowerCase().includes(query);
+        if (!matchName && !matchText && !matchHint) {
+          return false;
+        }
+      }
+      return true;
+    })
+    .map(([id, template]) => ({ id, template }));
+}
 
 export function normalizeQuantity(value: unknown, fallback = 1): number {
   const quantity = typeof value === 'number' ? Math.trunc(value) : Number.parseInt(String(value), 10);
