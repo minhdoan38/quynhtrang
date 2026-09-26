@@ -13,6 +13,7 @@ import {
 import {
   createInitialState,
   transitionState,
+  getDefaultElements,
   getDesignSummary,
   getPreflight,
   TEMPLATES,
@@ -20,6 +21,7 @@ import {
   type DesignState,
   type DesignAction,
   type ProductId,
+  type CanvasElement,
 } from '@/lib/product-state';
 import {
   getRecentProjects,
@@ -44,8 +46,10 @@ import { ProductSetup } from './product-setup';
 import { TemplateBrowser } from './template-browser';
 import { EditorPreviewMode } from './editor-preview-mode';
 import { EditorPreflightMode } from './editor-preflight-mode';
+import { EmptyEditorState } from './empty-editor-state';
 import { BottomNavigation, type SelectedTarget } from './bottom-navigation';
 import { EditorSheets, type ActiveSheetType } from './editor-sheets';
+import type { ImageSourceType, TextStylePreset, ShapePrimitiveType } from '@/lib/add-content';
 import { resolveEditorBackAction, type SaveStatus } from '@/lib/navigation';
 import { useRouter } from 'next/navigation';
 
@@ -71,6 +75,7 @@ export function CustomizerShell() {
 
   // Redesigned Shell State Model
   const [selectedTarget, setSelectedTarget] = useState<SelectedTarget>(null);
+  const [selectedElementId, setSelectedElementId] = useState<string | null>(null);
   const [activeSheet, setActiveSheet] = useState<ActiveSheetType>(null);
   const [focusMode, setFocusMode] = useState<FocusMode>(null);
   const [tempText, setTempText] = useState('');
@@ -80,6 +85,29 @@ export function CustomizerShell() {
   const [saveStatus, setSaveStatus] = useState<SaveStatus>('saved');
   const [hasUnsavedWarning, setHasUnsavedWarning] = useState(false);
   const saveTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const fontSessionBaseStateRef = useRef<DesignState | null>(null);
+
+  const handleCloseSheet = useCallback(() => {
+    if (activeSheet === 'font' && fontSessionBaseStateRef.current) {
+      const base = fontSessionBaseStateRef.current;
+      fontSessionBaseStateRef.current = null;
+      if (state.productOptions.fontFamily !== base.productOptions.fontFamily) {
+        setPast((prev) => [...prev, base]);
+        setFuture([]);
+      }
+    }
+    setActiveSheet(null);
+  }, [activeSheet, state]);
+
+  const handleSetFont = useCallback((fontFamily: string) => {
+    setState((curr) => ({
+      ...curr,
+      productOptions: {
+        ...curr.productOptions,
+        fontFamily,
+      },
+    }));
+  }, []);
 
   const executeAutosave = useCallback((currentState: DesignState) => {
     setSaveStatus('saving');
@@ -243,7 +271,7 @@ export function CustomizerShell() {
         setOverlayMode(null);
         break;
       case 'CLOSE_SHEET':
-        setActiveSheet(null);
+        handleCloseSheet();
         break;
       case 'EXIT_FOCUS_MODE':
         setTempText('');
@@ -353,6 +381,41 @@ export function CustomizerShell() {
     }
   };
 
+  const handleOpenImagePicker = (source: ImageSourceType = 'file') => {
+    if (!fileInputRef.current) return;
+    if (source === 'camera') {
+      fileInputRef.current.setAttribute('capture', 'environment');
+    } else {
+      fileInputRef.current.removeAttribute('capture');
+    }
+    fileInputRef.current.click();
+  };
+
+  const handleInsertText = (preset: TextStylePreset = 'heading') => {
+    const defaultContent = preset === 'heading' ? 'Tiêu đề thiết kế' : 'Nội dung lời chúc';
+    const defaultSize = preset === 'heading' ? 24 : 16;
+
+    dispatch({ type: 'SET_TEXT', value: defaultContent });
+    dispatch({ type: 'SET_PRODUCT_OPTION', key: 'fontSize', value: defaultSize });
+    setSelectedTarget('text');
+    showToast(preset === 'heading' ? 'Đã thêm tiêu đề.' : 'Đã thêm nội dung.');
+  };
+
+  const handleInsertShape = (shapeType: ShapePrimitiveType) => {
+    const newElement = {
+      id: `shape-${Date.now()}`,
+      type: 'shape' as const,
+      x: 50,
+      y: 50,
+      width: 40,
+      height: 40,
+      rotation: 0,
+      zIndex: (state.elements?.length || 0) + 1,
+      data: { shapeType, fill: '#DCEBF4' },
+    };
+    dispatch({ type: 'ADD_CANVAS_ELEMENT', element: newElement });
+    showToast('Đã thêm hình khối.');
+  };
   // Workspace touch / pan / pinch gesture tracking
   const pinchStateRef = useRef<{
     initialDistance: number;
@@ -479,6 +542,98 @@ export function CustomizerShell() {
     },
     [dispatch]
   );
+  const handleSelectLayer = useCallback(
+    (layerIdOrType: string) => {
+      const elements = state.elements ?? getDefaultElements(state);
+      const found = elements.find((el) => el.id === layerIdOrType);
+      if (found) {
+        setSelectedElementId(found.id);
+        if (found.type === 'image') {
+          setSelectedTarget('image');
+        } else if (found.type === 'text') {
+          setSelectedTarget('text');
+        } else {
+          setSelectedTarget(null);
+        }
+        if (found.locked) {
+          showToast('🔒 Thành phần này đã được khóa trong mẫu.');
+        }
+      } else if (layerIdOrType === 'image') {
+        setSelectedTarget('image');
+        const imgEl = elements.find((e) => e.type === 'image');
+        setSelectedElementId(imgEl?.id || 'image-1');
+      } else if (layerIdOrType === 'text') {
+        setSelectedTarget('text');
+        const txtEl = elements.find((e) => e.type === 'text');
+        setSelectedElementId(txtEl?.id || 'text-1');
+      } else {
+        setSelectedElementId(null);
+        setSelectedTarget(null);
+      }
+    },
+    [state, showToast]
+  );
+
+  const handleReorderElements = useCallback(
+    (orderedIds: string[]) => {
+      dispatch({
+        type: 'REORDER_ELEMENTS',
+        orderedIds,
+      });
+    },
+    [dispatch]
+  );
+
+  const handleDuplicateSelected = useCallback(() => {
+    if (selectedElementId) {
+      dispatch({ type: 'DUPLICATE_ELEMENT', id: selectedElementId });
+      showToast('Đã nhân bản đối tượng.');
+    } else if (selectedTarget === 'image') {
+      const elements = state.elements ?? getDefaultElements(state);
+      const imgEl = elements.find((e) => e.type === 'image');
+      if (imgEl) dispatch({ type: 'DUPLICATE_ELEMENT', id: imgEl.id });
+      showToast('Đã nhân bản ảnh.');
+    } else if (selectedTarget === 'text') {
+      const elements = state.elements ?? getDefaultElements(state);
+      const txtEl = elements.find((e) => e.type === 'text');
+      if (txtEl) dispatch({ type: 'DUPLICATE_ELEMENT', id: txtEl.id });
+      showToast('Đã nhân bản dòng chữ.');
+    }
+  }, [selectedElementId, selectedTarget, state, dispatch, showToast]);
+
+  const handleBringForwardSelected = useCallback(() => {
+    if (selectedElementId) {
+      dispatch({ type: 'BRING_FORWARD', id: selectedElementId });
+      showToast('Đã đưa đối tượng lên trên.');
+    }
+  }, [selectedElementId, dispatch, showToast]);
+
+  const handleSendBackwardSelected = useCallback(() => {
+    if (selectedElementId) {
+      dispatch({ type: 'SEND_BACKWARD', id: selectedElementId });
+      showToast('Đã đưa đối tượng xuống dưới.');
+    }
+  }, [selectedElementId, dispatch, showToast]);
+
+  const handleDeleteSelected = useCallback(() => {
+    if (selectedElementId) {
+      dispatch({ type: 'DELETE_ELEMENT', id: selectedElementId });
+      setSelectedElementId(null);
+      setSelectedTarget(null);
+      showToast('Đã xóa đối tượng.');
+    } else if (selectedTarget === 'image') {
+      if (state.image?.src) revokeImageUrl(state.image.src);
+      dispatch({ type: 'SET_IMAGE', value: null });
+      setSelectedTarget(null);
+      setSelectedElementId(null);
+      showToast('Đã xóa ảnh.');
+    } else if (selectedTarget === 'text') {
+      dispatch({ type: 'SET_TEXT', value: '' });
+      setSelectedTarget(null);
+      setSelectedElementId(null);
+      showToast('Đã xóa dòng chữ.');
+    }
+  }, [selectedElementId, selectedTarget, state.image?.src, dispatch, showToast]);
 
   // Contextual actions dispatcher
   const handleToolbarAction = useCallback((actionKey: string) => {
@@ -516,6 +671,7 @@ export function CustomizerShell() {
         setFocusMode('text-edit');
         break;
       case 'font':
+        fontSessionBaseStateRef.current = state;
         setActiveSheet('font');
         break;
       case 'color':
@@ -526,6 +682,18 @@ export function CustomizerShell() {
         break;
       case 'more':
         setActiveSheet('more');
+        break;
+      case 'duplicate':
+        handleDuplicateSelected();
+        break;
+      case 'bring-forward':
+        handleBringForwardSelected();
+        break;
+      case 'send-backward':
+        handleSendBackwardSelected();
+        break;
+      case 'delete':
+        handleDeleteSelected();
         break;
       default:
         break;
@@ -820,7 +988,20 @@ export function CustomizerShell() {
             image={state.image}
             productOptions={state.productOptions}
             selectedTarget={selectedTarget}
-            onSelectTarget={setSelectedTarget}
+            onSelectTarget={(target) => {
+              setSelectedTarget(target);
+              if (target === 'image') {
+                const elements = state.elements ?? getDefaultElements(state);
+                const imgEl = elements.find((e) => e.type === 'image');
+                setSelectedElementId(imgEl?.id || 'image-1');
+              } else if (target === 'text') {
+                const elements = state.elements ?? getDefaultElements(state);
+                const txtEl = elements.find((e) => e.type === 'text');
+                setSelectedElementId(txtEl?.id || 'text-1');
+              } else {
+                setSelectedElementId(null);
+              }
+            }}
             onDoubleTap={(target) => {
               if (target === 'text') {
                 setTempText(state.text || 'Chúc mừng sinh nhật');
@@ -837,6 +1018,21 @@ export function CustomizerShell() {
             textTransform={textTransform}
             onCommitTransform={handleCommitTransform}
           />
+
+          {/* Empty Canvas State: only on blank project with no content */}
+          {(state.templateId === null || state.templateId === 'blank') &&
+            !state.image?.src &&
+            !state.text &&
+            (!state.elements || state.elements.length === 0) && (
+              <EmptyEditorState
+                onAddImage={() => handleOpenImagePicker('file')}
+                onAddText={() => handleInsertText('heading')}
+                onChooseTemplate={() => {
+                  setTemplateReturnView('editor');
+                  setView('template-browser');
+                }}
+              />
+            )}
         </div>
       </main>
 
@@ -851,12 +1047,16 @@ export function CustomizerShell() {
       {/* Unified Bottom Sheet system */}
       <EditorSheets
         activeSheet={activeSheet}
-        onClose={() => setActiveSheet(null)}
+        onClose={handleCloseSheet}
         selectedTarget={selectedTarget}
+        selectedElementId={selectedElementId}
+        elements={state.elements ?? getDefaultElements(state)}
+        surface={String(state.productOptions.surface || 'front')}
         productId={state.productId}
         templateId={state.templateId}
         text={state.text}
         hasImage={Boolean(state.image?.src)}
+        imageThumbnailSrc={state.image?.src}
         color={state.color}
         isLocked={isCurrentTargetLocked}
         imageOpacity={currentImageOpacity}
@@ -867,19 +1067,21 @@ export function CustomizerShell() {
           setTemplateReturnView('editor');
           setView('template-browser');
         }}
-        onAddText={() => {
-          if (!state.text) {
-            dispatch({ type: 'SET_TEXT', value: 'Chúc mừng sinh nhật' });
-          }
-          setSelectedTarget('text');
-          showToast('Đã thêm dòng chữ.');
-        }}
-        onUploadImageClick={() => fileInputRef.current?.click()}
+        onAddText={(preset) => handleInsertText(preset)}
+        onUploadImageClick={(source) => handleOpenImagePicker(source)}
+        onAddShape={(shape) => handleInsertShape(shape)}
         onSetColor={(newColor) => dispatch({ type: 'SET_COLOR', value: newColor })}
-        onSetFont={(font) => dispatch({ type: 'SET_PRODUCT_OPTION', key: 'fontFamily', value: font })}
+        onSetFont={handleSetFont}
         onSetFontSize={(size) => dispatch({ type: 'SET_PRODUCT_OPTION', key: 'fontSize', value: size })}
         onSetOpacity={(val) => dispatch({ type: 'SET_PRODUCT_OPTION', key: 'imageOpacity', value: val })}
         onToggleLock={() => {
+          if (selectedElementId) {
+            dispatch({
+              type: 'LOCK_ELEMENT',
+              id: selectedElementId,
+              locked: !isCurrentTargetLocked,
+            });
+          }
           dispatch({
             type: 'SET_PRODUCT_OPTION',
             key: 'isLocked',
@@ -887,30 +1089,13 @@ export function CustomizerShell() {
           });
           showToast(isCurrentTargetLocked ? 'Đã mở khóa đối tượng.' : 'Đã khóa đối tượng.');
         }}
-        onDuplicate={() => {
-          showToast('Đã nhân bản đối tượng.');
-        }}
-        onBringForward={() => {
-          showToast('Đã đưa đối tượng lên trên.');
-        }}
-        onSendBackward={() => {
-          showToast('Đã đưa đối tượng xuống dưới.');
-        }}
-        onDeleteTarget={() => {
-          if (selectedTarget === 'image') {
-            if (state.image?.src) revokeImageUrl(state.image.src);
-            dispatch({ type: 'SET_IMAGE', value: null });
-            setSelectedTarget(null);
-            showToast('Đã xóa ảnh.');
-          } else if (selectedTarget === 'text') {
-            dispatch({ type: 'SET_TEXT', value: '' });
-            setSelectedTarget(null);
-            showToast('Đã xóa dòng chữ.');
-          }
-        }}
-        onSelectLayer={(layer) => {
-          setSelectedTarget(layer);
-        }}
+        onDuplicate={handleDuplicateSelected}
+        onBringForward={handleBringForwardSelected}
+        onSendBackward={handleSendBackwardSelected}
+        onDeleteTarget={handleDeleteSelected}
+        onSelectLayer={handleSelectLayer}
+        onReorderElements={handleReorderElements}
+        onOpenAddSheet={() => setActiveSheet('add')}
       />
 
       {/* Editor Overlay: Dedicated full-screen preview */}
