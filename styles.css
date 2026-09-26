@@ -90,7 +90,7 @@ input:focus-visible,
 textarea:focus-visible,
 select:focus-visible,
 [tabindex]:focus-visible,
-[for="image-upload"]:focus-within {
+label[for="image-upload"]:has(+ #image-upload:focus-visible) {
   outline: 3px solid var(--focus);
   outline-offset: 3px;
 }
@@ -653,6 +653,10 @@ input[type="range"] {
   color: #fff;
   background: var(--accent-dark);
   box-shadow: none;
+}
+
+.bottom-navigation .primary-button > span:first-child {
+  color: #fff;
 }
 
 .sheet {
