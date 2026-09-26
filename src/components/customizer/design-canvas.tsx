@@ -18,12 +18,17 @@ import {
   type TapPoint,
 } from '@/lib/canvas-interaction';
 import { SelectionOverlay } from './selection-overlay';
+
 export interface TransformState {
   x: number;
   y: number;
   scale: number;
   rotation: number;
 }
+
+const DEFAULT_IMAGE_TRANSFORM: TransformState = Object.freeze({ x: 0, y: 0, scale: 1, rotation: 0 });
+const DEFAULT_TEXT_TRANSFORM: TransformState = Object.freeze({ x: 0, y: 0, scale: 1, rotation: 0 });
+const DEFAULT_TEXT_TRANSFORMS: Record<string, TransformState> = Object.freeze({});
 
 export interface DesignCanvasProps {
   productId: ProductId;
@@ -71,9 +76,9 @@ export function DesignCanvas({
   onMeasureText,
   isLocked = false,
   onLockedFeedback,
-  imageTransform = { x: 0, y: 0, scale: 1, rotation: 0 },
-  textTransform = { x: 0, y: 0, scale: 1, rotation: 0 },
-  textTransforms = {},
+  imageTransform = DEFAULT_IMAGE_TRANSFORM,
+  textTransform = DEFAULT_TEXT_TRANSFORM,
+  textTransforms = DEFAULT_TEXT_TRANSFORMS,
   onCommitTransform,
 }: DesignCanvasProps) {
   const styles: React.CSSProperties & Record<string, string | number | undefined> = {
@@ -104,21 +109,27 @@ export function DesignCanvas({
     else classes.push('is-finish-matte');
   }
 
-  // Active live transform tracking (transient during drag/resize/rotate)
-  const [liveImageTransform, setLiveImageTransform] = useState<TransformState>(imageTransform);
-  const [liveTextTransforms, setLiveTextTransforms] = useState<Record<string, TransformState>>(textTransforms);
+  // Active live gesture transform tracking (only non-null during active drag/resize/rotate)
+  const [activeGestureTransform, setActiveGestureTransform] = useState<{
+    target: 'image' | 'text';
+    elementId?: string;
+    transform: TransformState;
+  } | null>(null);
 
-  useEffect(() => {
-    setLiveImageTransform(imageTransform);
-  }, [imageTransform]);
+  const effectiveImageTransform =
+    activeGestureTransform?.target === 'image'
+      ? activeGestureTransform.transform
+      : imageTransform;
 
-  useEffect(() => {
-    setLiveTextTransforms(textTransforms);
-  }, [textTransforms]);
-
-  const getEffectiveTextTransform = useCallback((id: string): TransformState => {
-    return liveTextTransforms[id] ?? textTransform;
-  }, [liveTextTransforms, textTransform]);
+  const getEffectiveTextTransform = useCallback(
+    (id: string): TransformState => {
+      if (activeGestureTransform?.target === 'text' && activeGestureTransform.elementId === id) {
+        return activeGestureTransform.transform;
+      }
+      return textTransforms[id] ?? textTransform;
+    },
+    [activeGestureTransform, textTransforms, textTransform]
+  );
 
   // Gesture state tracking
   const activeGestureRef = useRef<{
@@ -129,6 +140,7 @@ export function DesignCanvas({
     startX: number;
     startY: number;
     initialTransform: TransformState;
+    latestTransform: TransformState;
     hasExceededThreshold: boolean;
     centerScreenX: number;
     centerScreenY: number;
@@ -165,11 +177,8 @@ export function DesignCanvas({
         x: Math.round(initialTransform.x + dx),
         y: Math.round(initialTransform.y + dy),
       };
-      if (target === 'image') {
-        setLiveImageTransform(nextTransform);
-      } else if (elementId) {
-        setLiveTextTransforms((prev) => ({ ...prev, [elementId]: nextTransform }));
-      }
+      gesture.latestTransform = nextTransform;
+      setActiveGestureTransform({ target, elementId, transform: nextTransform });
     } else if (action === 'resize' && handle) {
       const initialBounds = {
         x: initialTransform.x,
@@ -183,11 +192,8 @@ export function DesignCanvas({
         ...initialTransform,
         scale: Math.max(0.2, Math.min(3.5, nextScale)),
       };
-      if (target === 'image') {
-        setLiveImageTransform(nextTransform);
-      } else if (elementId) {
-        setLiveTextTransforms((prev) => ({ ...prev, [elementId]: nextTransform }));
-      }
+      gesture.latestTransform = nextTransform;
+      setActiveGestureTransform({ target, elementId, transform: nextTransform });
     } else if (action === 'rotate') {
       const angle = computeRotationAngle(
         gesture.centerScreenX,
@@ -199,12 +205,9 @@ export function DesignCanvas({
         ...initialTransform,
         rotation: angle,
       };
+      gesture.latestTransform = nextTransform;
       setIsRotating(true);
-      if (target === 'image') {
-        setLiveImageTransform(nextTransform);
-      } else if (elementId) {
-        setLiveTextTransforms((prev) => ({ ...prev, [elementId]: nextTransform }));
-      }
+      setActiveGestureTransform({ target, elementId, transform: nextTransform });
     }
   }, []);
 
@@ -212,17 +215,15 @@ export function DesignCanvas({
     const gesture = activeGestureRef.current;
     if (!gesture) return;
 
+    const finalTransform = gesture.latestTransform || gesture.initialTransform;
     activeGestureRef.current = null;
     setIsRotating(false);
+    setActiveGestureTransform(null);
     window.removeEventListener('pointermove', handlePointerMove);
     window.removeEventListener('pointerup', handlePointerUp);
 
     // If gesture exceeded threshold, commit single semantic history step
     if (gesture.hasExceededThreshold) {
-      const finalTransform =
-        gesture.target === 'image'
-          ? liveImageTransform
-          : (gesture.elementId ? (liveTextTransforms[gesture.elementId] ?? textTransform) : textTransform);
       onCommitTransform?.(gesture.target, finalTransform, gesture.elementId);
     } else {
       // Tap detected
@@ -245,7 +246,7 @@ export function DesignCanvas({
         onSelectTarget?.(gesture.target);
       }
     }
-  }, [liveImageTransform, liveTextTransforms, textTransform, onCommitTransform, onDoubleTap, onDoubleTapText, onSelectTarget, onSelectText, handlePointerMove]);
+  }, [textTransform, onCommitTransform, onDoubleTap, onDoubleTapText, onSelectTarget, onSelectText, handlePointerMove]);
 
   const startGesture = (
     target: 'image' | 'text',
@@ -267,9 +268,8 @@ export function DesignCanvas({
     const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
     const currentTransform =
       target === 'image'
-        ? liveImageTransform
+        ? effectiveImageTransform
         : (elementId ? getEffectiveTextTransform(elementId) : textTransform);
-
     activeGestureRef.current = {
       target,
       elementId,
@@ -278,6 +278,7 @@ export function DesignCanvas({
       startX: e.clientX,
       startY: e.clientY,
       initialTransform: currentTransform,
+      latestTransform: currentTransform,
       hasExceededThreshold: false,
       centerScreenX: rect.left + rect.width / 2,
       centerScreenY: rect.top + rect.height / 2,
@@ -335,7 +336,7 @@ export function DesignCanvas({
           aria-label="Đối tượng ảnh"
           className="relative max-h-[70%] max-w-[70%] inline-flex items-center justify-center select-none touch-none"
           style={{
-            transform: `translate3d(${liveImageTransform.x}px, ${liveImageTransform.y}px, 0) rotate(${liveImageTransform.rotation}deg) scale(${liveImageTransform.scale})`,
+            transform: `translate3d(${effectiveImageTransform.x}px, ${effectiveImageTransform.y}px, 0) rotate(${effectiveImageTransform.rotation}deg) scale(${effectiveImageTransform.scale})`,
             transformOrigin: 'center center',
           }}
           onPointerDown={(e) => {
@@ -354,7 +355,7 @@ export function DesignCanvas({
             <SelectionOverlay
               isLocked={isLocked}
               isRotating={isRotating}
-              rotationAngle={liveImageTransform.rotation}
+              rotationAngle={effectiveImageTransform.rotation}
               onHandlePointerDown={(handle, e) => {
                 if (handle === 'rotate') {
                   startGesture('image', undefined, 'rotate', 'rotate', e);
