@@ -18,6 +18,7 @@ interface PreviewDialogProps {
   state: DesignState;
   summary: DesignSummary;
   preflight: PreflightResult;
+  onSelectProblemObject?: (target: 'image' | 'text') => void;
 }
 
 export function PreviewDialog({
@@ -27,6 +28,7 @@ export function PreviewDialog({
   state,
   summary,
   preflight,
+  onSelectProblemObject,
 }: PreviewDialogProps) {
   return (
     <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
@@ -73,7 +75,13 @@ export function PreviewDialog({
             </div>
           </div>
 
-          <PreflightPanel preflight={preflight} />
+          <PreflightPanel
+            preflight={preflight}
+            onSelectProblemObject={(target) => {
+              onClose();
+              onSelectProblemObject?.(target);
+            }}
+          />
         </div>
 
         <DialogFooter className="flex-row justify-end gap-2 sm:gap-0">

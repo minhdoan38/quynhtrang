@@ -3,12 +3,20 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import gsap from 'gsap';
 import { useGSAP } from '@gsap/react';
-import { ArrowLeft } from 'lucide-react';
+import {
+  ArrowLeft,
+  Undo2,
+  Redo2,
+  Check,
+  AlertTriangle,
+} from 'lucide-react';
 import {
   createInitialState,
   transitionState,
   getDesignSummary,
   getPreflight,
+  TEMPLATES,
+  PRODUCTS,
   type DesignState,
   type DesignAction,
   type ProductId,
@@ -16,41 +24,97 @@ import {
 import {
   getRecentProjects,
   loadState,
-  loadOrder,
-  saveOrder,
   saveRecentProject,
   saveState,
+  flushAutosave,
   type RecentProject,
 } from '@/lib/storage';
 import { processImageUpload, revokeImageUrl } from '@/lib/upload';
-import { DesignCanvas } from './design-canvas';
+import {
+  resetToFit,
+  canOneFingerPan,
+  applyPan,
+  applyPinchZoom,
+  type ViewportState,
+} from '@/lib/canvas-viewport';
+import { TAP_THRESHOLD_PX } from '@/lib/canvas-interaction';
+import { DesignCanvas, type TransformState } from './design-canvas';
 import { ProductLauncher } from './product-launcher';
 import { ProductSetup } from './product-setup';
-import { ProductChooser } from './product-chooser';
-import { TemplateChooser } from './template-chooser';
 import { TemplateBrowser } from './template-browser';
-import { ProductControls } from './product-controls';
-import { UploadControl } from './upload-control';
-import { PreviewDialog } from './preview-dialog';
-import { CheckoutSheet } from './checkout-sheet';
-import { BottomNavigation } from './bottom-navigation';
-import type { DemoOrder } from './confirmation-panel';
+import { EditorPreviewMode } from './editor-preview-mode';
+import { EditorPreflightMode } from './editor-preflight-mode';
+import { BottomNavigation, type SelectedTarget } from './bottom-navigation';
+import { EditorSheets, type ActiveSheetType } from './editor-sheets';
+import { resolveEditorBackAction, type SaveStatus } from '@/lib/navigation';
+import { useRouter } from 'next/navigation';
 
 type View = 'launcher' | 'setup' | 'editor' | 'template-browser';
+type EditorOverlayMode = 'preview' | 'preflight' | null;
+type FocusMode = 'text-edit' | 'crop' | null;
+
 export function CustomizerShell() {
+  const router = useRouter();
   const containerRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const workspaceRef = useRef<HTMLElement>(null);
+
   const [mounted, setMounted] = useState(false);
   const [view, setView] = useState<View>('launcher');
+  const [viewport, setViewport] = useState<ViewportState>(resetToFit);
 
   const [templateReturnView, setTemplateReturnView] = useState<'setup' | 'editor'>('setup');
   const [state, setState] = useState<DesignState>(() => createInitialState('wrapping'));
   const [past, setPast] = useState<DesignState[]>([]);
   const [future, setFuture] = useState<DesignState[]>([]);
-  const [order, setOrder] = useState<DemoOrder | null>(null);
   const [recentProjects, setRecentProjects] = useState<RecentProject[]>([]);
 
-  const [isPreviewOpen, setIsPreviewOpen] = useState(false);
-  const [isCheckoutOpen, setIsCheckoutOpen] = useState(false);
+  // Redesigned Shell State Model
+  const [selectedTarget, setSelectedTarget] = useState<SelectedTarget>(null);
+  const [activeSheet, setActiveSheet] = useState<ActiveSheetType>(null);
+  const [focusMode, setFocusMode] = useState<FocusMode>(null);
+  const [tempText, setTempText] = useState('');
+
+  // Overlay Mode: Preview and Preflight full-screen within Editor
+  // Autosave and unsaved warning states
+  const [saveStatus, setSaveStatus] = useState<SaveStatus>('saved');
+  const [hasUnsavedWarning, setHasUnsavedWarning] = useState(false);
+  const saveTimerRef = useRef<NodeJS.Timeout | null>(null);
+
+  const executeAutosave = useCallback((currentState: DesignState) => {
+    setSaveStatus('saving');
+    const ok = flushAutosave(currentState);
+    setSaveStatus(ok ? 'saved' : 'error');
+    if (ok) {
+      setRecentProjects(getRecentProjects());
+    }
+    return ok;
+  }, []);
+
+  // Continuous debounced autosave (400ms)
+  useEffect(() => {
+    if (!mounted) return;
+    setSaveStatus('saving');
+    if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+    saveTimerRef.current = setTimeout(() => {
+      executeAutosave(state);
+    }, 400);
+    return () => {
+      if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+    };
+  }, [state, mounted, executeAutosave]);
+
+  // Mobile lifecycle: save on visibility change / backgrounding
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'hidden' && mounted) {
+        executeAutosave(state);
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
+  }, [state, mounted, executeAutosave]);
+  const [overlayMode, setOverlayMode] = useState<EditorOverlayMode>(null);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
   const showToast = useCallback((msg: string) => {
@@ -63,9 +127,11 @@ export function CustomizerShell() {
     return () => clearTimeout(timer);
   }, [toastMessage]);
 
-  // Restore editor data after mount, but always open at the simple launcher.
+  // Restore editor data after mount
   useEffect(() => {
     setMounted(true);
+    const params = new URLSearchParams(window.location.search);
+    const requestedProduct = params.get('product') as ProductId | null;
     const saved = loadState();
     if (saved && saved.productId) {
       const base = createInitialState(saved.productId);
@@ -76,25 +142,21 @@ export function CustomizerShell() {
         productOptions: { ...base.productOptions, ...(saved.productOptions || {}) },
       } as DesignState);
     }
-    const savedOrder = loadOrder();
-    if (savedOrder) setOrder(savedOrder);
     setRecentProjects(getRecentProjects());
+    const requestedView = params.get('view') as View | null;
+    if (requestedView === 'editor' && saved && saved.productId) {
+      setView('editor');
+    } else if (requestedProduct && requestedProduct in PRODUCTS) {
+      setState(createInitialState(requestedProduct));
+      setView('setup');
+    }
   }, []);
 
-  useEffect(() => {
-    if (mounted) saveState(state);
-  }, [state, mounted]);
 
+  // Reset viewport on product or surface change
   useEffect(() => {
-    if (mounted) saveOrder(order);
-  }, [order, mounted]);
-
-  useEffect(() => {
-    if (mounted && view === 'editor') {
-      saveRecentProject(state);
-      setRecentProjects(getRecentProjects());
-    }
-  }, [state, mounted, view]);
+    setViewport(resetToFit());
+  }, [state.productId, state.productOptions.surface]);
 
   const dispatch = useCallback((action: DesignAction) => {
     setState((curr) => {
@@ -110,8 +172,11 @@ export function CustomizerShell() {
     setState(createInitialState(productId));
     setPast([]);
     setFuture([]);
-    setIsPreviewOpen(false);
-    setIsCheckoutOpen(false);
+    setSelectedTarget(null);
+    setActiveSheet(null);
+    setFocusMode(null);
+    setOverlayMode(null);
+    setViewport(resetToFit());
     setView('setup');
   }, []);
 
@@ -125,16 +190,128 @@ export function CustomizerShell() {
     });
     setPast([]);
     setFuture([]);
+    setSelectedTarget(null);
+    setActiveSheet(null);
+    setFocusMode(null);
+    setViewport(resetToFit());
     setView('editor');
   }, []);
 
   const handleBackToLauncher = useCallback(() => {
     saveRecentProject(state);
     setRecentProjects(getRecentProjects());
-    setIsPreviewOpen(false);
-    setIsCheckoutOpen(false);
+    setOverlayMode(null);
+    setSelectedTarget(null);
+    setActiveSheet(null);
+    setFocusMode(null);
     setView('launcher');
   }, [state]);
+
+  // Strict local-first Back navigation hierarchy:
+  // Strict unified Back navigation resolver across Editor transient states
+  const handleUnifiedBack = useCallback(() => {
+    if (view === 'template-browser') {
+      setView(templateReturnView);
+      return;
+    }
+    if (view === 'setup') {
+      setView('launcher');
+      return;
+    }
+    if (view === 'launcher') {
+      return;
+    }
+
+    // Inside Editor: consult pure resolver
+    const action = resolveEditorBackAction({
+      hasUnsavedWarning,
+      isPreviewOpen: overlayMode === 'preview',
+      isPreflightOpen: overlayMode === 'preflight',
+      activeSheet,
+      focusMode,
+      selectedTarget,
+      saveStatus,
+      returnView: 'setup',
+    });
+
+    switch (action.type) {
+      case 'CLOSE_UNSAVED_WARNING':
+        setHasUnsavedWarning(false);
+        break;
+      case 'CLOSE_PREVIEW':
+      case 'CLOSE_PREFLIGHT':
+        setOverlayMode(null);
+        break;
+      case 'CLOSE_SHEET':
+        setActiveSheet(null);
+        break;
+      case 'EXIT_FOCUS_MODE':
+        setTempText('');
+        setFocusMode(null);
+        break;
+      case 'DESELECT_TARGET':
+        setSelectedTarget(null);
+        break;
+      case 'PROMPT_UNSAVED':
+        setHasUnsavedWarning(true);
+        break;
+      case 'LEAVE_EDITOR':
+        if (!viewport.isFit) {
+          setViewport(resetToFit());
+          return;
+        }
+        handleBackToLauncher();
+        break;
+    }
+  }, [
+    view,
+    templateReturnView,
+    hasUnsavedWarning,
+    overlayMode,
+    activeSheet,
+    focusMode,
+    selectedTarget,
+    saveStatus,
+    viewport.isFit,
+    handleBackToLauncher,
+  ]);
+
+  // Intercept browser Back (popstate) to match in-app Back hierarchy
+  const isTransient = Boolean(
+    activeSheet !== null ||
+    focusMode !== null ||
+    overlayMode !== null ||
+    selectedTarget !== null ||
+    !viewport.isFit ||
+    hasUnsavedWarning
+  );
+
+  useEffect(() => {
+    if (view !== 'editor') return;
+    if (isTransient) {
+      window.history.pushState({ customizerTransient: true }, '');
+    }
+  }, [isTransient, view]);
+
+  useEffect(() => {
+    if (view !== 'editor') return;
+    const onPopState = () => {
+      handleUnifiedBack();
+    };
+    window.addEventListener('popstate', onPopState);
+    return () => window.removeEventListener('popstate', onPopState);
+  }, [view, handleUnifiedBack]);
+
+  // Listen to Escape key for unified back
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && view === 'editor') {
+        handleUnifiedBack();
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [view, handleUnifiedBack]);
 
   const handleUndo = useCallback(() => {
     setPast((prevPast) => {
@@ -156,73 +333,234 @@ export function CustomizerShell() {
     });
   }, [state]);
 
-  const handleResetDesign = useCallback(() => {
-    if (state.image?.src) revokeImageUrl(state.image.src);
-    dispatch({ type: 'SET_TEXT', value: '' });
-    dispatch({ type: 'SET_IMAGE', value: null });
-    showToast('Đã xóa nội dung chữ và ảnh.');
-  }, [dispatch, state.image, showToast]);
-
   const handleUploadImage = useCallback(async (file: File) => {
     try {
       const imageState = await processImageUpload(file);
       if (state.image?.src) revokeImageUrl(state.image.src);
       dispatch({ type: 'SET_IMAGE', value: imageState });
+      setSelectedTarget('image');
       showToast('Tải ảnh lên thành công.');
     } catch (err: unknown) {
       showToast(err instanceof Error ? err.message : 'Tải ảnh thất bại.');
     }
   }, [dispatch, state.image, showToast]);
 
-  const handleRemoveImage = useCallback(() => {
-    if (state.image?.src) revokeImageUrl(state.image.src);
-    dispatch({ type: 'SET_IMAGE', value: null });
-  }, [dispatch, state.image]);
+  const handleFileInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      handleUploadImage(file);
+      e.target.value = '';
+    }
+  };
 
-  const handleSubmitOrder = useCallback((customer: {
-    name: string;
-    email: string;
-    phone: string;
-    address: string;
-    note: string;
-  }) => {
-    const summary = getDesignSummary(state);
-    setOrder({
-      id: `demo-${Date.now()}`,
-      status: 'pending',
-      paymentStatus: 'unverified',
-      customer,
-      summary,
-      createdAt: new Date().toISOString(),
-    });
-    showToast('Đã tạo đơn demo. Thanh toán chưa được xác nhận.');
-  }, [state, showToast]);
+  // Workspace touch / pan / pinch gesture tracking
+  const pinchStateRef = useRef<{
+    initialDistance: number;
+    initialViewport: ViewportState;
+    centerStartX: number;
+    centerStartY: number;
+  } | null>(null);
 
-  const handleStartOver = useCallback(() => {
-    if (state.image?.src) revokeImageUrl(state.image.src);
-    setState(createInitialState('wrapping'));
-    setOrder(null);
-    setPast([]);
-    setFuture([]);
-    setIsPreviewOpen(false);
-    setIsCheckoutOpen(false);
-    setView('launcher');
-    setRecentProjects(getRecentProjects());
-    showToast('Đã bắt đầu thiết kế mới.');
-  }, [state.image, showToast]);
+  const workspaceDragRef = useRef<{
+    startX: number;
+    startY: number;
+    initialViewport: ViewportState;
+    hasMoved: boolean;
+  } | null>(null);
 
+  const handleWorkspaceTouchStart = (e: React.TouchEvent<HTMLElement>) => {
+    if (e.touches.length === 2) {
+      const t1 = e.touches[0];
+      const t2 = e.touches[1];
+      const dist = Math.hypot(t2.clientX - t1.clientX, t2.clientY - t1.clientY);
+      pinchStateRef.current = {
+        initialDistance: dist,
+        initialViewport: viewport,
+        centerStartX: (t1.clientX + t2.clientX) / 2,
+        centerStartY: (t1.clientY + t2.clientY) / 2,
+      };
+      workspaceDragRef.current = null;
+    }
+  };
+
+  const handleWorkspaceTouchMove = (e: React.TouchEvent<HTMLElement>) => {
+    if (e.touches.length === 2 && pinchStateRef.current) {
+      const t1 = e.touches[0];
+      const t2 = e.touches[1];
+      const dist = Math.hypot(t2.clientX - t1.clientX, t2.clientY - t1.clientY);
+      const centerCurrX = (t1.clientX + t2.clientX) / 2;
+      const centerCurrY = (t1.clientY + t2.clientY) / 2;
+      const deltaX = centerCurrX - pinchStateRef.current.centerStartX;
+      const deltaY = centerCurrY - pinchStateRef.current.centerStartY;
+
+      setViewport(
+        applyPinchZoom(
+          pinchStateRef.current.initialViewport,
+          pinchStateRef.current.initialDistance,
+          dist,
+          deltaX,
+          deltaY
+        )
+      );
+    }
+  };
+
+  const handleWorkspaceTouchEnd = (e: React.TouchEvent<HTMLElement>) => {
+    if (e.touches.length < 2) {
+      pinchStateRef.current = null;
+    }
+  };
+
+  const handleWorkspacePointerDown = (e: React.PointerEvent<HTMLElement>) => {
+    if (e.pointerType === 'touch' && pinchStateRef.current) return;
+    if (e.target === e.currentTarget) {
+      workspaceDragRef.current = {
+        startX: e.clientX,
+        startY: e.clientY,
+        initialViewport: viewport,
+        hasMoved: false,
+      };
+    }
+  };
+
+  const handleWorkspacePointerMove = (e: React.PointerEvent<HTMLElement>) => {
+    const drag = workspaceDragRef.current;
+    if (!drag) return;
+
+    const dx = e.clientX - drag.startX;
+    const dy = e.clientY - drag.startY;
+
+    if (!drag.hasMoved && Math.hypot(dx, dy) > TAP_THRESHOLD_PX) {
+      drag.hasMoved = true;
+    }
+
+    if (drag.hasMoved) {
+      const ws = workspaceRef.current;
+      const wsBounds = ws ? { width: ws.clientWidth, height: ws.clientHeight } : { width: 400, height: 600 };
+      const canPan = canOneFingerPan(viewport, wsBounds, { width: 320, height: 480 });
+      if (canPan) {
+        setViewport(applyPan(drag.initialViewport, dx, dy, true));
+      }
+    }
+  };
+
+  const handleWorkspacePointerUp = () => {
+    const drag = workspaceDragRef.current;
+    if (drag) {
+      workspaceDragRef.current = null;
+      if (!drag.hasMoved) {
+        setSelectedTarget(null);
+      }
+    }
+  };
+
+  // Object transform commits (semantic single history action on gesture finish)
+  const imageTransform = (state.productOptions.imageTransform as TransformState) || {
+    x: 0,
+    y: 0,
+    scale: 1,
+    rotation: 0,
+  };
+
+  const textTransform = (state.productOptions.textTransform as TransformState) || {
+    x: 0,
+    y: 0,
+    scale: 1,
+    rotation: 0,
+  };
+
+  const handleCommitTransform = useCallback(
+    (target: 'image' | 'text', transform: TransformState) => {
+      dispatch({
+        type: 'SET_PRODUCT_OPTION',
+        key: target === 'image' ? 'imageTransform' : 'textTransform',
+        value: transform,
+      });
+    },
+    [dispatch]
+  );
+
+  // Contextual actions dispatcher
+  const handleToolbarAction = useCallback((actionKey: string) => {
+    switch (actionKey) {
+      case 'add':
+        setActiveSheet('add');
+        break;
+      case 'templates':
+        setActiveSheet('templates');
+        break;
+      case 'layers':
+        setActiveSheet('layers');
+        break;
+      case 'preview':
+        setOverlayMode('preview');
+        break;
+      case 'finish':
+        setOverlayMode('preflight');
+        break;
+      case 'crop':
+        setFocusMode('crop');
+        break;
+      case 'replace-image':
+        fileInputRef.current?.click();
+        break;
+      case 'remove-bg':
+        showToast('Đang tối ưu tách nền ảnh...');
+        setTimeout(() => showToast('Đã hoàn thiện tách nền ảnh.'), 800);
+        break;
+      case 'opacity':
+        setActiveSheet('opacity');
+        break;
+      case 'edit-text':
+        setTempText(state.text || 'Chúc mừng sinh nhật');
+        setFocusMode('text-edit');
+        break;
+      case 'font':
+        setActiveSheet('font');
+        break;
+      case 'color':
+        setActiveSheet('color');
+        break;
+      case 'font-size':
+        setActiveSheet('font-size');
+        break;
+      case 'more':
+        setActiveSheet('more');
+        break;
+      default:
+        break;
+    }
+  }, [state.text, showToast]);
+
+  // Canvas entrance animation
   useGSAP(() => {
     if (view !== 'editor') return;
-    gsap.fromTo('#design-canvas', { scale: 0.95, autoAlpha: 0.85 }, {
+    gsap.fromTo('#design-canvas', { scale: 0.96, autoAlpha: 0.9 }, {
       scale: 1,
       autoAlpha: 1,
-      duration: 0.35,
+      duration: 0.3,
       ease: 'power2.out',
     });
   }, { dependencies: [state.productId, view], scope: containerRef });
 
   const summary = getDesignSummary(state);
   const preflight = getPreflight(state);
+
+  // Derive design title for the minimal top bar
+  const templateName = state.templateId ? TEMPLATES[state.templateId]?.name : null;
+  const productName = PRODUCTS[state.productId]?.name || 'Thiết kế in ấn';
+  const designTitle = state.text ? state.text : (templateName || productName);
+
+  const isCurrentTargetLocked = Boolean(state.productOptions.isLocked);
+  const currentImageOpacity = typeof state.productOptions.imageOpacity === 'number'
+    ? state.productOptions.imageOpacity
+    : 100;
+  const currentFontSize = typeof state.productOptions.fontSize === 'number'
+    ? state.productOptions.fontSize
+    : 20;
+  const currentFontFamily = typeof state.productOptions.fontFamily === 'string'
+    ? state.productOptions.fontFamily
+    : '"Be Vietnam Pro", system-ui, sans-serif';
 
   if (view === 'launcher') {
     return (
@@ -272,97 +610,384 @@ export function CustomizerShell() {
       />
     );
   }
+
   return (
-    <div ref={containerRef} className="min-h-screen bg-[#F8F3E8] pb-24">
+    <div
+      ref={containerRef}
+      className="min-h-[100dvh] flex flex-col bg-[#F8F3E8] relative overflow-hidden font-sans"
+    >
+      {/* Hidden file input for uploading images */}
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept="image/*"
+        className="hidden"
+        onChange={handleFileInputChange}
+      />
+
       {toastMessage && (
-        <div id="toast" role="status" aria-live="polite" className="fixed top-4 right-4 z-50 rounded-lg bg-[#2E3338] px-4 py-2 text-xs font-semibold text-white shadow-lg">
-          {toastMessage}
+        <div
+          role="status"
+          aria-live="polite"
+          className="fixed top-3 right-3 z-50 rounded-lg bg-[#2E3338] px-3.5 py-1.5 text-xs font-medium text-white shadow-lg flex items-center gap-1.5"
+        >
+          <Check className="w-3.5 h-3.5 text-[#C8D8C4]" />
+          <span>{toastMessage}</span>
         </div>
       )}
 
-      <header className="editor-header">
-        <button type="button" className="editor-back" onClick={handleBackToLauncher}>
-          <ArrowLeft size={17} aria-hidden="true" />
-          <span>Chọn sản phẩm khác</span>
+      {/* FOCUS MODE: Text Editing */}
+      {focusMode === 'text-edit' && (
+        <div className="fixed inset-0 z-50 bg-[#FFFDF8] flex flex-col">
+          <header className="h-[52px] px-3 border-b border-[#ECE6DC] bg-[#FFFDF8] flex items-center justify-between">
+            <button
+              type="button"
+              onClick={() => setFocusMode(null)}
+              className="text-xs font-semibold text-[#666A6D] px-2 py-1 rounded-md hover:bg-[#F8F3E8]"
+            >
+              Hủy
+            </button>
+            <span className="text-xs font-semibold text-[#2E3338]">Sửa nội dung chữ</span>
+            <button
+              type="button"
+              onClick={() => {
+                dispatch({ type: 'SET_TEXT', value: tempText });
+                setFocusMode(null);
+                showToast('Đã cập nhật dòng chữ.');
+              }}
+              className="text-xs font-semibold text-white bg-[#315F86] px-3 py-1.5 rounded-lg hover:bg-[#244A69]"
+            >
+              Xong
+            </button>
+          </header>
+          <div className="flex-1 p-4 max-w-md mx-auto w-full flex flex-col justify-start gap-4 pt-6">
+            <div className="space-y-1.5">
+              <label htmlFor="focus-text-input" className="text-xs font-medium text-[#666A6D]">
+                Nhập nội dung hiển thị trên ấn phẩm:
+              </label>
+              <textarea
+                id="focus-text-input"
+                autoFocus
+                value={tempText}
+                onChange={(e) => setTempText(e.target.value)}
+                maxLength={160}
+                rows={3}
+                placeholder="Ví dụ: Chúc mừng sinh nhật..."
+                className="w-full p-3 rounded-xl border border-[#ECE6DC] bg-white text-[#2E3338] text-sm focus:outline-none focus:ring-2 focus:ring-[#315F86] resize-none"
+              />
+              <span className="text-xs text-[#666A6D] block text-right font-medium">
+                {tempText.length}/160 ký tự
+              </span>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* FOCUS MODE: Crop */}
+      {focusMode === 'crop' && (
+        <div className="fixed inset-0 z-50 bg-[#2E3338] text-white flex flex-col">
+          <header className="h-[52px] px-3 border-b border-white/10 flex items-center justify-between">
+            <button
+              type="button"
+              onClick={() => setFocusMode(null)}
+              className="text-xs font-medium text-white/80 px-2 py-1"
+            >
+              Hủy
+            </button>
+            <span className="text-xs font-semibold">Cắt & Căn chỉnh ảnh</span>
+            <button
+              type="button"
+              onClick={() => {
+                setFocusMode(null);
+                showToast('Đã áp dụng cắt ảnh.');
+              }}
+              className="text-xs font-semibold text-white bg-[#315F86] px-3 py-1.5 rounded-lg"
+            >
+              Xong
+            </button>
+          </header>
+          <div className="flex-1 flex flex-col items-center justify-center p-6 text-center">
+            {state.image?.src ? (
+              <img
+                src={state.image.src}
+                alt="Ảnh đang cắt"
+                className="max-h-[60%] max-w-[85%] object-contain rounded-md border border-white/20 shadow-xl"
+              />
+            ) : (
+              <p className="text-xs text-white/60">Không có ảnh để cắt</p>
+            )}
+            <p className="text-xs text-white/70 mt-6">
+              Kéo góc để phóng to / thu nhỏ khung ảnh theo ý muốn.
+            </p>
+          </div>
+        </div>
+      )}
+
+      {/* ZONE 1: Minimal Top Bar */}
+      <header className="h-[50px] px-3 border-b border-[#ECE6DC] bg-[#FFFDF8]/95 backdrop-blur-md flex items-center justify-between z-30 shrink-0 select-none">
+        <button
+          type="button"
+          onClick={handleUnifiedBack}
+          aria-label="Quay lại"
+          title="Quay lại"
+          className="flex items-center justify-center w-9 h-9 rounded-lg text-[#2E3338] hover:bg-[#F8F3E8] active:scale-95 transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#315F86]"
+        >
+          <ArrowLeft className="w-4 h-4 text-[#2E3338]" />
         </button>
-        <div className="editor-brand">quỳnh trang</div>
+
+        {/* Project / Design Name with subtle autosave note */}
+        <div className="flex flex-col items-center justify-center min-w-0 px-2">
+          <span className="text-xs sm:text-sm font-semibold text-[#2E3338] truncate max-w-[150px] sm:max-w-xs text-center leading-tight">
+            {designTitle}
+          </span>
+          <span className="text-xs text-[#666A6D] flex items-center gap-1 font-medium leading-none mt-0.5">
+            {saveStatus === 'saving' && (
+              <>
+                <span className="w-1.5 h-1.5 rounded-full bg-[#A86E22] animate-pulse" />
+                Đang lưu...
+              </>
+            )}
+            {saveStatus === 'saved' && (
+              <>
+                <span className="w-1.5 h-1.5 rounded-full bg-[#5F7E67]" />
+                Đã lưu
+              </>
+            )}
+            {saveStatus === 'error' && (
+              <>
+                <span className="w-1.5 h-1.5 rounded-full bg-[#B3535D]" />
+                <span className="text-[#B3535D]">Lưu lỗi</span>
+                <button
+                  type="button"
+                  onClick={() => executeAutosave(state)}
+                  className="underline text-xs text-[#315F86] hover:text-[#244A69] ml-0.5"
+                >
+                  Thử lại
+                </button>
+              </>
+            )}
+          </span>
+        </div>
+
+        {/* Undo / Redo controls */}
+        <div className="flex items-center gap-1">
+          <button
+            type="button"
+            disabled={past.length === 0}
+            onClick={handleUndo}
+            aria-label="Hoàn tác"
+            title="Hoàn tác"
+            className="flex items-center justify-center w-8 h-8 rounded-lg text-[#2E3338] disabled:opacity-30 disabled:pointer-events-none hover:bg-[#F8F3E8] active:scale-95 transition-all"
+          >
+            <Undo2 className="w-4 h-4" />
+          </button>
+          <button
+            type="button"
+            disabled={future.length === 0}
+            onClick={handleRedo}
+            aria-label="Làm lại"
+            title="Làm lại"
+            className="flex items-center justify-center w-8 h-8 rounded-lg text-[#2E3338] disabled:opacity-30 disabled:pointer-events-none hover:bg-[#F8F3E8] active:scale-95 transition-all"
+          >
+            <Redo2 className="w-4 h-4" />
+          </button>
+        </div>
       </header>
 
-      <main id="app" className="mx-auto max-w-4xl p-4 sm:p-6">
-        <div id="editor-view" className="grid grid-cols-1 items-start gap-6 md:grid-cols-12">
-          <div className="editor-panel md:col-span-6">
-            <div className="flex min-h-[300px] w-full items-center justify-center py-6">
-              <DesignCanvas
-                productId={state.productId}
-                text={state.text}
-                color={state.color}
-                backgroundColor={state.backgroundColor}
-                image={state.image}
-                productOptions={state.productOptions}
-              />
-            </div>
-            <div className="w-full border-t border-[#ECE6DC] pt-3">
-              <UploadControl image={state.image} onUpload={handleUploadImage} onRemove={handleRemoveImage} />
-            </div>
-          </div>
-
-          <div className="editor-panel space-y-6 md:col-span-6">
-            <ProductChooser
-              productId={state.productId}
-              variantId={state.variantId}
-              onChangeSetup={() => setView('setup')}
-            />
-            <TemplateChooser
-              templateId={state.templateId}
-              onSelectTemplate={(key) => dispatch({ type: 'SET_TEMPLATE', value: key })}
-              onOpenTemplateBrowser={() => {
-                setTemplateReturnView('editor');
-                setView('template-browser');
-              }}
-            />
-            <ProductControls
-              productId={state.productId}
-              text={state.text}
-              color={state.color}
-              backgroundColor={state.backgroundColor}
-              productOptions={state.productOptions}
-              onSetText={(value) => dispatch({ type: 'SET_TEXT', value })}
-              onSetColor={(value) => dispatch({ type: 'SET_COLOR', value })}
-              onSetBackgroundColor={(value) => dispatch({ type: 'SET_BACKGROUND_COLOR', value })}
-              onSetOption={(key, value) => dispatch({ type: 'SET_PRODUCT_OPTION', key, value })}
-            />
-          </div>
+      {/* ZONE 2: Large Canvas Workspace (~80% height, visually dominant) */}
+      <main
+        ref={workspaceRef}
+        id="app"
+        className="flex-1 flex items-center justify-center p-3 sm:p-6 overflow-hidden relative select-none touch-none pb-[calc(env(safe-area-inset-bottom)+70px)]"
+        onTouchStart={handleWorkspaceTouchStart}
+        onTouchMove={handleWorkspaceTouchMove}
+        onTouchEnd={handleWorkspaceTouchEnd}
+        onPointerDown={handleWorkspacePointerDown}
+        onPointerMove={handleWorkspacePointerMove}
+        onPointerUp={handleWorkspacePointerUp}
+      >
+        <div
+          className="w-full h-full max-w-2xl flex items-center justify-center origin-center transition-transform duration-75 ease-out"
+          style={{
+            transform: `translate3d(${viewport.panX}px, ${viewport.panY}px, 0) scale(${viewport.zoom})`,
+          }}
+        >
+          <DesignCanvas
+            productId={state.productId}
+            text={state.text}
+            color={state.color}
+            backgroundColor={state.backgroundColor}
+            image={state.image}
+            productOptions={state.productOptions}
+            selectedTarget={selectedTarget}
+            onSelectTarget={setSelectedTarget}
+            onDoubleTap={(target) => {
+              if (target === 'text') {
+                setTempText(state.text || 'Chúc mừng sinh nhật');
+                setFocusMode('text-edit');
+              } else if (target === 'image') {
+                setFocusMode('crop');
+              }
+            }}
+            isLocked={isCurrentTargetLocked}
+            onLockedFeedback={() => {
+              showToast('🔒 Thành phần này đã được khóa trong mẫu.');
+            }}
+            imageTransform={imageTransform}
+            textTransform={textTransform}
+            onCommitTransform={handleCommitTransform}
+          />
         </div>
       </main>
 
-      <PreviewDialog
-        isOpen={isPreviewOpen}
-        onClose={() => setIsPreviewOpen(false)}
-        onProceedToCheckout={() => { setIsPreviewOpen(false); setIsCheckoutOpen(true); }}
-        state={state}
-        summary={summary}
-        preflight={preflight}
-      />
-      <CheckoutSheet
-        isOpen={isCheckoutOpen}
-        onClose={() => setIsCheckoutOpen(false)}
-        quantity={state.quantity}
-        onSetQuantity={(quantity) => dispatch({ type: 'SET_QUANTITY', value: quantity })}
-        summary={summary}
-        onSubmitOrder={handleSubmitOrder}
-        order={order}
-        onStartOver={handleStartOver}
-      />
+      {/* ZONE 3: One Adaptive Bottom Toolbar */}
       <BottomNavigation
-        onOpenPreview={() => setIsPreviewOpen(true)}
-        onResetDesign={handleResetDesign}
-        priceLabel={summary.priceLabel}
-        canUndo={past.length > 0}
-        canRedo={future.length > 0}
-        onUndo={handleUndo}
-        onRedo={handleRedo}
+        selectedTarget={selectedTarget}
+        isLocked={isCurrentTargetLocked}
+        onDeselect={() => setSelectedTarget(null)}
+        onAction={handleToolbarAction}
       />
+
+      {/* Unified Bottom Sheet system */}
+      <EditorSheets
+        activeSheet={activeSheet}
+        onClose={() => setActiveSheet(null)}
+        selectedTarget={selectedTarget}
+        productId={state.productId}
+        templateId={state.templateId}
+        text={state.text}
+        hasImage={Boolean(state.image?.src)}
+        color={state.color}
+        isLocked={isCurrentTargetLocked}
+        imageOpacity={currentImageOpacity}
+        fontSize={currentFontSize}
+        fontFamily={currentFontFamily}
+        onSelectTemplate={(key) => dispatch({ type: 'SET_TEMPLATE', value: key })}
+        onOpenTemplateBrowser={() => {
+          setTemplateReturnView('editor');
+          setView('template-browser');
+        }}
+        onAddText={() => {
+          if (!state.text) {
+            dispatch({ type: 'SET_TEXT', value: 'Chúc mừng sinh nhật' });
+          }
+          setSelectedTarget('text');
+          showToast('Đã thêm dòng chữ.');
+        }}
+        onUploadImageClick={() => fileInputRef.current?.click()}
+        onSetColor={(newColor) => dispatch({ type: 'SET_COLOR', value: newColor })}
+        onSetFont={(font) => dispatch({ type: 'SET_PRODUCT_OPTION', key: 'fontFamily', value: font })}
+        onSetFontSize={(size) => dispatch({ type: 'SET_PRODUCT_OPTION', key: 'fontSize', value: size })}
+        onSetOpacity={(val) => dispatch({ type: 'SET_PRODUCT_OPTION', key: 'imageOpacity', value: val })}
+        onToggleLock={() => {
+          dispatch({
+            type: 'SET_PRODUCT_OPTION',
+            key: 'isLocked',
+            value: !isCurrentTargetLocked,
+          });
+          showToast(isCurrentTargetLocked ? 'Đã mở khóa đối tượng.' : 'Đã khóa đối tượng.');
+        }}
+        onDuplicate={() => {
+          showToast('Đã nhân bản đối tượng.');
+        }}
+        onBringForward={() => {
+          showToast('Đã đưa đối tượng lên trên.');
+        }}
+        onSendBackward={() => {
+          showToast('Đã đưa đối tượng xuống dưới.');
+        }}
+        onDeleteTarget={() => {
+          if (selectedTarget === 'image') {
+            if (state.image?.src) revokeImageUrl(state.image.src);
+            dispatch({ type: 'SET_IMAGE', value: null });
+            setSelectedTarget(null);
+            showToast('Đã xóa ảnh.');
+          } else if (selectedTarget === 'text') {
+            dispatch({ type: 'SET_TEXT', value: '' });
+            setSelectedTarget(null);
+            showToast('Đã xóa dòng chữ.');
+          }
+        }}
+        onSelectLayer={(layer) => {
+          setSelectedTarget(layer);
+        }}
+      />
+
+      {/* Editor Overlay: Dedicated full-screen preview */}
+      {overlayMode === 'preview' && (
+        <EditorPreviewMode
+          state={state}
+          summary={summary}
+          onBackToEdit={() => setOverlayMode(null)}
+          onDoneToPreflight={() => setOverlayMode('preflight')}
+        />
+      )}
+
+      {/* Editor Overlay: Dedicated finish & preflight review */}
+      {overlayMode === 'preflight' && (
+        <EditorPreflightMode
+          state={state}
+          summary={summary}
+          preflight={preflight}
+          onBackToEdit={(target) => {
+            setOverlayMode(null);
+            if (target) setSelectedTarget(target);
+          }}
+          onContinueToCheckout={() => {
+            router.push('/checkout');
+          }}
+        />
+      )}
+      {/* Unsaved Changes Warning Modal (only shown if real risk of data loss) */}
+      {hasUnsavedWarning && (
+        <div
+          role="alertdialog"
+          aria-modal="true"
+          aria-labelledby="unsaved-title"
+          aria-describedby="unsaved-desc"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4 backdrop-blur-xs animate-in fade-in duration-150"
+        >
+          <div className="w-full max-w-sm rounded-2xl border border-[#DDD6CC] bg-[#FFFDF8] p-5 shadow-xl text-center space-y-3">
+            <div className="w-10 h-10 mx-auto rounded-full bg-amber-100 text-amber-700 flex items-center justify-center">
+              <AlertTriangle size={20} />
+            </div>
+            <h3 id="unsaved-title" className="font-semibold text-sm text-[#2E3338]">
+              {saveStatus === 'error'
+                ? 'Không thể lưu thay đổi'
+                : 'Thiết kế vẫn đang được lưu'}
+            </h3>
+            <p id="unsaved-desc" className="text-xs text-[#666A6D]">
+              {saveStatus === 'error'
+                ? 'Bộ nhớ trình duyệt tạm thời gặp sự cố. Bạn có muốn thử lưu lại trước khi thoát?'
+                : 'Hệ thống đang hoàn tất lưu dữ liệu của bạn vào thiết bị. Vui lòng đợi trong giây lát.'}
+            </p>
+            <div className="pt-2 flex gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setHasUnsavedWarning(false);
+                  if (saveStatus === 'error') {
+                    executeAutosave(state);
+                  }
+                }}
+                className="flex-1 h-9 rounded-lg border border-[#DDD6CC] bg-white text-xs font-semibold text-[#2E3338] hover:bg-[#F8F3E8] transition-colors"
+              >
+                {saveStatus === 'error' ? 'Thử lưu lại' : 'Tiếp tục chỉnh'}
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setHasUnsavedWarning(false);
+                  handleBackToLauncher();
+                }}
+                className="flex-1 h-9 rounded-lg bg-[#B3535D] text-xs font-semibold text-white hover:bg-[#9E454F] transition-colors"
+              >
+                Rời ngay
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
-

@@ -4,9 +4,10 @@ import { CheckCircle2, AlertTriangle, XCircle } from 'lucide-react';
 
 interface PreflightPanelProps {
   preflight: PreflightResult;
+  onSelectProblemObject?: (target: 'image' | 'text') => void;
 }
 
-export function PreflightPanel({ preflight }: PreflightPanelProps) {
+export function PreflightPanel({ preflight, onSelectProblemObject }: PreflightPanelProps) {
   return (
     <div id="preflight" className="rounded-lg border bg-card p-3 space-y-2">
       <div className="flex items-center justify-between">
@@ -27,20 +28,44 @@ export function PreflightPanel({ preflight }: PreflightPanelProps) {
       </div>
 
       <div id="preflight-checks" className="space-y-1.5 pt-1 text-sm">
-        {preflight.checks.map((check) => (
-          <div key={check.id} className="flex items-start gap-2 text-xs">
-            {check.level === 'pass' && (
-              <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
-            )}
-            {check.level === 'warning' && (
-              <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
-            )}
-            {check.level === 'error' && (
-              <XCircle className="w-4 h-4 text-red-600 shrink-0 mt-0.5" />
-            )}
-            <span className="text-muted-foreground">{check.label}</span>
-          </div>
-        ))}
+        {preflight.checks.map((check) => {
+          const isClickable =
+            onSelectProblemObject &&
+            check.level !== 'pass' &&
+            (check.id === 'image-quality' || check.id === 'text-length');
+          const target: 'image' | 'text' = check.id === 'image-quality' ? 'image' : 'text';
+
+          return (
+            <div
+              key={check.id}
+              onClick={() => isClickable && onSelectProblemObject?.(target)}
+              className={`flex items-start justify-between gap-2 text-xs p-1 rounded-md transition-colors ${
+                isClickable
+                  ? 'cursor-pointer hover:bg-amber-50 dark:hover:bg-amber-950/40'
+                  : ''
+              }`}
+              title={isClickable ? 'Bấm để chọn và căn chỉnh lại trên khung vẽ' : undefined}
+            >
+              <div className="flex items-start gap-2">
+                {check.level === 'pass' && (
+                  <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
+                )}
+                {check.level === 'warning' && (
+                  <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                )}
+                {check.level === 'error' && (
+                  <XCircle className="w-4 h-4 text-red-600 shrink-0 mt-0.5" />
+                )}
+                <span className="text-muted-foreground">{check.label}</span>
+              </div>
+              {isClickable && (
+                <span className="text-xs font-semibold text-[#315F86] hover:underline shrink-0">
+                  Chỉnh ngay &rarr;
+                </span>
+              )}
+            </div>
+          );
+        })}
       </div>
     </div>
   );
