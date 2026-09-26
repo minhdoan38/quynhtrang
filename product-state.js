@@ -54,6 +54,43 @@ export const PRODUCTS = Object.freeze({
   }),
 });
 
+export const TEMPLATES = Object.freeze({
+  blank: Object.freeze({
+    text: '',
+    color: '#111827',
+    backgroundColor: '#ffffff',
+    productOptions: Object.freeze({}),
+  }),
+  minimal: Object.freeze({
+    text: 'Dành riêng cho bạn',
+    color: '#243447',
+    backgroundColor: '#f5f1e8',
+    productOptions: Object.freeze({
+      wrapping: Object.freeze({ mode: 'single', repeatStyle: 'regular', patternScale: 90 }),
+      card: Object.freeze({ surface: 'front', fold: 'half' }),
+      sticker: Object.freeze({ hasWhiteBorder: true, borderWidth: 6 }),
+      notebook: Object.freeze({ finish: 'matte' }),
+    }),
+  }),
+  celebrate: Object.freeze({
+    text: 'Chúc mừng!',
+    color: '#7c2d12',
+    backgroundColor: '#fef3c7',
+    productOptions: Object.freeze({
+      wrapping: Object.freeze({ mode: 'repeat', repeatStyle: 'brick', patternScale: 125 }),
+      card: Object.freeze({ surface: 'inside', fold: 'half' }),
+      sticker: Object.freeze({ hasWhiteBorder: true, borderWidth: 10 }),
+      notebook: Object.freeze({ finish: 'glossy' }),
+    }),
+  }),
+});
+
+export function normalizeQuantity(value, fallback = 1) {
+  const quantity = Number.parseInt(value, 10);
+  const safeFallback = Number.isFinite(fallback) ? Math.min(999, Math.max(1, Math.trunc(fallback))) : 1;
+  return Number.isFinite(quantity) ? Math.min(999, Math.max(1, quantity)) : safeFallback;
+}
+
 function cloneOptions(productId) {
   const product = PRODUCTS[productId] ?? PRODUCTS.wrapping;
   return { ...product.defaultOptions };
@@ -100,11 +137,22 @@ export function transitionState(state, action) {
       };
     }
 
-    case 'SET_TEMPLATE':
+    case 'SET_TEMPLATE': {
+      const template = TEMPLATES[action.value];
+      if (!template) return state;
       return {
         ...state,
-        templateId: action.value ?? null,
+        templateId: action.value,
+        text: template.text,
+        color: template.color,
+        backgroundColor: template.backgroundColor,
+        image: null,
+        productOptions: {
+          ...cloneOptions(state.productId),
+          ...(template.productOptions[state.productId] || {}),
+        },
       };
+    }
 
     case 'SET_TEXT':
       return {
@@ -130,13 +178,11 @@ export function transitionState(state, action) {
         image: action.value ?? null,
       };
 
-    case 'SET_QUANTITY': {
-      const qty = Number.parseInt(action.value, 10);
+    case 'SET_QUANTITY':
       return {
         ...state,
-        quantity: Number.isFinite(qty) && qty > 0 ? qty : state.quantity,
+        quantity: normalizeQuantity(action.value, state.quantity),
       };
-    }
 
     case 'SET_PRODUCT_OPTION': {
       if (!action.key) {
@@ -159,7 +205,7 @@ export function transitionState(state, action) {
 export function getDesignSummary(state) {
   const product = PRODUCTS[state.productId] ?? PRODUCTS.wrapping;
   const variant = product.variants.find((v) => v.id === state.variantId) ?? product.variants[0];
-  const quantity = Number.isFinite(state.quantity) && state.quantity > 0 ? state.quantity : 1;
+  const quantity = normalizeQuantity(state.quantity);
   const unitPrice = variant.price;
   const totalPrice = unitPrice * quantity;
 

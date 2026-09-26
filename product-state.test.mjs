@@ -45,6 +45,48 @@ test('switches products without mutating the previous design', () => {
   assert.deepEqual(card.productOptions, { surface: 'front' });
 });
 
+test('applies template content and product-specific options', () => {
+  const initial = createInitialState('wrapping');
+  const celebrated = transitionState(initial, {
+    type: 'SET_TEMPLATE',
+    value: 'celebrate',
+  });
+
+  assert.equal(celebrated.templateId, 'celebrate');
+  assert.equal(celebrated.text, 'Chúc mừng!');
+  assert.equal(celebrated.color, '#7c2d12');
+  assert.equal(celebrated.backgroundColor, '#fef3c7');
+  assert.equal(celebrated.productOptions.repeatStyle, 'brick');
+  assert.equal(celebrated.productOptions.patternScale, 125);
+
+  const blank = transitionState(celebrated, {
+    type: 'SET_TEMPLATE',
+    value: 'blank',
+  });
+  assert.equal(blank.templateId, 'blank');
+  assert.equal(blank.text, '');
+  assert.equal(blank.backgroundColor, '#ffffff');
+  assert.equal(blank.productOptions.repeatStyle, 'regular');
+});
+
+test('clamps quantity within bounds 1-999 and ignores invalid input', () => {
+  const state = createInitialState();
+  const clampedHigh = transitionState(state, { type: 'SET_QUANTITY', value: 5000 });
+  assert.equal(clampedHigh.quantity, 999);
+
+  const clampedLow = transitionState(state, { type: 'SET_QUANTITY', value: -4 });
+  assert.equal(clampedLow.quantity, 1);
+
+  const clampedZero = transitionState(state, { type: 'SET_QUANTITY', value: 0 });
+  assert.equal(clampedZero.quantity, 1);
+
+  const clampedString = transitionState(state, { type: 'SET_QUANTITY', value: '42' });
+  assert.equal(clampedString.quantity, 42);
+
+  const unchangedInvalid = transitionState(clampedString, { type: 'SET_QUANTITY', value: 'invalid' });
+  assert.equal(unchangedInvalid.quantity, 42);
+});
+
 test('updates wrapping pattern controls immutably', () => {
   const original = createInitialState();
   const updated = transitionState(original, {

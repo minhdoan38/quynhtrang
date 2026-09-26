@@ -18,11 +18,16 @@ const toast = document.getElementById('toast');
 let state = restoreState();
 let view = 'editor';
 let pendingOrder = restoreOrder();
-let uploadUrl = typeof state.image?.src === 'string' && state.image.src.startsWith('blob:') ? state.image.src : null;
+const objectUrls = new Set();
+if (typeof state.image?.src === 'string' && state.image.src.startsWith('blob:')) {
+  objectUrls.add(state.image.src);
+}
 let uploadSequence = 0;
 let past = [];
 let future = [];
 let toastTimer;
+let lastRenderedProductId = null;
+let lastFocusedElementBeforeSheet = null;
 
 function restoreState() {
   try {
@@ -37,8 +42,42 @@ function restoreState() {
       ...saved,
       productId: product,
       productOptions: { ...productBase.productOptions, ...(saved.productOptions || {}) },
-      quantity: Number.isFinite(Number(saved.quantity)) && Number(saved.quantity) > 0 ? Number(saved.quantity) : 1,
+      quantity: Number.isFinite(Number(saved.quantity)) ? Math.min(999, Math.max(1, Math.trunc(Number(saved.quantity)))) : 1,
     };
+  } catch {
+    return createInitialState();
+  }
+}
+
+function collectReferencedUrls() {
+  const referenced = new Set();
+  const checkSrc = (item) => {
+    const src = item?.image?.src;
+    if (typeof src === 'string' && src.startsWith('blob:')) {
+      referenced.add(src);
+    }
+  };
+  checkSrc(state);
+  past.forEach(checkSrc);
+  future.forEach(checkSrc);
+  if (pendingOrder?.design) {
+    checkSrc(pendingOrder.design);
+  }
+  return referenced;
+}
+
+function pruneObjectUrls() {
+  if (!globalThis.URL?.revokeObjectURL) return;
+  const referenced = collectReferencedUrls();
+  for (const url of objectUrls) {
+    if (!referenced.has(url)) {
+      try {
+        URL.revokeObjectURL(url);
+      } catch {}
+      objectUrls.delete(url);
+    }
+  }
+}
   } catch {
     return createInitialState();
   }
@@ -87,6 +126,7 @@ function update(action) {
   past.push(state);
   future = [];
   state = next;
+  pruneObjectUrls();
   persist();
   render();
 }
@@ -152,38 +192,96 @@ function renderProductControls() {
   const controls = document.getElementById('product-controls');
   if (!controls) return;
   const options = state.productOptions;
+
+  if (lastRenderedProductId === state.productId) {
+    // Update existing controls in place to preserve continuous range/input interaction
+    controls.querySelectorAll('input[data-action="set-product-option"]').forEach((input) => {
+      const key = input.dataset.option;
+      if (!key || !(key in options)) return;
+      if (input.type === 'checkbox') {
+        input.checked = Boolean(options[key]);
+      } else if (input.type === 'radio') {
+        input.checked = input.value === options[key];
+      } else if (input.type === 'range') {
+        if (input.value !== String(options[key])) {
+          input.value = options[key];
+        }
+        const output = controls.querySelector(`output[for="${input.id}"]`);
+        if (output) output.textContent = String(options[key]);
+      }
+    });
+    return;
+  }
+
+  lastRenderedProductId = state.productId;
   let content = '';
   if (state.productId === 'wrapping') {
-    content = `<fieldset class="field-group"><legend>Lặp họa tiết</legend>${optionRadio('repeat-mode', 'mode', 'repeat', 'Lặp đều')}${optionRadio('repeat-mode', 'mode', 'single', 'Một lần')}</fieldset><fieldset class="field-group"><legend>Cách sắp xếp</legend>${optionRadio('repeat-style', 'repeatStyle', 'regular', 'Đều')}${optionRadio('repeat-style', 'repeatStyle', 'scattered', 'Tự nhiên')}${optionRadio('repeat-style', 'repeatStyle', 'brick', 'Xếp lệch')}</fieldset><label class="field-group" for="pattern-scale">Kích thước họa tiết<input id="pattern-scale" type="range" min="50" max="200" value="${Number(options.patternScale) || 100}" data-action="set-product-option" data-option="patternScale"></label>`;
+    content = `<fieldset class="field-group"><legend>Lặp họa tiết</legend>${optionRadio('repeat-mode', 'mode', 'repeat', 'Lặp đều')}${optionRadio('repeat-mode', 'mode', 'single', 'Một lần')}</fieldset><fieldset class="field-group"><legend>Cách sắp xếp</legend>${optionRadio('repeat-style', 'repeatStyle', 'regular', 'Đều')}${optionRadio('repeat-style', 'repeatStyle', 'scattered', 'Tự nhiên')}${optionRadio('repeat-style', 'repeatStyle', 'brick', 'Xếp lệch')}</fieldset><label class="field-group" for="pattern-scale">Kích thước họa tiết: <output for="pattern-scale">${Number(options.patternScale) || 100}</output>%<input id="pattern-scale" type="range" min="50" max="200" value="${Number(options.patternScale) || 100}" data-action="set-product-option" data-option="patternScale"></label>`;
   } else if (state.productId === 'card') {
     content = `<fieldset class="field-group"><legend>Mặt đang chỉnh</legend>${optionRadio('card-surface', 'surface', 'front', 'Mặt trước')}${optionRadio('card-surface', 'surface', 'inside', 'Mặt trong')}</fieldset><fieldset class="field-group"><legend>Cách gấp</legend>${optionRadio('card-fold', 'fold', 'half', 'Gấp đôi')}${optionRadio('card-fold', 'fold', 'flat', 'Tờ phẳng')}</fieldset>`;
   } else if (state.productId === 'sticker') {
-    content = `<fieldset class="field-group"><legend>Viền sticker</legend><label><input type="checkbox" data-action="set-product-option" data-option="hasWhiteBorder"${options.hasWhiteBorder ? ' checked' : ''}><span>Có viền trắng</span></label><label class="field-group" for="border-width">Độ dày viền<input id="border-width" type="range" min="0" max="20" value="${Number(options.borderWidth) || 0}" data-action="set-product-option" data-option="borderWidth"></label></fieldset>`;
+    content = `<fieldset class="field-group"><legend>Viền sticker</legend><label><input type="checkbox" data-action="set-product-option" data-option="hasWhiteBorder"${options.hasWhiteBorder ? ' checked' : ''}><span>Có viền trắng</span></label><label class="field-group" for="border-width">Độ dày viền: <output for="border-width">${Number(options.borderWidth) || 0}</output>px<input id="border-width" type="range" min="0" max="20" value="${Number(options.borderWidth) || 0}" data-action="set-product-option" data-option="borderWidth"></label></fieldset>`;
   } else {
     content = `<fieldset class="field-group"><legend>Bề mặt bìa</legend>${optionRadio('notebook-finish', 'finish', 'matte', 'Mờ')}${optionRadio('notebook-finish', 'finish', 'glossy', 'Bóng')}</fieldset>`;
   }
   controls.innerHTML = content;
 }
 
+function computeVisualStyles() {
+  const opts = state.productOptions;
+  const styles = [];
+  const classes = [`design-canvas--${state.productId}`];
+
+  if (state.productId === 'wrapping') {
+    const scale = Number(opts.patternScale) || 100;
+    const size = Math.round((68 * scale) / 100);
+    styles.push(`--pattern-size: ${size}px`);
+    if (opts.mode === 'repeat') classes.push('is-mode-repeat');
+  } else if (state.productId === 'card') {
+    if (opts.surface === 'inside') classes.push('is-surface-inside');
+  } else if (state.productId === 'sticker') {
+    const border = opts.hasWhiteBorder ? (Number(opts.borderWidth) || 4) : 0;
+    styles.push(`--sticker-border-width: ${border}px`);
+  } else if (state.productId === 'notebook') {
+    if (opts.finish === 'glossy') classes.push('is-finish-glossy');
+    else classes.push('is-finish-matte');
+  }
+
+  return {
+    inlineStyle: styles.join('; '),
+    classNames: classes.join(' '),
+  };
+}
+
 function renderCanvas() {
   const canvas = document.getElementById('design-canvas');
   if (!canvas) return;
-  const classes = `design-canvas design-canvas--${state.productId}`;
+  const visuals = computeVisualStyles();
+  const classes = `design-canvas ${visuals.classNames}`;
   const image = state.image?.src ? `<img class="design-image" src="${escapeAttr(state.image.src)}" alt="Ảnh đã tải lên">` : '';
   const text = state.text ? `<p class="design-text" style="color:${escapeAttr(state.color)}">${escapeHtml(state.text)}</p>` : '';
   canvas.className = classes;
   canvas.style.backgroundColor = state.backgroundColor;
+  if (visuals.inlineStyle) {
+    canvas.style.cssText = `background-color: ${state.backgroundColor}; ${visuals.inlineStyle};`;
+  } else {
+    canvas.style.cssText = `background-color: ${state.backgroundColor};`;
+  }
   canvas.innerHTML = image + text + (!image && !text ? '<p id="canvas-empty-state">Thêm nội dung để bắt đầu</p>' : '');
 }
+
+
 
 function summaryMarkup(summary) {
   return `<dl class="summary-list"><div><dt>Sản phẩm</dt><dd>${escapeHtml(summary.product)}</dd></div><div><dt>Khổ</dt><dd>${escapeHtml(summary.variant)}</dd></div><div><dt>Số lượng</dt><dd>${summary.quantity}</dd></div><div><dt>Tạm tính</dt><dd><strong>${escapeHtml(summary.priceLabel)}</strong></dd></div></dl>`;
 }
 
 function mockupMarkup() {
+  const visuals = computeVisualStyles();
   const image = state.image?.src ? `<img class="design-image" src="${escapeAttr(state.image.src)}" alt="Ảnh thiết kế">` : '';
   const text = state.text ? `<p class="design-text" style="color:${escapeAttr(state.color)}">${escapeHtml(state.text)}</p>` : '<p class="preview-empty">Chưa có chữ</p>';
-  return `<div class="mockup mockup--${state.productId}" style="background-color:${escapeAttr(state.backgroundColor)}">${image}${text}</div><p class="preview-caption">${escapeHtml(product().name)} · ${escapeHtml(product().variants.find((item) => item.id === state.variantId)?.name || '')}</p>`;
+  const styleAttr = `background-color:${escapeAttr(state.backgroundColor)}; ${visuals.inlineStyle}`;
+  return `<div class="mockup mockup--${state.productId} ${visuals.classNames}" style="${styleAttr}">${image}${text}</div><p class="preview-caption">${escapeHtml(product().name)} · ${escapeHtml(product().variants.find((item) => item.id === state.variantId)?.name || '')}</p>`;
 }
 
 function renderPreview() {
@@ -221,13 +319,27 @@ function renderCheckout() {
   if (qr && pendingOrder) qr.setAttribute('aria-label', 'Mã QR minh họa, trạng thái thanh toán: unverified');
 }
 
-function openSheet(title, content) {
+function openSheet(title, content, openerElement = null) {
   if (!sheet) return;
+  lastFocusedElementBeforeSheet = openerElement || document.activeElement;
   const heading = document.getElementById('sheet-title');
   const body = document.getElementById('sheet-content');
   if (heading) heading.textContent = title;
   if (body) body.innerHTML = content;
   sheet.hidden = false;
+  const closeBtn = sheet.querySelector('[data-action="close-sheet"]');
+  if (closeBtn && typeof closeBtn.focus === 'function') {
+    closeBtn.focus();
+  }
+}
+
+function closeSheet() {
+  if (!sheet || sheet.hidden) return;
+  sheet.hidden = true;
+  if (lastFocusedElementBeforeSheet && typeof lastFocusedElementBeforeSheet.focus === 'function') {
+    lastFocusedElementBeforeSheet.focus();
+  }
+  lastFocusedElementBeforeSheet = null;
 }
 
 function readUpload(file) {
@@ -254,13 +366,17 @@ function readUpload(file) {
     try {
       if (globalThis.URL?.createObjectURL) {
         candidateUrl = URL.createObjectURL(file);
+        objectUrls.add(candidateUrl);
         src = candidateUrl;
       }
     } catch {
       candidateUrl = null;
     }
     const revokeCandidate = () => {
-      if (candidateUrl && globalThis.URL?.revokeObjectURL) URL.revokeObjectURL(candidateUrl);
+      if (candidateUrl) {
+        objectUrls.delete(candidateUrl);
+        if (globalThis.URL?.revokeObjectURL) URL.revokeObjectURL(candidateUrl);
+      }
     };
     const image = new Image();
     image.onload = () => {
@@ -268,10 +384,8 @@ function readUpload(file) {
         revokeCandidate();
         return;
       }
-      const previousUrl = uploadUrl;
-      update({ type: 'SET_IMAGE', value: { name: file.name, type: file.type, size: file.size, src, width: image.naturalWidth || image.width || 0, height: image.naturalHeight || image.height || 0 } });
-      uploadUrl = candidateUrl;
-      if (previousUrl && globalThis.URL?.revokeObjectURL) URL.revokeObjectURL(previousUrl);
+      update({ type: 'SET_IMAGE', value: { name: file.name, type: file.type, size: file.size, src, width: image.naturalWidth || image.naturalHeight || 0, height: image.naturalHeight || image.height || 0 } });
+      pruneObjectUrls();
     };
     image.onerror = () => {
       revokeCandidate();
@@ -346,37 +460,37 @@ function handleClick(event) {
   else if (action === 'decrease-quantity') update({ type: 'SET_QUANTITY', value: Math.max(1, state.quantity - 1) });
   else if (action === 'reset-design') {
     uploadSequence += 1;
-    if (uploadUrl && globalThis.URL?.revokeObjectURL) globalThis.URL.revokeObjectURL(uploadUrl);
-    uploadUrl = null;
     update({ type: 'SET_TEXT', value: '' });
     update({ type: 'SET_IMAGE', value: null });
+    pruneObjectUrls();
   } else if (action === 'start-over') {
     uploadSequence += 1;
-    if (uploadUrl && globalThis.URL?.revokeObjectURL) globalThis.URL.revokeObjectURL(uploadUrl);
-    uploadUrl = null;
     state = createInitialState();
     pendingOrder = null;
     past = [];
     future = [];
+    pruneObjectUrls();
     persist();
     setView('editor');
   } else if (action === 'close-sheet') {
-    if (sheet) sheet.hidden = true;
+    closeSheet();
   } else if (action === 'open-templates') {
-    openSheet('Chọn mẫu', 'Chọn mẫu ngay ở phần “Bắt đầu từ đâu”.');
+    openSheet('Chọn mẫu', 'Chọn mẫu ngay ở phần “Bắt đầu từ đâu”.', control);
   } else if (action === 'open-layers') {
-    openSheet('Lớp thiết kế', state.image || state.text ? 'Thiết kế gồm nền, ảnh và chữ.' : 'Chưa có lớp nội dung nào.');
+    openSheet('Lớp thiết kế', state.image || state.text ? 'Thiết kế gồm nền, ảnh và chữ.' : 'Chưa có lớp nội dung nào.', control);
   } else if (action === 'add-content') {
     document.getElementById('design-text')?.focus();
     showToast('Thêm chữ hoặc ảnh cho thiết kế.');
   } else if (action === 'undo' && past.length) {
     future.unshift(state);
     state = past.pop();
+    pruneObjectUrls();
     persist();
     render();
   } else if (action === 'redo' && future.length) {
     past.push(state);
     state = future.shift();
+    pruneObjectUrls();
     persist();
     render();
   }
@@ -391,6 +505,11 @@ function handleSubmit(event) {
   const phone = document.getElementById('customer-phone')?.value.trim() || '';
   const address = document.getElementById('customer-address')?.value.trim() || '';
   const note = document.getElementById('customer-note')?.value.trim() || '';
+  const qty = Number.parseInt(state.quantity, 10);
+  if (!Number.isFinite(qty) || qty < 1 || qty > 999) {
+    showToast('Số lượng đặt hàng không hợp lệ (1-999).');
+    return;
+  }
   if (!name || !phone || !address) {
     showToast('Vui lòng điền họ tên, số điện thoại và địa chỉ.');
     return;
@@ -408,6 +527,43 @@ function handleSubmit(event) {
   setView('checkout');
   showToast('Đã tạo đơn demo. Thanh toán chưa được xác nhận.');
 }
+
+if (sheet) {
+  sheet.addEventListener('click', (event) => {
+    if (event.target === sheet || event.target.closest('[data-action="close-sheet"]')) {
+      closeSheet();
+    }
+  });
+  sheet.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      closeSheet();
+      return;
+    }
+    if (event.key === 'Tab') {
+      const focusables = Array.from(sheet.querySelectorAll('button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])')).filter((el) => !el.hidden && el.offsetParent !== null);
+      if (!focusables.length) {
+        event.preventDefault();
+        return;
+      }
+      const first = focusables[0];
+      const last = focusables[focusables.length - 1];
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    }
+  });
+}
+
+document.addEventListener('keydown', (event) => {
+  if (event.key === 'Escape' && sheet && !sheet.hidden) {
+    closeSheet();
+  }
+});
 
 if (app) {
   app.addEventListener('click', handleClick);

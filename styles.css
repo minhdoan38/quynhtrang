@@ -568,6 +568,60 @@ input[type="range"] {
   inset: auto 8% 10%;
 }
 
+.design-canvas.is-surface-inside {
+  border-style: dashed;
+}
+
+.design-canvas.is-surface-inside::before {
+  content: "Mặt trong";
+  position: absolute;
+  top: 8px;
+  right: 12px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: var(--ink-soft);
+  opacity: 0.7;
+  pointer-events: none;
+  z-index: 5;
+}
+
+.design-canvas--wrapping.is-mode-repeat {
+  background-size: var(--pattern-size, 68px) var(--pattern-size, 68px);
+}
+
+.design-canvas--sticker {
+  border-width: var(--sticker-border-width, 4px);
+}
+
+.design-canvas--notebook.is-finish-glossy {
+  box-shadow: 0 14px 28px rgb(57 43 28 / 18%), inset 0 0 40px rgb(255 255 255 / 45%);
+}
+
+.mockup--wrapping.is-mode-repeat {
+  background-size: var(--pattern-size, 68px) var(--pattern-size, 68px);
+}
+
+.mockup--card.is-surface-inside {
+  transform: perspective(850px) rotateY(12deg);
+}
+
+.mockup--card.is-surface-inside::before {
+  border-left: 1px dashed rgb(72 57 42 / 70%);
+}
+
+.mockup--sticker {
+  border-width: var(--sticker-border-width, 8px);
+}
+
+.mockup--notebook.is-finish-glossy {
+  box-shadow: -10px 0 0 #403b36, 0 18px 34px rgb(57 43 28 / 28%), inset 0 0 50px rgb(255 255 255 / 40%);
+  filter: contrast(1.05) brightness(1.03);
+}
+
+.mockup--notebook.is-finish-matte {
+  filter: contrast(0.96) saturate(0.92);
+}
+
 #canvas-empty-state,
 .preview-empty {
   position: relative;
