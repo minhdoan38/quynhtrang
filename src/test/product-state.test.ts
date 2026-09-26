@@ -8,8 +8,15 @@ import {
   getPreflight,
   getCompatibleTemplates,
   transitionState,
+  createTextElement,
+  getTextElement,
+  getTextData,
+  getTextLayerName,
+  migrateLegacyText,
   type DesignState,
   type DesignAction,
+  type CanvasElement,
+  type TextElementData,
 } from '../lib/product-state.ts';
 
 test('creates the default wrapping-paper design', () => {
@@ -281,3 +288,85 @@ test('adds and removes canvas elements with proper z-index', () => {
   assert.equal(removed.elements?.length, 1);
   assert.equal(removed.elements?.[0].id, 'shape-circle-1');
 });
+
+test('creates heading and body as the same text element with different defaults', () => {
+  const initial = createInitialState('card');
+  const heading = transitionState(initial, {
+    type: 'ADD_TEXT_ELEMENT',
+    preset: 'heading',
+    id: 'text-heading-1',
+  });
+  const body = transitionState(initial, {
+    type: 'ADD_TEXT_ELEMENT',
+    preset: 'body',
+    id: 'text-body-1',
+  });
+
+  const headingElement = heading.elements?.[0];
+  const bodyElement = body.elements?.[0];
+  assert.equal(headingElement?.type, 'text');
+  assert.equal(bodyElement?.type, 'text');
+  assert.equal((headingElement?.data as TextElementData).text, 'Nhập tiêu đề');
+  assert.equal((bodyElement?.data as TextElementData).text, 'Nhập nội dung');
+  assert.notEqual((headingElement?.data as TextElementData).fontSize, (bodyElement?.data as TextElementData).fontSize);
+});
+
+test('commits text content while preserving element geometry and style', () => {
+  const initial = stateWithTextElement();
+  const next = transitionState(initial, {
+    type: 'COMMIT_TEXT_EDIT',
+    id: 'text-1',
+    text: 'Chúc mừng sinh nhật mẹ',
+  });
+  const element = next.elements?.[0];
+  assert.equal((element?.data as TextElementData).text, 'Chúc mừng sinh nhật mẹ');
+  assert.equal(element?.width, 70);
+  assert.equal(element?.x, 50);
+});
+
+test('removes text element when edit commits empty content', () => {
+  const initial = stateWithTextElement();
+  const next = transitionState(initial, { type: 'COMMIT_TEXT_EDIT', id: 'text-1', text: '   ' });
+  assert.equal(next.elements?.some((element) => element.id === 'text-1'), false);
+});
+
+test('migrates legacy top-level text into one text element', () => {
+  const legacy = { ...createInitialState('card'), text: 'Tên của bạn', color: '#315F86' };
+  const migrated = migrateLegacyText(legacy);
+  const element = migrated.elements?.find((candidate) => candidate.type === 'text');
+  assert.equal((element?.data as TextElementData).text, 'Tên của bạn');
+  assert.equal((element?.data as TextElementData).color, '#315F86');
+});
+
+test('text style update changes only selected text style', () => {
+  const initial = stateWithTwoTextElements();
+  const next = transitionState(initial, {
+    type: 'UPDATE_TEXT_STYLE',
+    id: 'text-2',
+    patch: { fontSize: 28, align: 'right' },
+  });
+  assert.equal((next.elements?.[1].data as TextElementData).fontSize, 28);
+  assert.equal((next.elements?.[1].data as TextElementData).align, 'right');
+  assert.equal((next.elements?.[0].data as TextElementData).fontSize, 20);
+});
+
+test('text layer names use content and truncate long content', () => {
+  const element = textElementWithContent('Một dòng chữ tiếng Việt rất dài để kiểm tra tên lớp');
+  assert.equal(getTextLayerName(element), 'Một dòng chữ tiếng Việt rất dài…');
+});
+
+function textElementWithContent(text: string): CanvasElement {
+  return createTextElement({ id: 'text-1', preset: 'body', text });
+}
+
+function stateWithTextElement(): DesignState {
+  const state = createInitialState('card');
+  const element = textElementWithContent('Nhập nội dung');
+  return { ...state, text: 'Nhập nội dung', elements: [element] };
+}
+
+function stateWithTwoTextElements(): DesignState {
+  const first = createTextElement({ id: 'text-1', preset: 'body', text: 'Một' });
+  const second = createTextElement({ id: 'text-2', preset: 'body', text: 'Hai' });
+  return { ...createInitialState('card'), text: 'Một', elements: [first, second] };
+}

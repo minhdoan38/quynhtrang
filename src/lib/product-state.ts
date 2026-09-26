@@ -53,6 +53,34 @@ export interface ImageState {
 }
 export type ElementType = 'image' | 'text' | 'shape' | 'sticker' | 'group';
 
+export type TextPreset = 'heading' | 'body';
+export type TextAlign = 'left' | 'center' | 'right';
+export type TextWeight = 'regular' | 'medium' | 'bold';
+
+export interface TextElementData {
+  text: string;
+  color: string;
+  fontFamily: string;
+  fontSize: number;
+  fontWeight: TextWeight;
+  fontStyle: 'normal' | 'italic';
+  align: TextAlign;
+  lineHeight: number;
+  letterSpacing: number;
+  placeholder?: boolean;
+}
+
+export interface CreateTextElementParams {
+  id: string;
+  preset: TextPreset;
+  text?: string;
+  canvasWidthPercent?: number;
+  x?: number;
+  y?: number;
+  color?: string;
+  fontFamily?: string;
+}
+
 export interface CanvasElement {
   id: string;
   type: ElementType;
@@ -104,7 +132,10 @@ export type DesignAction =
   | { type: 'DUPLICATE_ELEMENT'; id: string }
   | { type: 'DELETE_ELEMENT'; id: string }
   | { type: 'BRING_FORWARD'; id: string }
-  | { type: 'SEND_BACKWARD'; id: string };
+  | { type: 'SEND_BACKWARD'; id: string }
+  | { type: 'ADD_TEXT_ELEMENT'; preset: TextPreset; id?: string; text?: string; color?: string }
+  | { type: 'COMMIT_TEXT_EDIT'; id: string; text: string }
+  | { type: 'UPDATE_TEXT_STYLE'; id: string; patch: Partial<TextElementData> };
 export interface DesignSummary {
   product: string;
   variant: string;
@@ -431,6 +462,91 @@ function cloneOptions(productId: ProductId): Record<string, unknown> {
   return { ...prod.defaultOptions };
 }
 
+export function getTextData(element: CanvasElement): TextElementData | null {
+  if (element.type !== 'text' || !element.data) return null;
+  return element.data as unknown as TextElementData;
+}
+
+export function getTextLayerName(element: CanvasElement): string {
+  const data = getTextData(element);
+  const raw = data?.text ?? element.name ?? 'Văn bản';
+  const clean = raw.trim();
+  if (!clean) return 'Văn bản';
+  const max = 31;
+  return clean.length > max ? clean.slice(0, max) + '…' : clean;
+}
+
+export function createTextElement(params: CreateTextElementParams): CanvasElement {
+  const isHeading = params.preset === 'heading';
+  const defaultText = isHeading ? 'Nhập tiêu đề' : 'Nhập nội dung';
+  const text = params.text !== undefined ? params.text : defaultText;
+  const isPlaceholder = params.text === undefined;
+
+  const data: TextElementData = {
+    text,
+    color: params.color ?? '#111827',
+    fontFamily: params.fontFamily ?? 'Be Vietnam Pro',
+    fontSize: isHeading ? 28 : 20,
+    fontWeight: isHeading ? 'bold' : 'regular',
+    fontStyle: 'normal',
+    align: 'center',
+    lineHeight: isHeading ? 1.2 : 1.4,
+    letterSpacing: 0,
+    placeholder: isPlaceholder,
+  };
+
+  const element: CanvasElement = {
+    id: params.id,
+    type: 'text',
+    name: getTextLayerName({ id: params.id, type: 'text', x: 0, y: 0, width: 0, height: 0, rotation: 0, data: data as unknown as Record<string, unknown> }),
+    x: params.x ?? 50,
+    y: params.y ?? 50,
+    width: params.canvasWidthPercent ?? 70,
+    height: isHeading ? 16 : 14,
+    rotation: 0,
+    locked: false,
+    zIndex: 1,
+    data: data as unknown as Record<string, unknown>,
+  };
+
+  return element;
+}
+
+export function getTextElement(state: DesignState, id: string): CanvasElement | null {
+  const elements = state.elements ?? getDefaultElements(state);
+  return elements.find((el) => el.id === id && el.type === 'text') ?? null;
+}
+
+export function migrateLegacyText(state: DesignState): DesignState {
+  if (!state) return state;
+  const elements = state.elements ?? getDefaultElements(state);
+  const hasText = elements.some((el) => el.type === 'text');
+  if (hasText) {
+    return {
+      ...state,
+      elements,
+    };
+  }
+  if (state.text && state.text.trim()) {
+    const textEl = createTextElement({
+      id: 'text-1',
+      preset: 'body',
+      text: state.text,
+      color: state.color,
+      y: 75,
+    });
+    textEl.zIndex = (elements.reduce((max, el) => Math.max(max, el.zIndex ?? 1), 0)) + 1;
+    return {
+      ...state,
+      elements: [...elements, textEl],
+    };
+  }
+  return {
+    ...state,
+    elements,
+  };
+}
+
 export function getDefaultElements(state: DesignState): CanvasElement[] {
   const elements: CanvasElement[] = [];
   if (state.image) {
@@ -448,18 +564,15 @@ export function getDefaultElements(state: DesignState): CanvasElement[] {
     });
   }
   if (state.text) {
-    elements.push({
+    const textEl = createTextElement({
       id: 'text-1',
-      type: 'text',
-      x: 50,
+      preset: 'body',
+      text: state.text,
+      color: state.color,
       y: 75,
-      width: 70,
-      height: 20,
-      rotation: 0,
-      locked: false,
-      zIndex: 2,
-      data: { text: state.text, color: state.color },
     });
+    textEl.zIndex = 2;
+    elements.push(textEl);
   }
   return elements;
 }
@@ -652,9 +765,17 @@ export function transitionState(state: DesignState, action: DesignAction): Desig
 
     case 'REMOVE_CANVAS_ELEMENT': {
       const currentList = state.elements ?? getDefaultElements(state);
+      const target = currentList.find((el) => el.id === action.id);
+      const nextList = currentList.filter((el) => el.id !== action.id);
+      const syncPatch: Partial<DesignState> = {};
+      if (target?.type === 'text') {
+        const remainingText = nextList.find((el) => el.type === 'text');
+        syncPatch.text = remainingText ? (getTextData(remainingText)?.text ?? '') : '';
+      }
       return {
         ...state,
-        elements: currentList.filter((el) => el.id !== action.id),
+        ...syncPatch,
+        elements: nextList,
       };
     }
 
@@ -692,6 +813,12 @@ export function transitionState(state: DesignState, action: DesignAction): Desig
         zIndex: newZ,
         locked: false,
       };
+      if (clone.type === 'text' && clone.data) {
+        clone.data = {
+          ...clone.data,
+          placeholder: false,
+        };
+      }
 
       const updated = currentList.map((el) => {
         if ((el.zIndex ?? 1) >= newZ && el.id !== target.id) {
@@ -715,8 +842,138 @@ export function transitionState(state: DesignState, action: DesignAction): Desig
       const syncPatch: Partial<DesignState> = {};
       if (target.type === 'image' && state.image) {
         syncPatch.image = null;
-      } else if (target.type === 'text' && state.text) {
-        syncPatch.text = '';
+      } else if (target.type === 'text') {
+        const remainingText = nextList.find((el) => el.type === 'text');
+        syncPatch.text = remainingText ? (getTextData(remainingText)?.text ?? '') : '';
+      }
+
+      return {
+        ...state,
+        ...syncPatch,
+        elements: nextList,
+      };
+    }
+
+    case 'ADD_TEXT_ELEMENT': {
+      const currentList = state.elements ?? getDefaultElements(state);
+      const maxZ = currentList.reduce((max, el) => Math.max(max, el.zIndex ?? 1), 0);
+      const newElement = createTextElement({
+        id: action.id ?? `text-${Date.now()}`,
+        preset: action.preset,
+        text: action.text,
+        color: action.color ?? state.color,
+      });
+      newElement.zIndex = maxZ + 1;
+      const syncPatch: Partial<DesignState> = {};
+      const data = getTextData(newElement);
+      if (!state.text && data?.text) {
+        syncPatch.text = data.text;
+      }
+      return {
+        ...state,
+        ...syncPatch,
+        elements: [...currentList, newElement],
+      };
+    }
+
+    case 'COMMIT_TEXT_EDIT': {
+      const currentList = state.elements ?? getDefaultElements(state);
+      const targetIndex = currentList.findIndex((el) => el.id === action.id && el.type === 'text');
+      if (targetIndex === -1) return state;
+
+      const trimmed = action.text.trim();
+      if (!trimmed) {
+        const filtered = currentList.filter((el) => el.id !== action.id);
+        const syncPatch: Partial<DesignState> = {};
+        const remainingFirstText = filtered.find((el) => el.type === 'text');
+        syncPatch.text = remainingFirstText ? (getTextData(remainingFirstText)?.text ?? '') : '';
+        return {
+          ...state,
+          ...syncPatch,
+          elements: filtered,
+        };
+      }
+
+      const target = currentList[targetIndex];
+      const oldData = getTextData(target) ?? {
+        text: '',
+        color: '#111827',
+        fontFamily: 'Be Vietnam Pro',
+        fontSize: 20,
+        fontWeight: 'regular',
+        fontStyle: 'normal',
+        align: 'center',
+        lineHeight: 1.4,
+        letterSpacing: 0,
+      };
+
+      const updatedData: TextElementData = {
+        ...oldData,
+        text: action.text,
+        placeholder: false,
+      };
+
+      const updatedElement: CanvasElement = {
+        ...target,
+        name: getTextLayerName({ ...target, data: updatedData as unknown as Record<string, unknown> }),
+        data: updatedData as unknown as Record<string, unknown>,
+      };
+
+      const nextList = [...currentList];
+      nextList[targetIndex] = updatedElement;
+
+      const syncPatch: Partial<DesignState> = {};
+      const firstText = nextList.find((el) => el.type === 'text');
+      if (firstText?.id === action.id) {
+        syncPatch.text = action.text;
+      }
+
+      return {
+        ...state,
+        ...syncPatch,
+        elements: nextList,
+      };
+    }
+
+    case 'UPDATE_TEXT_STYLE': {
+      const currentList = state.elements ?? getDefaultElements(state);
+      const targetIndex = currentList.findIndex((el) => el.id === action.id && el.type === 'text');
+      if (targetIndex === -1) return state;
+
+      const target = currentList[targetIndex];
+      if (target.locked) return state;
+
+      const oldData = getTextData(target) ?? {
+        text: '',
+        color: '#111827',
+        fontFamily: 'Be Vietnam Pro',
+        fontSize: 20,
+        fontWeight: 'regular',
+        fontStyle: 'normal',
+        align: 'center',
+        lineHeight: 1.4,
+        letterSpacing: 0,
+      };
+
+      const updatedData: TextElementData = {
+        ...oldData,
+        ...action.patch,
+      };
+
+      const updatedElement: CanvasElement = {
+        ...target,
+        name: getTextLayerName({ ...target, data: updatedData as unknown as Record<string, unknown> }),
+        data: updatedData as unknown as Record<string, unknown>,
+      };
+
+      const nextList = [...currentList];
+      nextList[targetIndex] = updatedElement;
+
+      const syncPatch: Partial<DesignState> = {};
+      const firstText = nextList.find((el) => el.type === 'text');
+      if (firstText?.id === action.id) {
+        if (updatedData.color) syncPatch.color = updatedData.color;
+        if (updatedData.text) syncPatch.text = updatedData.text;
       }
 
       return {

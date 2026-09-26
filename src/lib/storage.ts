@@ -1,4 +1,4 @@
-import type { DesignState, ProductId, ImageState } from './product-state';
+import type { DesignState, ProductId, ImageState, CanvasElement } from './product-state';
 import type { DemoOrder } from '@/components/customizer/confirmation-panel';
 
 const STATE_KEY = 'print-customizer-state-v1';
@@ -15,6 +15,7 @@ export interface RecentProject {
   backgroundColor: string;
   image: ImageState | null;
   productOptions: Record<string, unknown>;
+  elements?: CanvasElement[];
   updatedAt: number;
 }
 
@@ -94,6 +95,7 @@ export function saveRecentProject(state: DesignState): boolean {
       backgroundColor: state.backgroundColor,
       image: state.image ? { ...state.image } : null,
       productOptions: { ...state.productOptions },
+      elements: state.elements ? [...state.elements] : undefined,
       updatedAt: Date.now(),
     };
 
