@@ -2,14 +2,38 @@
 
 ## Platform
 
-Responsive web application, mobile-first.
+web
 
 The primary customer experience is a touch-first product customizer used mainly on phones. Desktop is supported as a more spacious adaptation of the same product, not as a separate workflow.
+
+## Product principles
+
+- **Make the gift, not the software.** Keep print complexity behind plain-language guidance and product-specific defaults.
+- **Start with the smallest useful action.** Template personalization comes before advanced editing.
+- **Let the artwork lead.** The canvas, photos and customer choices carry more personality than application chrome.
+- **Keep progress reversible.** Guest work, local persistence, previews and approved versions must protect customer effort.
+- **Use Vietnamese that names consequences.** Warnings and controls stay short, concrete and non-technical.
 
 The application has two operating contexts:
 
 - **Customer:** browse products/templates, customize, preview, validate, and create an order.
 - **Admin/editor:** manage templates, sticker assets, fonts and orders; open customer designs and create revisions.
+
+## Positioning
+
+A warm, tactile print personalization workbench for Vietnamese consumers buying sentimental stationery and custom gift paper. It sits between rigid mass-market photo printing sites and overwhelming professional layout tools.
+
+## Operating context
+
+- Mobile-first touch screens under real-world lighting.
+- Short attention spans, frequent interruptions, and soft-keyboard viewport shifts.
+- Non-designer mental models: photos, templates, stickers, and clear previews rather than vectors, bleed, or DPI.
+
+## Evidence on hand
+
+- Existing implementation supports Wrapping Paper (A1, A2), Cards (horizontal, vertical), Stickers (die-cut, shape-cut, phone decorative), and Notebook Covers.
+- In-browser state machine persists recent draft work locally and generates immutable demo order snapshots.
+- UI copy is conversational Vietnamese focused on safety areas, clarity warnings, and physical previews.
 
 ## Users
 

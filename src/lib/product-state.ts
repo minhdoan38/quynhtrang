@@ -51,6 +51,23 @@ export interface ImageState {
   width?: number;
   height?: number;
 }
+export type ElementType = 'image' | 'text' | 'shape' | 'sticker' | 'group';
+
+export interface CanvasElement {
+  id: string;
+  type: ElementType;
+  name?: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  rotation: number;
+  locked?: boolean;
+  zIndex?: number;
+  parentGroupId?: string;
+  surface?: 'front' | 'inside';
+  data?: Record<string, unknown>;
+}
 
 export interface DesignState {
   productId: ProductId;
@@ -62,6 +79,7 @@ export interface DesignState {
   image: ImageState | null;
   quantity: number;
   productOptions: Record<string, unknown>;
+  elements?: CanvasElement[];
 }
 
 export type DesignAction =
@@ -73,8 +91,20 @@ export type DesignAction =
   | { type: 'SET_BACKGROUND_COLOR'; value: string }
   | { type: 'SET_IMAGE'; value: ImageState | null }
   | { type: 'SET_QUANTITY'; value: number | string }
-  | { type: 'SET_PRODUCT_OPTION'; key: string; value: unknown };
-
+  | { type: 'SET_PRODUCT_OPTION'; key: string; value: unknown }
+  | { type: 'MOVE_ELEMENT'; id: string; x: number; y: number }
+  | { type: 'RESIZE_ELEMENT'; id: string; width: number; height: number; x?: number; y?: number }
+  | { type: 'ROTATE_ELEMENT'; id: string; rotation: number }
+  | { type: 'LOCK_ELEMENT'; id: string; locked: boolean }
+  | { type: 'SET_ELEMENTS'; value: CanvasElement[] }
+  | { type: 'UPDATE_ELEMENT'; id: string; patch: Partial<CanvasElement> }
+  | { type: 'ADD_CANVAS_ELEMENT'; element: CanvasElement }
+  | { type: 'REMOVE_CANVAS_ELEMENT'; id: string }
+  | { type: 'REORDER_ELEMENTS'; orderedIds: string[] }
+  | { type: 'DUPLICATE_ELEMENT'; id: string }
+  | { type: 'DELETE_ELEMENT'; id: string }
+  | { type: 'BRING_FORWARD'; id: string }
+  | { type: 'SEND_BACKWARD'; id: string };
 export interface DesignSummary {
   product: string;
   variant: string;
@@ -401,6 +431,39 @@ function cloneOptions(productId: ProductId): Record<string, unknown> {
   return { ...prod.defaultOptions };
 }
 
+export function getDefaultElements(state: DesignState): CanvasElement[] {
+  const elements: CanvasElement[] = [];
+  if (state.image) {
+    elements.push({
+      id: 'image-1',
+      type: 'image',
+      x: 50,
+      y: 45,
+      width: 60,
+      height: 60,
+      rotation: 0,
+      locked: Boolean(state.productOptions.isLocked),
+      zIndex: 1,
+      data: { src: state.image.src, name: state.image.name },
+    });
+  }
+  if (state.text) {
+    elements.push({
+      id: 'text-1',
+      type: 'text',
+      x: 50,
+      y: 75,
+      width: 70,
+      height: 20,
+      rotation: 0,
+      locked: false,
+      zIndex: 2,
+      data: { text: state.text, color: state.color },
+    });
+  }
+  return elements;
+}
+
 export function createInitialState(productId: ProductId = 'wrapping'): DesignState {
   const prod = PRODUCTS[productId] ?? PRODUCTS.wrapping;
   return {
@@ -501,7 +564,197 @@ export function transitionState(state: DesignState, action: DesignAction): Desig
         },
       };
     }
+    case 'MOVE_ELEMENT': {
+      const list = state.elements ?? getDefaultElements(state);
+      const target = list.find((el) => el.id === action.id);
+      if (!target || target.locked) return state;
+      return {
+        ...state,
+        elements: list.map((el) => (el.id === action.id ? { ...el, x: action.x, y: action.y } : el)),
+      };
+    }
 
+    case 'RESIZE_ELEMENT': {
+      const list = state.elements ?? getDefaultElements(state);
+      const target = list.find((el) => el.id === action.id);
+      if (!target || target.locked) return state;
+      return {
+        ...state,
+        elements: list.map((el) =>
+          el.id === action.id
+            ? {
+              ...el,
+              width: action.width,
+              height: action.height,
+              ...(action.x !== undefined ? { x: action.x } : {}),
+              ...(action.y !== undefined ? { y: action.y } : {}),
+            }
+            : el
+        ),
+      };
+    }
+
+    case 'ROTATE_ELEMENT': {
+      const list = state.elements ?? getDefaultElements(state);
+      const target = list.find((el) => el.id === action.id);
+      if (!target || target.locked) return state;
+      return {
+        ...state,
+        elements: list.map((el) =>
+          el.id === action.id ? { ...el, rotation: ((action.rotation % 360) + 360) % 360 } : el
+        ),
+      };
+    }
+
+    case 'LOCK_ELEMENT': {
+      const list = state.elements ?? getDefaultElements(state);
+      return {
+        ...state,
+        elements: list.map((el) => (el.id === action.id ? { ...el, locked: action.locked } : el)),
+      };
+    }
+
+    case 'SET_ELEMENTS': {
+      return {
+        ...state,
+        elements: action.value,
+      };
+    }
+
+    case 'UPDATE_ELEMENT': {
+      const list = state.elements ?? getDefaultElements(state);
+      return {
+        ...state,
+        elements: list.map((el) => (el.id === action.id ? { ...el, ...action.patch } : el)),
+      };
+    }
+
+    case 'ADD_CANVAS_ELEMENT': {
+      const currentList = state.elements ?? getDefaultElements(state);
+      const maxZ = currentList.reduce((max, el) => Math.max(max, el.zIndex ?? 1), 0);
+      const newElement: CanvasElement = {
+        ...action.element,
+        zIndex: action.element.zIndex ?? (maxZ + 1),
+      };
+
+      // Đồng bộ vào legacy top-level properties nếu đây là image hoặc text đầu tiên
+      const syncPatch: Partial<DesignState> = {};
+      if (newElement.type === 'text' && !state.text) {
+        syncPatch.text = String(newElement.data?.text || '');
+      }
+
+      return {
+        ...state,
+        ...syncPatch,
+        elements: [...currentList, newElement],
+      };
+    }
+
+    case 'REMOVE_CANVAS_ELEMENT': {
+      const currentList = state.elements ?? getDefaultElements(state);
+      return {
+        ...state,
+        elements: currentList.filter((el) => el.id !== action.id),
+      };
+    }
+
+    case 'REORDER_ELEMENTS': {
+      const currentList = state.elements ?? getDefaultElements(state);
+      const total = action.orderedIds.length;
+      const zIndexMap = new Map<string, number>();
+      action.orderedIds.forEach((id, index) => {
+        zIndexMap.set(id, total - index);
+      });
+      const nextList = currentList.map((el) => {
+        const newZ = zIndexMap.get(el.id);
+        return newZ !== undefined ? { ...el, zIndex: newZ } : el;
+      });
+      nextList.sort((a, b) => (a.zIndex ?? 0) - (b.zIndex ?? 0));
+      return {
+        ...state,
+        elements: nextList,
+      };
+    }
+
+    case 'DUPLICATE_ELEMENT': {
+      const currentList = state.elements ?? getDefaultElements(state);
+      const target = currentList.find((el) => el.id === action.id);
+      if (!target) return state;
+
+      const newId = `${target.id}-copy-${Date.now()}`;
+      const newZ = (target.zIndex ?? 1) + 1;
+      const clone: CanvasElement = {
+        ...target,
+        id: newId,
+        name: target.name ? `${target.name} (Bản sao)` : undefined,
+        x: Math.min(80, target.x + 4),
+        y: Math.min(80, target.y + 4),
+        zIndex: newZ,
+        locked: false,
+      };
+
+      const updated = currentList.map((el) => {
+        if ((el.zIndex ?? 1) >= newZ && el.id !== target.id) {
+          return { ...el, zIndex: (el.zIndex ?? 1) + 1 };
+        }
+        return el;
+      });
+
+      return {
+        ...state,
+        elements: [...updated, clone].sort((a, b) => (a.zIndex ?? 0) - (b.zIndex ?? 0)),
+      };
+    }
+
+    case 'DELETE_ELEMENT': {
+      const currentList = state.elements ?? getDefaultElements(state);
+      const target = currentList.find((el) => el.id === action.id);
+      if (!target || target.locked) return state;
+
+      const nextList = currentList.filter((el) => el.id !== action.id);
+      const syncPatch: Partial<DesignState> = {};
+      if (target.type === 'image' && state.image) {
+        syncPatch.image = null;
+      } else if (target.type === 'text' && state.text) {
+        syncPatch.text = '';
+      }
+
+      return {
+        ...state,
+        ...syncPatch,
+        elements: nextList,
+      };
+    }
+
+    case 'BRING_FORWARD': {
+      const currentList = state.elements ?? getDefaultElements(state);
+      const sorted = [...currentList].sort((a, b) => (a.zIndex ?? 0) - (b.zIndex ?? 0));
+      const idx = sorted.findIndex((el) => el.id === action.id);
+      if (idx === -1 || idx === sorted.length - 1) return state;
+      const current = sorted[idx];
+      const next = sorted[idx + 1];
+      if (!current || !next) return state;
+      const tempZ = current.zIndex ?? 0;
+      current.zIndex = next.zIndex ?? tempZ + 1;
+      next.zIndex = tempZ;
+      sorted.sort((a, b) => (a.zIndex ?? 0) - (b.zIndex ?? 0));
+      return { ...state, elements: sorted };
+    }
+
+    case 'SEND_BACKWARD': {
+      const currentList = state.elements ?? getDefaultElements(state);
+      const sorted = [...currentList].sort((a, b) => (a.zIndex ?? 0) - (b.zIndex ?? 0));
+      const idx = sorted.findIndex((el) => el.id === action.id);
+      if (idx <= 0) return state;
+      const current = sorted[idx];
+      const prev = sorted[idx - 1];
+      if (!current || !prev) return state;
+      const tempZ = current.zIndex ?? 0;
+      current.zIndex = prev.zIndex ?? 0;
+      prev.zIndex = tempZ;
+      sorted.sort((a, b) => (a.zIndex ?? 0) - (b.zIndex ?? 0));
+      return { ...state, elements: sorted };
+    }
     default:
       return state;
   }

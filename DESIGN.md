@@ -109,7 +109,9 @@ This is a **product interface**, not a decorative campaign site. The canvas and 
 - personal rather than corporate;
 - soft but not low-contrast;
 - playful in peripheral surfaces, disciplined in operational surfaces;
-- real paper/sticker metaphors used only when they improve comprehension.
+- real paper/sticker metaphors used only when they improve comprehension;
+- deliberate contrast hierarchy: pastel accents live on warm paper grounds, while interactive states use deep ink or primary blue anchors;
+- no pure `#000000` text or surfaces; all dark tones are tinted warm ink.
 
 **The Artwork Wins Rule.** The editor chrome must recede around the customer’s design. Never place strongly colored panels, gradients, textures, or decorative illustrations directly behind the active canvas.
 
@@ -590,3 +592,13 @@ Do not show a technical table of PPI/coordinates.
 - Do not expose bleed/PPI/cut-path jargon to customers by default.
 - Do not let the checkout form visually coexist with the full editor on the same overloaded surface.
 - Do not make the design system so “cute” that error states, prices, order status or critical actions become ambiguous.
+
+## Next-Agent Implementation Handoff
+
+When implementing the UI based on this design system:
+
+1. **Surface Colors**: Replace cold gray/white primitives with warm paper neutrals (`#FFFDF8` background, `#F8F3E8` cards/accents, `#DDD6CC` borders).
+2. **Primary Actions**: Keep primary buttons and active indicators in `#315F86` (Primary Blue) to maintain unmistakable visual hierarchy.
+3. **Typography**: Pair `Lora` for expressive display headings with `Be Vietnam Pro` for all operational UI, labels, buttons, and form inputs.
+4. **Cards & Containers**: Replace uniform card grids with asymmetric layout hierarchy and clear focus on the product canvas.
+5. **Interactive States**: Provide clear `active:scale-[0.98]` feedback, smooth 200ms transitions, visible keyboard focus rings, and proper touch targets (minimum 44px).

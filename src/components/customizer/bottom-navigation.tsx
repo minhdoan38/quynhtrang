@@ -1,87 +1,217 @@
 import React from 'react';
-import { Button } from '@/components/ui/button';
-import { Undo2, Redo2, RotateCcw, Eye } from 'lucide-react';
+import {
+  Plus,
+  LayoutTemplate,
+  Layers,
+  Eye,
+  ArrowRight,
+  ChevronLeft,
+  Crop,
+  ImagePlus,
+  Wand2,
+  SunMedium,
+  Type,
+  CaseSensitive,
+  Palette,
+  AArrowUp,
+  MoreHorizontal,
+} from 'lucide-react';
+
+export type SelectedTarget = 'image' | 'text' | null;
 
 interface BottomNavigationProps {
-  onOpenPreview: () => void;
-  onResetDesign: () => void;
-  priceLabel: string;
-  canUndo: boolean;
-  canRedo: boolean;
-  onUndo: () => void;
-  onRedo: () => void;
+  selectedTarget: SelectedTarget;
+  isLocked?: boolean;
+  onDeselect: () => void;
+  onAction: (actionKey: string) => void;
 }
 
 export function BottomNavigation({
-  onOpenPreview,
-  onResetDesign,
-  priceLabel,
-  canUndo,
-  canRedo,
-  onUndo,
-  onRedo,
+  selectedTarget,
+  isLocked = false,
+  onDeselect,
+  onAction,
 }: BottomNavigationProps) {
-  return (
-    <div className="fixed bottom-0 left-0 right-0 z-40 bg-background/95 backdrop-blur border-t px-4 py-2.5 flex items-center justify-between gap-3 max-w-4xl mx-auto shadow-lg sm:rounded-t-xl">
-      <div className="flex items-center gap-1">
-        <Button
-          type="button"
-          variant="ghost"
-          size="icon"
-          disabled={!canUndo}
-          onClick={onUndo}
-          data-action="undo"
-          title="Hoàn tác"
-          className="h-8 w-8"
-        >
-          <Undo2 className="w-4 h-4" />
-        </Button>
+  // If target is selected, render Contextual Toolbar
+  if (selectedTarget !== null) {
+    return (
+      <nav
+        aria-label="Thanh công cụ đối tượng"
+        className="fixed bottom-0 left-0 right-0 z-40 bg-[#FFFDF8]/95 backdrop-blur-md border-t border-[#ECE6DC] shadow-lg pb-[env(safe-area-inset-bottom)]"
+      >
+        <div className="max-w-md mx-auto px-2 py-1.5 flex items-center justify-between gap-1 min-h-[58px]">
+          {/* Back/Close context button */}
+          <button
+            type="button"
+            onClick={onDeselect}
+            aria-label="Bỏ chọn và quay lại thanh công cụ chính"
+            title="Quay lại"
+            className="flex flex-col items-center justify-center min-w-[44px] h-[48px] px-2 rounded-lg text-[#2E3338] hover:bg-[#F8F3E8] active:scale-95 transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#315F86]"
+          >
+            <ChevronLeft className="w-5 h-5" />
+            <span className="text-[10px] font-medium tracking-tight">Xong</span>
+          </button>
 
-        <Button
-          type="button"
-          variant="ghost"
-          size="icon"
-          disabled={!canRedo}
-          onClick={onRedo}
-          data-action="redo"
-          title="Làm lại"
-          className="h-8 w-8"
-        >
-          <Redo2 className="w-4 h-4" />
-        </Button>
+          {isLocked ? (
+            <div className="flex-1 flex items-center justify-center px-2 text-xs text-[#666A6D] font-medium">
+              <span>🔒 Thành phần này đã được khóa trong mẫu.</span>
+            </div>
+          ) : selectedTarget === 'image' ? (
+            <div className="flex-1 flex items-center justify-around gap-0.5">
+              <button
+                type="button"
+                onClick={() => onAction('crop')}
+                className="flex flex-col items-center justify-center min-w-[44px] h-[48px] px-1 rounded-lg text-[#2E3338] hover:bg-[#F8F3E8] active:scale-95 transition-all"
+              >
+                <Crop className="w-4 h-4 text-[#315F86]" />
+                <span className="text-[11px] font-medium mt-0.5">Cắt</span>
+              </button>
 
-        <Button
-          type="button"
-          variant="ghost"
-          size="sm"
-          onClick={onResetDesign}
-          data-action="reset-design"
-          className="text-xs text-muted-foreground hover:text-foreground h-8 px-2 flex items-center gap-1"
-        >
-          <RotateCcw className="w-3.5 h-3.5" />
-          <span>Đặt lại</span>
-        </Button>
-      </div>
+              <button
+                type="button"
+                onClick={() => onAction('replace-image')}
+                className="flex flex-col items-center justify-center min-w-[44px] h-[48px] px-1 rounded-lg text-[#2E3338] hover:bg-[#F8F3E8] active:scale-95 transition-all"
+              >
+                <ImagePlus className="w-4 h-4 text-[#315F86]" />
+                <span className="text-[11px] font-medium mt-0.5">Thay ảnh</span>
+              </button>
 
-      <div className="flex items-center gap-3">
-        <div className="text-right hidden sm:block">
-          <span className="text-[10px] uppercase tracking-wider text-muted-foreground block font-medium">
-            Tạm tính
-          </span>
-          <span className="text-sm font-bold">{priceLabel}</span>
+              <button
+                type="button"
+                onClick={() => onAction('remove-bg')}
+                className="flex flex-col items-center justify-center min-w-[44px] h-[48px] px-1 rounded-lg text-[#2E3338] hover:bg-[#F8F3E8] active:scale-95 transition-all"
+              >
+                <Wand2 className="w-4 h-4 text-[#315F86]" />
+                <span className="text-[11px] font-medium mt-0.5">Xóa nền</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => onAction('opacity')}
+                className="flex flex-col items-center justify-center min-w-[44px] h-[48px] px-1 rounded-lg text-[#2E3338] hover:bg-[#F8F3E8] active:scale-95 transition-all"
+              >
+                <SunMedium className="w-4 h-4 text-[#315F86]" />
+                <span className="text-[11px] font-medium mt-0.5">Độ mờ</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => onAction('more')}
+                aria-label="Thao tác khác"
+                className="flex flex-col items-center justify-center min-w-[44px] h-[48px] px-1 rounded-lg text-[#2E3338] hover:bg-[#F8F3E8] active:scale-95 transition-all"
+              >
+                <MoreHorizontal className="w-4 h-4 text-[#666A6D]" />
+                <span className="text-[11px] font-medium mt-0.5">•••</span>
+              </button>
+            </div>
+          ) : (
+            /* text selected */
+            <div className="flex-1 flex items-center justify-around gap-0.5">
+              <button
+                type="button"
+                onClick={() => onAction('edit-text')}
+                className="flex flex-col items-center justify-center min-w-[44px] h-[48px] px-1 rounded-lg text-[#2E3338] hover:bg-[#F8F3E8] active:scale-95 transition-all"
+              >
+                <Type className="w-4 h-4 text-[#315F86]" />
+                <span className="text-[11px] font-medium mt-0.5">Sửa chữ</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => onAction('font')}
+                className="flex flex-col items-center justify-center min-w-[44px] h-[48px] px-1 rounded-lg text-[#2E3338] hover:bg-[#F8F3E8] active:scale-95 transition-all"
+              >
+                <CaseSensitive className="w-4 h-4 text-[#315F86]" />
+                <span className="text-[11px] font-medium mt-0.5">Font</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => onAction('color')}
+                className="flex flex-col items-center justify-center min-w-[44px] h-[48px] px-1 rounded-lg text-[#2E3338] hover:bg-[#F8F3E8] active:scale-95 transition-all"
+              >
+                <Palette className="w-4 h-4 text-[#315F86]" />
+                <span className="text-[11px] font-medium mt-0.5">Màu</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => onAction('font-size')}
+                className="flex flex-col items-center justify-center min-w-[44px] h-[48px] px-1 rounded-lg text-[#2E3338] hover:bg-[#F8F3E8] active:scale-95 transition-all"
+              >
+                <AArrowUp className="w-4 h-4 text-[#315F86]" />
+                <span className="text-[11px] font-medium mt-0.5">Cỡ chữ</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => onAction('more')}
+                aria-label="Thao tác khác"
+                className="flex flex-col items-center justify-center min-w-[44px] h-[48px] px-1 rounded-lg text-[#2E3338] hover:bg-[#F8F3E8] active:scale-95 transition-all"
+              >
+                <MoreHorizontal className="w-4 h-4 text-[#666A6D]" />
+                <span className="text-[11px] font-medium mt-0.5">•••</span>
+              </button>
+            </div>
+          )}
         </div>
+      </nav>
+    );
+  }
 
-        <Button
+  // Default state: 5 primary actions: Thêm, Mẫu, Lớp, Xem thử, Xong
+  return (
+    <nav
+      aria-label="Thanh công cụ chính"
+      className="fixed bottom-0 left-0 right-0 z-40 bg-[#FFFDF8]/95 backdrop-blur-md border-t border-[#ECE6DC] shadow-lg pb-[env(safe-area-inset-bottom)]"
+    >
+      <div className="max-w-md mx-auto px-2 py-1.5 flex items-center justify-between gap-1 min-h-[58px]">
+        <button
           type="button"
-          size="sm"
-          data-action="open-preview"
-          onClick={onOpenPreview}
-          className="flex items-center gap-1.5 font-semibold shadow-sm"
+          onClick={() => onAction('add')}
+          className="flex-1 flex flex-col items-center justify-center min-w-[44px] h-[48px] rounded-lg text-[#2E3338] hover:bg-[#F8F3E8] active:scale-95 transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#315F86]"
         >
-          <Eye className="w-4 h-4" />
-          <span>Xem thử</span>
-        </Button>
+          <Plus className="w-4 h-4 text-[#315F86]" />
+          <span className="text-[11px] font-medium mt-0.5">Thêm</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => onAction('templates')}
+          className="flex-1 flex flex-col items-center justify-center min-w-[44px] h-[48px] rounded-lg text-[#2E3338] hover:bg-[#F8F3E8] active:scale-95 transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#315F86]"
+        >
+          <LayoutTemplate className="w-4 h-4 text-[#315F86]" />
+          <span className="text-[11px] font-medium mt-0.5">Mẫu</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => onAction('layers')}
+          className="flex-1 flex flex-col items-center justify-center min-w-[44px] h-[48px] rounded-lg text-[#2E3338] hover:bg-[#F8F3E8] active:scale-95 transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#315F86]"
+        >
+          <Layers className="w-4 h-4 text-[#315F86]" />
+          <span className="text-[11px] font-medium mt-0.5">Lớp</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => onAction('preview')}
+          className="flex-1 flex flex-col items-center justify-center min-w-[44px] h-[48px] rounded-lg text-[#2E3338] hover:bg-[#F8F3E8] active:scale-95 transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#315F86]"
+        >
+          <Eye className="w-4 h-4 text-[#315F86]" />
+          <span className="text-[11px] font-medium mt-0.5">Xem thử</span>
+        </button>
+
+        {/* Xong is the primary forward action */}
+        <button
+          type="button"
+          onClick={() => onAction('finish')}
+          className="flex-1 flex items-center justify-center gap-1 min-w-[60px] h-[40px] px-3 rounded-lg bg-[#315F86] hover:bg-[#244A69] text-white shadow-xs active:scale-95 transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#315F86]"
+        >
+          <span className="text-xs font-semibold">Xong</span>
+          <ArrowRight className="w-3.5 h-3.5" />
+        </button>
       </div>
-    </div>
+    </nav>
   );
 }
