@@ -23,6 +23,10 @@ export const TAP_THRESHOLD_PX = 6;
 export const DOUBLE_TAP_MAX_DELAY_MS = 320;
 export const DOUBLE_TAP_MAX_DIST_PX = 16;
 export const MIN_ELEMENT_SIZE_PX = 24;
+export function clampTextBoxWidth(value: number, min = 60, max = 75): number {
+  return Math.min(max, Math.max(min, Number.isFinite(value) ? value : min));
+}
+
 
 export function isTapGesture(
   startX: number,

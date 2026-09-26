@@ -6,6 +6,7 @@ import {
   computeAspectResize,
   computeRotationAngle,
   isDoubleTap,
+  clampTextBoxWidth,
   type ElementBounds,
   type TransformHandle,
 } from '../lib/canvas-interaction.ts';
@@ -82,4 +83,21 @@ test('isDoubleTap returns true when consecutive taps are within time and distanc
   // Far tap (> 10px)
   const farTap = { time: 1150, x: 90, y: 90 };
   assert.equal(isDoubleTap(firstTap, farTap, 300, 10), false);
+});
+
+test('corner resize keeps text aspect ratio', () => {
+  const result = computeAspectResize(
+    { x: 50, y: 50, width: 140, height: 40 },
+    'se',
+    70,
+    20,
+    true,
+    24,
+  );
+  assert.equal(Number((result.width / result.height).toFixed(2)), 3.5);
+});
+
+test('bounded text width never grows beyond configured maximum', () => {
+  assert.equal(clampTextBoxWidth(92, 60, 75), 75);
+  assert.equal(clampTextBoxWidth(64, 60, 75), 64);
 });

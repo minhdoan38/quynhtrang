@@ -1,7 +1,14 @@
 'use client';
 
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import type { ProductId, ImageState } from '@/lib/product-state';
+import {
+  type ProductId,
+  type ImageState,
+  type CanvasElement,
+  type TextElementData,
+  createTextElement,
+  getTextData,
+} from '@/lib/product-state';
 import {
   TAP_THRESHOLD_PX,
   isDoubleTap,
@@ -11,7 +18,6 @@ import {
   type TapPoint,
 } from '@/lib/canvas-interaction';
 import { SelectionOverlay } from './selection-overlay';
-
 export interface TransformState {
   x: number;
   y: number;
@@ -19,39 +25,55 @@ export interface TransformState {
   rotation: number;
 }
 
-interface DesignCanvasProps {
+export interface DesignCanvasProps {
   productId: ProductId;
-  text: string;
-  color: string;
+  text?: string;
+  color?: string;
   backgroundColor: string;
-  image: ImageState | null;
+  image?: ImageState | null;
   productOptions: Record<string, unknown>;
   isMockup?: boolean;
   selectedTarget?: 'image' | 'text' | null;
+  selectedTextId?: string | null;
+  textElements?: CanvasElement[];
   onSelectTarget?: (target: 'image' | 'text' | null) => void;
+  onSelectText?: (id: string | null) => void;
   onDoubleTap?: (target: 'image' | 'text') => void;
+  onDoubleTapText?: (id: string) => void;
+  onMeasureText?: (id: string, height: number) => void;
   isLocked?: boolean;
   onLockedFeedback?: () => void;
   imageTransform?: TransformState;
   textTransform?: TransformState;
-  onCommitTransform?: (target: 'image' | 'text', transform: TransformState) => void;
+  textTransforms?: Record<string, TransformState>;
+  onCommitTransform?: (
+    target: 'image' | 'text',
+    transform: TransformState,
+    elementId?: string
+  ) => void;
 }
 
 export function DesignCanvas({
   productId,
-  text,
-  color,
+  text = '',
+  color = '#111827',
   backgroundColor,
-  image,
+  image = null,
   productOptions,
   isMockup = false,
   selectedTarget = null,
+  selectedTextId = null,
+  textElements,
   onSelectTarget,
+  onSelectText,
   onDoubleTap,
+  onDoubleTapText,
+  onMeasureText,
   isLocked = false,
   onLockedFeedback,
   imageTransform = { x: 0, y: 0, scale: 1, rotation: 0 },
   textTransform = { x: 0, y: 0, scale: 1, rotation: 0 },
+  textTransforms = {},
   onCommitTransform,
 }: DesignCanvasProps) {
   const styles: React.CSSProperties & Record<string, string | number | undefined> = {
@@ -84,19 +106,24 @@ export function DesignCanvas({
 
   // Active live transform tracking (transient during drag/resize/rotate)
   const [liveImageTransform, setLiveImageTransform] = useState<TransformState>(imageTransform);
-  const [liveTextTransform, setLiveTextTransform] = useState<TransformState>(textTransform);
+  const [liveTextTransforms, setLiveTextTransforms] = useState<Record<string, TransformState>>(textTransforms);
 
   useEffect(() => {
     setLiveImageTransform(imageTransform);
   }, [imageTransform]);
 
   useEffect(() => {
-    setLiveTextTransform(textTransform);
-  }, [textTransform]);
+    setLiveTextTransforms(textTransforms);
+  }, [textTransforms]);
+
+  const getEffectiveTextTransform = useCallback((id: string): TransformState => {
+    return liveTextTransforms[id] ?? textTransform;
+  }, [liveTextTransforms, textTransform]);
 
   // Gesture state tracking
   const activeGestureRef = useRef<{
     target: 'image' | 'text';
+    elementId?: string;
     action: 'move' | 'resize' | 'rotate';
     handle?: TransformHandle;
     startX: number;
@@ -107,7 +134,7 @@ export function DesignCanvas({
     centerScreenY: number;
   } | null>(null);
 
-  const lastTapRef = useRef<Record<'image' | 'text', TapPoint | null>>({
+  const lastTapRef = useRef<Record<string, TapPoint | null>>({
     image: null,
     text: null,
   });
@@ -130,7 +157,7 @@ export function DesignCanvas({
       }
     }
 
-    const { target, action, handle, initialTransform } = gesture;
+    const { target, elementId, action, handle, initialTransform } = gesture;
 
     if (action === 'move') {
       const nextTransform = {
@@ -138,8 +165,11 @@ export function DesignCanvas({
         x: Math.round(initialTransform.x + dx),
         y: Math.round(initialTransform.y + dy),
       };
-      if (target === 'image') setLiveImageTransform(nextTransform);
-      else setLiveTextTransform(nextTransform);
+      if (target === 'image') {
+        setLiveImageTransform(nextTransform);
+      } else if (elementId) {
+        setLiveTextTransforms((prev) => ({ ...prev, [elementId]: nextTransform }));
+      }
     } else if (action === 'resize' && handle) {
       const initialBounds = {
         x: initialTransform.x,
@@ -153,8 +183,11 @@ export function DesignCanvas({
         ...initialTransform,
         scale: Math.max(0.2, Math.min(3.5, nextScale)),
       };
-      if (target === 'image') setLiveImageTransform(nextTransform);
-      else setLiveTextTransform(nextTransform);
+      if (target === 'image') {
+        setLiveImageTransform(nextTransform);
+      } else if (elementId) {
+        setLiveTextTransforms((prev) => ({ ...prev, [elementId]: nextTransform }));
+      }
     } else if (action === 'rotate') {
       const angle = computeRotationAngle(
         gesture.centerScreenX,
@@ -167,8 +200,11 @@ export function DesignCanvas({
         rotation: angle,
       };
       setIsRotating(true);
-      if (target === 'image') setLiveImageTransform(nextTransform);
-      else setLiveTextTransform(nextTransform);
+      if (target === 'image') {
+        setLiveImageTransform(nextTransform);
+      } else if (elementId) {
+        setLiveTextTransforms((prev) => ({ ...prev, [elementId]: nextTransform }));
+      }
     }
   }, []);
 
@@ -184,43 +220,59 @@ export function DesignCanvas({
     // If gesture exceeded threshold, commit single semantic history step
     if (gesture.hasExceededThreshold) {
       const finalTransform =
-        gesture.target === 'image' ? liveImageTransform : liveTextTransform;
-      onCommitTransform?.(gesture.target, finalTransform);
+        gesture.target === 'image'
+          ? liveImageTransform
+          : (gesture.elementId ? (liveTextTransforms[gesture.elementId] ?? textTransform) : textTransform);
+      onCommitTransform?.(gesture.target, finalTransform, gesture.elementId);
     } else {
       // Tap detected
       const now = Date.now();
       const currTap: TapPoint = { x: e.clientX, y: e.clientY, time: now };
-      const prevTap = lastTapRef.current[gesture.target];
+      const tapKey = gesture.elementId ?? gesture.target;
+      const prevTap = lastTapRef.current[tapKey];
 
       if (prevTap && isDoubleTap(prevTap, currTap)) {
-        lastTapRef.current[gesture.target] = null;
+        lastTapRef.current[tapKey] = null;
+        if (gesture.target === 'text' && gesture.elementId) {
+          onDoubleTapText?.(gesture.elementId);
+        }
         onDoubleTap?.(gesture.target);
       } else {
-        lastTapRef.current[gesture.target] = currTap;
+        lastTapRef.current[tapKey] = currTap;
+        if (gesture.target === 'text' && gesture.elementId) {
+          onSelectText?.(gesture.elementId);
+        }
         onSelectTarget?.(gesture.target);
       }
     }
-  }, [liveImageTransform, liveTextTransform, onCommitTransform, onDoubleTap, onSelectTarget, handlePointerMove]);
+  }, [liveImageTransform, liveTextTransforms, textTransform, onCommitTransform, onDoubleTap, onDoubleTapText, onSelectTarget, onSelectText, handlePointerMove]);
 
   const startGesture = (
     target: 'image' | 'text',
+    elementId: string | undefined,
     action: 'move' | 'resize' | 'rotate',
     handle: TransformHandle | undefined,
-    e: React.PointerEvent
+    e: React.PointerEvent,
+    itemLocked = false
   ) => {
     if (isMockup) return;
 
-    if (action === 'move' && isLocked) {
+    if (action === 'move' && (isLocked || itemLocked)) {
       onLockedFeedback?.();
+      if (target === 'text' && elementId) onSelectText?.(elementId);
       onSelectTarget?.(target);
       return;
     }
 
     const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
-    const currentTransform = target === 'image' ? liveImageTransform : liveTextTransform;
+    const currentTransform =
+      target === 'image'
+        ? liveImageTransform
+        : (elementId ? getEffectiveTextTransform(elementId) : textTransform);
 
     activeGestureRef.current = {
       target,
+      elementId,
       action,
       handle,
       startX: e.clientX,
@@ -236,16 +288,32 @@ export function DesignCanvas({
   };
 
   const isImageSelected = !isMockup && selectedTarget === 'image';
-  const isTextSelected = !isMockup && selectedTarget === 'text';
 
   const imageOpacity = typeof productOptions.imageOpacity === 'number'
     ? productOptions.imageOpacity / 100
     : 1;
 
-  const fontStyle = typeof productOptions.fontFamily === 'string'
-    ? { fontFamily: productOptions.fontFamily }
-    : undefined;
-
+  // Resolve effective text elements
+  const resolvedTextElements: CanvasElement[] = React.useMemo(() => {
+    if (textElements && textElements.length > 0) {
+      return textElements.filter((el) => {
+        if (el.type !== 'text') return false;
+        const data = getTextData(el);
+        return Boolean(data?.text && data.text.trim().length > 0);
+      });
+    }
+    if (text && text.trim().length > 0) {
+      const previewEl = createTextElement({
+        id: 'text-1',
+        preset: 'body',
+        text,
+        color,
+        fontFamily: typeof productOptions.fontFamily === 'string' ? productOptions.fontFamily : undefined,
+      });
+      return [previewEl];
+    }
+    return [];
+  }, [textElements, text, color, productOptions.fontFamily]);
   return (
     <div
       id={isMockup ? 'mockup-canvas' : 'design-canvas'}
@@ -255,6 +323,7 @@ export function DesignCanvas({
         if (isMockup) return;
         if (e.target === e.currentTarget) {
           onSelectTarget?.(null);
+          onSelectText?.(null);
         }
       }}
     >
@@ -271,7 +340,7 @@ export function DesignCanvas({
           }}
           onPointerDown={(e) => {
             e.stopPropagation();
-            startGesture('image', 'move', undefined, e);
+            startGesture('image', undefined, 'move', undefined, e);
           }}
         >
           <img
@@ -288,9 +357,9 @@ export function DesignCanvas({
               rotationAngle={liveImageTransform.rotation}
               onHandlePointerDown={(handle, e) => {
                 if (handle === 'rotate') {
-                  startGesture('image', 'rotate', 'rotate', e);
+                  startGesture('image', undefined, 'rotate', 'rotate', e);
                 } else {
-                  startGesture('image', 'resize', handle, e);
+                  startGesture('image', undefined, 'resize', handle, e);
                 }
               }}
             />
@@ -298,57 +367,143 @@ export function DesignCanvas({
         </div>
       )}
 
-      {/* Text element */}
-      {text ? (
-        <div
-          role="button"
-          tabIndex={0}
-          aria-label="Đối tượng chữ"
-          className="relative inline-block max-w-[90%] select-none touch-none"
-          style={{
-            transform: `translate3d(${liveTextTransform.x}px, ${liveTextTransform.y}px, 0) rotate(${liveTextTransform.rotation}deg) scale(${liveTextTransform.scale})`,
-            transformOrigin: 'center center',
-          }}
-          onPointerDown={(e) => {
+      {/* Render Text elements */}
+      {resolvedTextElements.map((el) => {
+        const data = getTextData(el);
+        if (!data || !data.text || !data.text.trim()) return null;
+
+        const isThisTextSelected =
+          !isMockup &&
+          (selectedTextId === el.id ||
+            (selectedTarget === 'text' && (!selectedTextId || resolvedTextElements.length === 1)));
+        const transform = getEffectiveTextTransform(el.id);
+
+        const textStyle: React.CSSProperties = {
+          color: data.color || color,
+          fontFamily: data.fontFamily || (typeof productOptions.fontFamily === 'string' ? productOptions.fontFamily : undefined),
+          fontSize: `${data.fontSize || 20}px`,
+          fontWeight: data.fontWeight === 'bold' ? 700 : data.fontWeight === 'medium' ? 500 : 400,
+          fontStyle: data.fontStyle || 'normal',
+          textAlign: data.align || 'center',
+          lineHeight: data.lineHeight || 1.4,
+          letterSpacing: `${data.letterSpacing || 0}px`,
+        };
+
+        return (
+          <TextElementItem
+            key={el.id}
+            element={el}
+            data={data}
+            textStyle={textStyle}
+            transform={transform}
+            isSelected={isThisTextSelected}
+            isLocked={isLocked || Boolean(el.locked)}
+            isRotating={isRotating}
+            onPointerDown={(e: React.PointerEvent) => {
+              e.stopPropagation();
+              startGesture('text', el.id, 'move', undefined, e, Boolean(el.locked));
+            }}
+            onHandlePointerDown={(handle: TransformHandle, e: React.PointerEvent) => {
+              if (handle === 'rotate') {
+                startGesture('text', el.id, 'rotate', 'rotate', e, Boolean(el.locked));
+              } else {
+                startGesture('text', el.id, 'resize', handle, e, Boolean(el.locked));
+              }
+            }}
+            onMeasureText={onMeasureText}
+          />
+        );
+      })}
+
+      {!image?.src && resolvedTextElements.length === 0 && (
+        <p
+          className="text-xs text-[#666A6D] font-medium select-none text-center px-4"
+          onClick={(e) => {
+            if (isMockup) return;
             e.stopPropagation();
-            startGesture('text', 'move', undefined, e);
+            onSelectTarget?.(null);
+            onSelectText?.(null);
           }}
         >
-          <p
-            className="design-text px-4 text-center font-bold tracking-tight text-lg md:text-xl break-words pointer-events-none"
-            style={{ color, ...fontStyle }}
-          >
-            {text}
-          </p>
+          Thêm ảnh, chữ hoặc sticker để bắt đầu
+        </p>
+      )}
+    </div>
+  );
+}
 
-          {isTextSelected && (
-            <SelectionOverlay
-              isLocked={isLocked}
-              isRotating={isRotating}
-              rotationAngle={liveTextTransform.rotation}
-              onHandlePointerDown={(handle, e) => {
-                if (handle === 'rotate') {
-                  startGesture('text', 'rotate', 'rotate', e);
-                } else {
-                  startGesture('text', 'resize', handle, e);
-                }
-              }}
-            />
-          )}
-        </div>
-      ) : (
-        !image?.src && (
-          <p
-            className="text-xs text-[#666A6D] font-medium select-none text-center px-4"
-            onClick={(e) => {
-              if (isMockup) return;
-              e.stopPropagation();
-              onSelectTarget?.(null);
-            }}
-          >
-            Thêm ảnh, chữ hoặc sticker để bắt đầu
-          </p>
-        )
+interface TextElementItemProps {
+  element: CanvasElement;
+  data: TextElementData;
+  textStyle: React.CSSProperties;
+  transform: TransformState;
+  isSelected: boolean;
+  isLocked: boolean;
+  isRotating: boolean;
+  onPointerDown: (e: React.PointerEvent) => void;
+  onHandlePointerDown: (handle: TransformHandle, e: React.PointerEvent) => void;
+  onMeasureText?: (id: string, height: number) => void;
+}
+
+function TextElementItem({
+  element,
+  data,
+  textStyle,
+  transform,
+  isSelected,
+  isLocked,
+  isRotating,
+  onPointerDown,
+  onHandlePointerDown,
+  onMeasureText,
+}: TextElementItemProps) {
+  const nodeRef = useRef<HTMLDivElement>(null);
+  const lastHeightRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    if (!nodeRef.current || !onMeasureText) return;
+    const observer = new ResizeObserver((entries) => {
+      for (const entry of entries) {
+        const measured = Math.round(entry.contentRect.height);
+        if (measured > 0 && measured !== lastHeightRef.current) {
+          lastHeightRef.current = measured;
+          onMeasureText(element.id, measured);
+        }
+      }
+    });
+    observer.observe(nodeRef.current);
+    return () => observer.disconnect();
+  }, [element.id, onMeasureText]);
+
+  return (
+    <div
+      ref={nodeRef}
+      role="button"
+      tabIndex={0}
+      data-element-id={element.id}
+      aria-label={`Đối tượng chữ: ${data.text}`}
+      className="relative select-none touch-none inline-block max-w-[85%]"
+      style={{
+        width: `${element.width || 70}%`,
+        transform: `translate3d(${transform.x}px, ${transform.y}px, 0) rotate(${transform.rotation}deg) scale(${transform.scale})`,
+        transformOrigin: 'center center',
+      }}
+      onPointerDown={onPointerDown}
+    >
+      <p
+        className="design-text px-3 break-words pointer-events-none whitespace-pre-wrap"
+        style={textStyle}
+      >
+        {data.text}
+      </p>
+
+      {isSelected && (
+        <SelectionOverlay
+          isLocked={isLocked}
+          isRotating={isRotating}
+          rotationAngle={transform.rotation}
+          onHandlePointerDown={onHandlePointerDown}
+        />
       )}
     </div>
   );

@@ -306,9 +306,9 @@ test('creates heading and body as the same text element with different defaults'
   const bodyElement = body.elements?.[0];
   assert.equal(headingElement?.type, 'text');
   assert.equal(bodyElement?.type, 'text');
-  assert.equal((headingElement?.data as TextElementData).text, 'Nhập tiêu đề');
-  assert.equal((bodyElement?.data as TextElementData).text, 'Nhập nội dung');
-  assert.notEqual((headingElement?.data as TextElementData).fontSize, (bodyElement?.data as TextElementData).fontSize);
+  assert.equal(getTextData(headingElement!)?.text, 'Nhập tiêu đề');
+  assert.equal(getTextData(bodyElement!)?.text, 'Nhập nội dung');
+  assert.notEqual(getTextData(headingElement!)?.fontSize, getTextData(bodyElement!)?.fontSize);
 });
 
 test('commits text content while preserving element geometry and style', () => {
@@ -319,7 +319,7 @@ test('commits text content while preserving element geometry and style', () => {
     text: 'Chúc mừng sinh nhật mẹ',
   });
   const element = next.elements?.[0];
-  assert.equal((element?.data as TextElementData).text, 'Chúc mừng sinh nhật mẹ');
+  assert.equal(getTextData(element!)?.text, 'Chúc mừng sinh nhật mẹ');
   assert.equal(element?.width, 70);
   assert.equal(element?.x, 50);
 });
@@ -334,8 +334,8 @@ test('migrates legacy top-level text into one text element', () => {
   const legacy = { ...createInitialState('card'), text: 'Tên của bạn', color: '#315F86' };
   const migrated = migrateLegacyText(legacy);
   const element = migrated.elements?.find((candidate) => candidate.type === 'text');
-  assert.equal((element?.data as TextElementData).text, 'Tên của bạn');
-  assert.equal((element?.data as TextElementData).color, '#315F86');
+  assert.equal(getTextData(element!)?.text, 'Tên của bạn');
+  assert.equal(getTextData(element!)?.color, '#315F86');
 });
 
 test('text style update changes only selected text style', () => {
@@ -345,9 +345,9 @@ test('text style update changes only selected text style', () => {
     id: 'text-2',
     patch: { fontSize: 28, align: 'right' },
   });
-  assert.equal((next.elements?.[1].data as TextElementData).fontSize, 28);
-  assert.equal((next.elements?.[1].data as TextElementData).align, 'right');
-  assert.equal((next.elements?.[0].data as TextElementData).fontSize, 20);
+  assert.equal(getTextData(next.elements?.[1]!)?.fontSize, 28);
+  assert.equal(getTextData(next.elements?.[1]!)?.align, 'right');
+  assert.equal(getTextData(next.elements?.[0]!)?.fontSize, 20);
 });
 
 test('text layer names use content and truncate long content', () => {
