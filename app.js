@@ -18,7 +18,8 @@ const toast = document.getElementById('toast');
 let state = restoreState();
 let view = 'editor';
 let pendingOrder = restoreOrder();
-let uploadUrl = state.image?.src?.startsWith('blob:') ? state.image.src : null;
+let uploadUrl = typeof state.image?.src === 'string' && state.image.src.startsWith('blob:') ? state.image.src : null;
+let uploadSequence = 0;
 let past = [];
 let future = [];
 let toastTimer;
@@ -231,6 +232,7 @@ function openSheet(title, content) {
 
 function readUpload(file) {
   if (!file) return;
+  const sequence = ++uploadSequence;
   const allowed = ['image/png', 'image/jpeg', 'image/webp'];
   if (!allowed.includes(file.type)) {
     showToast('Ảnh không hỗ trợ. Hãy chọn PNG, JPG hoặc WebP.');
@@ -241,23 +243,41 @@ function readUpload(file) {
     return;
   }
   const reader = new FileReader();
-  reader.onerror = () => showToast('Không đọc được ảnh. Hãy thử lại.');
+  reader.onerror = () => {
+    if (sequence === uploadSequence) showToast('Không đọc được ảnh. Hãy thử lại.');
+  };
   reader.onload = () => {
+    if (sequence !== uploadSequence) return;
     const dataUrl = String(reader.result || '');
+    let candidateUrl = null;
     let src = dataUrl;
     try {
       if (globalThis.URL?.createObjectURL) {
-        if (uploadUrl && globalThis.URL.revokeObjectURL) globalThis.URL.revokeObjectURL(uploadUrl);
-        uploadUrl = URL.createObjectURL(file);
-        src = uploadUrl;
+        candidateUrl = URL.createObjectURL(file);
+        src = candidateUrl;
       }
     } catch {
-      uploadUrl = null;
+      candidateUrl = null;
     }
+    const revokeCandidate = () => {
+      if (candidateUrl && globalThis.URL?.revokeObjectURL) URL.revokeObjectURL(candidateUrl);
+    };
     const image = new Image();
-    image.onload = () => update({ type: 'SET_IMAGE', value: { name: file.name, type: file.type, size: file.size, src, width: image.naturalWidth || image.width || 0, height: image.naturalHeight || image.height || 0 } });
-    image.onerror = () => showToast('Không mở được ảnh. Hãy chọn tệp khác.');
-    image.src = dataUrl;
+    image.onload = () => {
+      if (sequence !== uploadSequence) {
+        revokeCandidate();
+        return;
+      }
+      const previousUrl = uploadUrl;
+      update({ type: 'SET_IMAGE', value: { name: file.name, type: file.type, size: file.size, src, width: image.naturalWidth || image.width || 0, height: image.naturalHeight || image.height || 0 } });
+      uploadUrl = candidateUrl;
+      if (previousUrl && globalThis.URL?.revokeObjectURL) URL.revokeObjectURL(previousUrl);
+    };
+    image.onerror = () => {
+      revokeCandidate();
+      if (sequence === uploadSequence) showToast('Không mở được ảnh. Hãy chọn tệp khác.');
+    };
+    image.src = src;
   };
   reader.readAsDataURL(file);
 }
@@ -284,10 +304,15 @@ function closestAction(event) {
   return target?.closest ? target.closest('[data-action]') : (target?.dataset?.action ? target : null);
 }
 
+function handlesInputEvent(control) {
+  return ['set-text', 'set-color', 'set-background-color', 'set-quantity'].includes(control.dataset.action)
+    || control.type === 'range';
+}
+
 function handleInput(event) {
   const control = closestAction(event);
-  const action = control && actionFromControl(control);
-  if (action && ['set-text', 'set-color', 'set-background-color', 'set-quantity', 'set-product-option'].includes(control.dataset.action)) update(action);
+  const action = control && handlesInputEvent(control) && actionFromControl(control);
+  if (action) update(action);
 }
 
 function handleChange(event) {
@@ -298,6 +323,7 @@ function handleChange(event) {
     control.value = '';
     return;
   }
+  if (handlesInputEvent(control)) return;
   const action = actionFromControl(control);
   if (action) update(action);
 }
@@ -315,15 +341,19 @@ function handleClick(event) {
     document.getElementById('background-color')?.click();
   } else if (action === 'open-preview') setView('preview');
   else if (action === 'close-preview' || action === 'back-to-editor') setView('editor');
-  else if (action === 'open-checkout') setView('checkout');
+  else if (action === 'open-checkout') setView(view === 'preview' && previewView?.contains(control) ? 'checkout' : 'preview');
   else if (action === 'increase-quantity') update({ type: 'SET_QUANTITY', value: Math.min(999, state.quantity + 1) });
   else if (action === 'decrease-quantity') update({ type: 'SET_QUANTITY', value: Math.max(1, state.quantity - 1) });
   else if (action === 'reset-design') {
+    uploadSequence += 1;
     if (uploadUrl && globalThis.URL?.revokeObjectURL) globalThis.URL.revokeObjectURL(uploadUrl);
     uploadUrl = null;
     update({ type: 'SET_TEXT', value: '' });
     update({ type: 'SET_IMAGE', value: null });
   } else if (action === 'start-over') {
+    uploadSequence += 1;
+    if (uploadUrl && globalThis.URL?.revokeObjectURL) globalThis.URL.revokeObjectURL(uploadUrl);
+    uploadUrl = null;
     state = createInitialState();
     pendingOrder = null;
     past = [];
