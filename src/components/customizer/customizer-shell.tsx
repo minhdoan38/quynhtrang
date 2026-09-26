@@ -53,18 +53,18 @@ import { BottomNavigation, type SelectedTarget } from './bottom-navigation';
 import { EditorSheets, type ActiveSheetType } from './editor-sheets';
 import type { ImageSourceType, TextStylePreset, ShapePrimitiveType } from '@/lib/add-content';
 import { resolveEditorBackAction, type SaveStatus } from '@/lib/navigation';
+import {
+  startTextEdit,
+  updateComposition,
+  type ActiveTextEditState,
+} from '@/lib/text-edit-session';
+import { TextEditOverlay } from './text-edit-overlay';
 import { useRouter } from 'next/navigation';
-
 type View = 'launcher' | 'setup' | 'editor' | 'template-browser';
 type EditorOverlayMode = 'preview' | 'preflight' | null;
 type FocusMode = 'text-edit' | 'crop' | null;
 
-export type TextEditState = {
-  elementId: string;
-  draft: string;
-  isComposing: boolean;
-  selectAll: boolean;
-} | null;
+export type TextEditState = ActiveTextEditState | null;
 export function CustomizerShell() {
   const router = useRouter();
   const containerRef = useRef<HTMLDivElement>(null);
@@ -86,9 +86,10 @@ export function CustomizerShell() {
   const [selectedElementId, setSelectedElementId] = useState<string | null>(null);
   const [selectedTextId, setSelectedTextId] = useState<string | null>(null);
   const [textEditState, setTextEditState] = useState<TextEditState>(null);
+  const pendingExitOnCompositionEndRef = useRef(false);
+  const preEditViewportRef = useRef<ViewportState | null>(null);
   const [activeSheet, setActiveSheet] = useState<ActiveSheetType>(null);
   const [focusMode, setFocusMode] = useState<FocusMode>(null);
-  const [tempText, setTempText] = useState('');
   // Overlay Mode: Preview and Preflight full-screen within Editor
   // Autosave and unsaved warning states
   const [saveStatus, setSaveStatus] = useState<SaveStatus>('saved');
@@ -264,23 +265,61 @@ export function CustomizerShell() {
     const element = elements.find((el) => el.id === elementId && el.type === 'text');
     const data = element ? getTextData(element) : null;
     if (!element || !data || element.locked) return;
+    preEditViewportRef.current = viewport;
     setSelectedTarget('text');
     setSelectedElementId(elementId);
     setSelectedTextId(elementId);
     setActiveSheet(null);
-    setTextEditState({ elementId, draft: data.text, isComposing: false, selectAll });
-  }, [state]);
+    setTextEditState(startTextEdit(elementId, data.text, selectAll));
+  }, [state, viewport]);
 
   const commitTextEdit = useCallback((edit: Exclude<TextEditState, null>): void => {
     dispatch({ type: 'COMMIT_TEXT_EDIT', id: edit.elementId, text: edit.draft });
   }, [dispatch]);
 
   const exitTextEdit = useCallback((): void => {
-    if (!textEditState || textEditState.isComposing) return;
+    if (!textEditState) return;
+    if (textEditState.isComposing) {
+      pendingExitOnCompositionEndRef.current = true;
+      return;
+    }
+    pendingExitOnCompositionEndRef.current = false;
+    const trimmed = textEditState.draft.trim();
     commitTextEdit(textEditState);
     setTextEditState(null);
+    if (!trimmed) {
+      setSelectedTarget(null);
+      setSelectedElementId(null);
+      setSelectedTextId(null);
+    }
+    if (preEditViewportRef.current) {
+      setViewport(preEditViewportRef.current);
+      preEditViewportRef.current = null;
+    }
   }, [textEditState, commitTextEdit]);
 
+  // Keyboard-safe visualViewport adjustment during text editing
+  useEffect(() => {
+    if (!textEditState || typeof window === 'undefined' || !window.visualViewport) return;
+    const vv = window.visualViewport;
+    const handleViewportChange = () => {
+      const heightDiff = window.innerHeight - vv.height;
+      if (heightDiff > 100) {
+        setViewport((prev) => ({
+          ...prev,
+          panY: Math.min(prev.panY, -Math.round(heightDiff * 0.3)),
+        }));
+      } else if (preEditViewportRef.current) {
+        setViewport(preEditViewportRef.current);
+      }
+    };
+    vv.addEventListener('resize', handleViewportChange);
+    vv.addEventListener('scroll', handleViewportChange);
+    return () => {
+      vv.removeEventListener('resize', handleViewportChange);
+      vv.removeEventListener('scroll', handleViewportChange);
+    };
+  }, [textEditState]);
   const handleSelectTextElement = useCallback((id: string | null) => {
     if (id) {
       setSelectedTarget('text');
@@ -335,7 +374,6 @@ export function CustomizerShell() {
         exitTextEdit();
         break;
       case 'EXIT_FOCUS_MODE':
-        setTempText('');
         setFocusMode(null);
         break;
       case 'DESELECT_TARGET':
@@ -736,10 +774,16 @@ export function CustomizerShell() {
       case 'opacity':
         setActiveSheet('opacity');
         break;
-      case 'edit-text':
-        setTempText(state.text || 'Chúc mừng sinh nhật');
-        setFocusMode('text-edit');
+      case 'edit-text': {
+        const elements = state.elements ?? getDefaultElements(state);
+        const targetId = selectedTextId || elements.find((e) => e.type === 'text')?.id;
+        if (targetId) {
+          const el = elements.find((e) => e.id === targetId);
+          const data = el ? getTextData(el) : null;
+          beginTextEdit(targetId, Boolean(data?.placeholder));
+        }
         break;
+      }
       case 'font':
         fontSessionBaseStateRef.current = state;
         setActiveSheet('font');
@@ -878,50 +922,24 @@ export function CustomizerShell() {
       )}
 
       {/* FOCUS MODE: Text Editing */}
-      {focusMode === 'text-edit' && (
-        <div className="fixed inset-0 z-50 bg-[#FFFDF8] flex flex-col">
-          <header className="h-[52px] px-3 border-b border-[#ECE6DC] bg-[#FFFDF8] flex items-center justify-between">
-            <button
-              type="button"
-              onClick={() => setFocusMode(null)}
-              className="text-xs font-semibold text-[#666A6D] px-2 py-1 rounded-md hover:bg-[#F8F3E8]"
-            >
-              Hủy
-            </button>
-            <span className="text-xs font-semibold text-[#2E3338]">Sửa nội dung chữ</span>
-            <button
-              type="button"
-              onClick={() => {
-                dispatch({ type: 'SET_TEXT', value: tempText });
-                setFocusMode(null);
-                showToast('Đã cập nhật dòng chữ.');
-              }}
-              className="text-xs font-semibold text-white bg-[#315F86] px-3 py-1.5 rounded-lg hover:bg-[#244A69]"
-            >
-              Xong
-            </button>
-          </header>
-          <div className="flex-1 p-4 max-w-md mx-auto w-full flex flex-col justify-start gap-4 pt-6">
-            <div className="space-y-1.5">
-              <label htmlFor="focus-text-input" className="text-xs font-medium text-[#666A6D]">
-                Nhập nội dung hiển thị trên ấn phẩm:
-              </label>
-              <textarea
-                id="focus-text-input"
-                autoFocus
-                value={tempText}
-                onChange={(e) => setTempText(e.target.value)}
-                maxLength={160}
-                rows={3}
-                placeholder="Ví dụ: Chúc mừng sinh nhật..."
-                className="w-full p-3 rounded-xl border border-[#ECE6DC] bg-white text-[#2E3338] text-sm focus:outline-none focus:ring-2 focus:ring-[#315F86] resize-none"
-              />
-              <span className="text-xs text-[#666A6D] block text-right font-medium">
-                {tempText.length}/160 ký tự
-              </span>
-            </div>
-          </div>
-        </div>
+      {/* FOCUSED MODE: Text Editing Overlay */}
+      {textEditState && (
+        <TextEditOverlay
+          value={textEditState.draft}
+          placeholder="Nhập nội dung chữ..."
+          selectAllOnFocus={textEditState.selectAll}
+          onChange={(newDraft) => {
+            setTextEditState((prev) => (prev ? { ...prev, draft: newDraft } : null));
+          }}
+          onCompositionChange={(isComposing) => {
+            setTextEditState((prev) => (prev ? updateComposition(prev, isComposing) : null));
+            if (!isComposing && pendingExitOnCompositionEndRef.current) {
+              pendingExitOnCompositionEndRef.current = false;
+              exitTextEdit();
+            }
+          }}
+          onDone={exitTextEdit}
+        />
       )}
 
       {/* FOCUS MODE: Crop */}
