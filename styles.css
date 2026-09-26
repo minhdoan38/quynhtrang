@@ -811,7 +811,7 @@ input[type="range"] {
   width: min(78%, 290px);
   aspect-ratio: 1;
   overflow: visible;
-  border: 8px solid #fff;
+  border: var(--sticker-border-width, 8px) solid #fff;
   border-radius: 42% 58% 51% 49% / 55% 43% 57% 45%;
   box-shadow: 0 0 0 2px rgb(72 57 42 / 42%), 0 16px 26px rgb(57 43 28 / 20%);
 }
@@ -969,7 +969,7 @@ input[type="range"] {
 .mockup--sticker {
   width: min(62vw, 270px);
   aspect-ratio: 1;
-  border: clamp(7px, 2vw, 14px) solid #fff;
+  border: var(--sticker-border-width, clamp(7px, 2vw, 14px)) solid #fff;
   border-radius: 42% 58% 51% 49% / 55% 43% 57% 45%;
   box-shadow: 0 0 0 2px rgb(72 57 42 / 40%), 0 18px 30px rgb(57 43 28 / 24%);
 }

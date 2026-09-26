@@ -22,13 +22,13 @@ const objectUrls = new Set();
 if (typeof state.image?.src === 'string' && state.image.src.startsWith('blob:')) {
   objectUrls.add(state.image.src);
 }
+let inFlightUploadUrl = null;
 let uploadSequence = 0;
 let past = [];
 let future = [];
 let toastTimer;
 let lastRenderedProductId = null;
 let lastFocusedElementBeforeSheet = null;
-
 function restoreState() {
   try {
     const raw = sessionStorage.getItem(STATE_KEY);
@@ -51,6 +51,9 @@ function restoreState() {
 
 function collectReferencedUrls() {
   const referenced = new Set();
+  if (inFlightUploadUrl) {
+    referenced.add(inFlightUploadUrl);
+  }
   const checkSrc = (item) => {
     const src = item?.image?.src;
     if (typeof src === 'string' && src.startsWith('blob:')) {
@@ -76,10 +79,6 @@ function pruneObjectUrls() {
       } catch {}
       objectUrls.delete(url);
     }
-  }
-}
-  } catch {
-    return createInitialState();
   }
 }
 
@@ -239,8 +238,9 @@ function computeVisualStyles() {
     if (opts.mode === 'repeat') classes.push('is-mode-repeat');
   } else if (state.productId === 'card') {
     if (opts.surface === 'inside') classes.push('is-surface-inside');
+    if (opts.fold === 'flat') classes.push('is-fold-flat');
   } else if (state.productId === 'sticker') {
-    const border = opts.hasWhiteBorder ? (Number(opts.borderWidth) || 4) : 0;
+    const border = opts.hasWhiteBorder ? (Number.isFinite(Number(opts.borderWidth)) ? Math.max(0, Number(opts.borderWidth)) : 4) : 0;
     styles.push(`--sticker-border-width: ${border}px`);
   } else if (state.productId === 'notebook') {
     if (opts.finish === 'glossy') classes.push('is-finish-glossy');
@@ -366,14 +366,17 @@ function readUpload(file) {
     try {
       if (globalThis.URL?.createObjectURL) {
         candidateUrl = URL.createObjectURL(file);
+        inFlightUploadUrl = candidateUrl;
         objectUrls.add(candidateUrl);
         src = candidateUrl;
       }
     } catch {
       candidateUrl = null;
+      inFlightUploadUrl = null;
     }
     const revokeCandidate = () => {
       if (candidateUrl) {
+        if (inFlightUploadUrl === candidateUrl) inFlightUploadUrl = null;
         objectUrls.delete(candidateUrl);
         if (globalThis.URL?.revokeObjectURL) URL.revokeObjectURL(candidateUrl);
       }
@@ -384,6 +387,7 @@ function readUpload(file) {
         revokeCandidate();
         return;
       }
+      if (inFlightUploadUrl === candidateUrl) inFlightUploadUrl = null;
       update({ type: 'SET_IMAGE', value: { name: file.name, type: file.type, size: file.size, src, width: image.naturalWidth || image.naturalHeight || 0, height: image.naturalHeight || image.height || 0 } });
       pruneObjectUrls();
     };
