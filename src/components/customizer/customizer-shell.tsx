@@ -18,6 +18,8 @@ import {
   getPreflight,
   TEMPLATES,
   PRODUCTS,
+  migrateLegacyText,
+  getTextData,
   type DesignState,
   type DesignAction,
   type ProductId,
@@ -57,6 +59,12 @@ type View = 'launcher' | 'setup' | 'editor' | 'template-browser';
 type EditorOverlayMode = 'preview' | 'preflight' | null;
 type FocusMode = 'text-edit' | 'crop' | null;
 
+export type TextEditState = {
+  elementId: string;
+  draft: string;
+  isComposing: boolean;
+  selectAll: boolean;
+} | null;
 export function CustomizerShell() {
   const router = useRouter();
   const containerRef = useRef<HTMLDivElement>(null);
@@ -76,10 +84,11 @@ export function CustomizerShell() {
   // Redesigned Shell State Model
   const [selectedTarget, setSelectedTarget] = useState<SelectedTarget>(null);
   const [selectedElementId, setSelectedElementId] = useState<string | null>(null);
+  const [selectedTextId, setSelectedTextId] = useState<string | null>(null);
+  const [textEditState, setTextEditState] = useState<TextEditState>(null);
   const [activeSheet, setActiveSheet] = useState<ActiveSheetType>(null);
   const [focusMode, setFocusMode] = useState<FocusMode>(null);
   const [tempText, setTempText] = useState('');
-
   // Overlay Mode: Preview and Preflight full-screen within Editor
   // Autosave and unsaved warning states
   const [saveStatus, setSaveStatus] = useState<SaveStatus>('saved');
@@ -163,12 +172,13 @@ export function CustomizerShell() {
     const saved = loadState();
     if (saved && saved.productId) {
       const base = createInitialState(saved.productId);
-      setState({
+      const merged = {
         ...base,
         ...saved,
         productId: saved.productId,
         productOptions: { ...base.productOptions, ...(saved.productOptions || {}) },
-      } as DesignState);
+      } as DesignState;
+      setState(migrateLegacyText(merged));
     }
     setRecentProjects(getRecentProjects());
     const requestedView = params.get('view') as View | null;
@@ -201,6 +211,9 @@ export function CustomizerShell() {
     setPast([]);
     setFuture([]);
     setSelectedTarget(null);
+    setSelectedElementId(null);
+    setSelectedTextId(null);
+    setTextEditState(null);
     setActiveSheet(null);
     setFocusMode(null);
     setOverlayMode(null);
@@ -210,15 +223,19 @@ export function CustomizerShell() {
 
   const handleResumeProject = useCallback((project: RecentProject) => {
     const base = createInitialState(project.productId);
-    setState({
+    const merged: DesignState = {
       ...base,
       ...project,
       quantity: 1,
       productOptions: { ...base.productOptions, ...project.productOptions },
-    });
+    };
+    setState(migrateLegacyText(merged));
     setPast([]);
     setFuture([]);
     setSelectedTarget(null);
+    setSelectedElementId(null);
+    setSelectedTextId(null);
+    setTextEditState(null);
     setActiveSheet(null);
     setFocusMode(null);
     setViewport(resetToFit());
@@ -230,11 +247,51 @@ export function CustomizerShell() {
     setRecentProjects(getRecentProjects());
     setOverlayMode(null);
     setSelectedTarget(null);
+    setSelectedElementId(null);
+    setSelectedTextId(null);
+    setTextEditState(null);
     setActiveSheet(null);
     setFocusMode(null);
     setView('launcher');
   }, [state]);
+  const getSelectedTextElement = useCallback((current: DesignState, id: string | null): CanvasElement | null => {
+    if (!id) return null;
+    return (current.elements ?? []).find((element) => element.id === id && element.type === 'text') ?? null;
+  }, []);
 
+  const beginTextEdit = useCallback((elementId: string, selectAll: boolean): void => {
+    const elements = state.elements ?? getDefaultElements(state);
+    const element = elements.find((el) => el.id === elementId && el.type === 'text');
+    const data = element ? getTextData(element) : null;
+    if (!element || !data || element.locked) return;
+    setSelectedTarget('text');
+    setSelectedElementId(elementId);
+    setSelectedTextId(elementId);
+    setActiveSheet(null);
+    setTextEditState({ elementId, draft: data.text, isComposing: false, selectAll });
+  }, [state]);
+
+  const commitTextEdit = useCallback((edit: Exclude<TextEditState, null>): void => {
+    dispatch({ type: 'COMMIT_TEXT_EDIT', id: edit.elementId, text: edit.draft });
+  }, [dispatch]);
+
+  const exitTextEdit = useCallback((): void => {
+    if (!textEditState || textEditState.isComposing) return;
+    commitTextEdit(textEditState);
+    setTextEditState(null);
+  }, [textEditState, commitTextEdit]);
+
+  const handleSelectTextElement = useCallback((id: string | null) => {
+    if (id) {
+      setSelectedTarget('text');
+      setSelectedElementId(id);
+      setSelectedTextId(id);
+    } else {
+      setSelectedElementId(null);
+      setSelectedTextId(null);
+      setSelectedTarget(null);
+    }
+  }, []);
   // Strict local-first Back navigation hierarchy:
   // Strict unified Back navigation resolver across Editor transient states
   const handleUnifiedBack = useCallback(() => {
@@ -256,6 +313,7 @@ export function CustomizerShell() {
       isPreviewOpen: overlayMode === 'preview',
       isPreflightOpen: overlayMode === 'preflight',
       activeSheet,
+      isTextEditing: Boolean(textEditState),
       focusMode,
       selectedTarget,
       saveStatus,
@@ -273,12 +331,17 @@ export function CustomizerShell() {
       case 'CLOSE_SHEET':
         handleCloseSheet();
         break;
+      case 'EXIT_TEXT_EDIT':
+        exitTextEdit();
+        break;
       case 'EXIT_FOCUS_MODE':
         setTempText('');
         setFocusMode(null);
         break;
       case 'DESELECT_TARGET':
         setSelectedTarget(null);
+        setSelectedElementId(null);
+        setSelectedTextId(null);
         break;
       case 'PROMPT_UNSAVED':
         setHasUnsavedWarning(true);
@@ -297,22 +360,29 @@ export function CustomizerShell() {
     hasUnsavedWarning,
     overlayMode,
     activeSheet,
+    textEditState,
+    exitTextEdit,
     focusMode,
     selectedTarget,
     saveStatus,
     viewport.isFit,
+    handleCloseSheet,
     handleBackToLauncher,
   ]);
 
   // Intercept browser Back (popstate) to match in-app Back hierarchy
   const isTransient = Boolean(
     activeSheet !== null ||
+    textEditState !== null ||
     focusMode !== null ||
     overlayMode !== null ||
     selectedTarget !== null ||
     !viewport.isFit ||
     hasUnsavedWarning
   );
+
+  // Intercept browser Back (popstate) to match in-app Back hierarchy
+
 
   useEffect(() => {
     if (view !== 'editor') return;
@@ -719,7 +789,10 @@ export function CustomizerShell() {
   const productName = PRODUCTS[state.productId]?.name || 'Thiết kế in ấn';
   const designTitle = state.text ? state.text : (templateName || productName);
 
-  const isCurrentTargetLocked = Boolean(state.productOptions.isLocked);
+  const selectedElement = (state.elements ?? getDefaultElements(state)).find(
+    (el) => el.id === (selectedTextId || selectedElementId)
+  );
+  const isCurrentTargetLocked = Boolean(selectedElement?.locked ?? state.productOptions.isLocked);
   const currentImageOpacity = typeof state.productOptions.imageOpacity === 'number'
     ? state.productOptions.imageOpacity
     : 100;
@@ -988,27 +1061,36 @@ export function CustomizerShell() {
             image={state.image}
             productOptions={state.productOptions}
             selectedTarget={selectedTarget}
+            selectedTextId={selectedTextId}
+            textElements={state.elements ?? getDefaultElements(state)}
             onSelectTarget={(target) => {
               setSelectedTarget(target);
               if (target === 'image') {
                 const elements = state.elements ?? getDefaultElements(state);
                 const imgEl = elements.find((e) => e.type === 'image');
                 setSelectedElementId(imgEl?.id || 'image-1');
+                setSelectedTextId(null);
               } else if (target === 'text') {
                 const elements = state.elements ?? getDefaultElements(state);
                 const txtEl = elements.find((e) => e.type === 'text');
                 setSelectedElementId(txtEl?.id || 'text-1');
+                setSelectedTextId(txtEl?.id || 'text-1');
               } else {
                 setSelectedElementId(null);
+                setSelectedTextId(null);
               }
             }}
+            onSelectText={handleSelectTextElement}
             onDoubleTap={(target) => {
-              if (target === 'text') {
-                setTempText(state.text || 'Chúc mừng sinh nhật');
-                setFocusMode('text-edit');
-              } else if (target === 'image') {
+              if (target === 'image') {
                 setFocusMode('crop');
               }
+            }}
+            onDoubleTapText={(id) => {
+              const elements = state.elements ?? getDefaultElements(state);
+              const el = elements.find((e) => e.id === id);
+              const data = el ? getTextData(el) : null;
+              beginTextEdit(id, Boolean(data?.placeholder));
             }}
             isLocked={isCurrentTargetLocked}
             onLockedFeedback={() => {
@@ -1016,7 +1098,20 @@ export function CustomizerShell() {
             }}
             imageTransform={imageTransform}
             textTransform={textTransform}
-            onCommitTransform={handleCommitTransform}
+            onCommitTransform={(target, transform, elementId) => {
+              if (target === 'text' && elementId) {
+                dispatch({
+                  type: 'UPDATE_ELEMENT',
+                  id: elementId,
+                  patch: {
+                    x: transform.x,
+                    y: transform.y,
+                    rotation: transform.rotation,
+                  },
+                });
+              }
+              handleCommitTransform(target, transform);
+            }}
           />
 
           {/* Empty Canvas State: only on blank project with no content */}

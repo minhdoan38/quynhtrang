@@ -174,3 +174,18 @@ test('Product Setup Back returns to launcher', () => {
     type: 'RETURN_TO_LAUNCHER',
   });
 });
+
+test('back exits text editing before deselecting or leaving editor', () => {
+  const action = resolveEditorBackAction({
+    hasUnsavedWarning: false,
+    isPreviewOpen: false,
+    isPreflightOpen: false,
+    activeSheet: null,
+    focusMode: null,
+    isTextEditing: true,
+    selectedTarget: 'text',
+    saveStatus: 'saved',
+    returnView: 'setup',
+  });
+  assert.deepEqual(action, { type: 'EXIT_TEXT_EDIT', commitChanges: true });
+});
