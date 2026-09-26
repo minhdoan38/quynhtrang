@@ -560,9 +560,11 @@ export function CustomizerShell() {
       setSelectedElementId(newId);
       setSelectedTextId(newId);
       setActiveSheet(null);
-      beginTextEdit(newId, true);
+      preEditViewportRef.current = viewport;
+      const initialText = textPreset === 'heading' ? 'Nhập tiêu đề' : 'Nhập nội dung';
+      setTextEditState(startTextEdit(newId, initialText, true));
     },
-    [dispatch, beginTextEdit]
+    [dispatch, viewport]
   );
 
   const handleInsertShape = (shapeType: ShapePrimitiveType) => {

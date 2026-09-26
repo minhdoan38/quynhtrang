@@ -55,7 +55,7 @@
   - `UPDATE_TEXT_STYLE`
   - existing element actions continue to handle move/resize/rotate/lock/delete/duplicate.
 
-- [ ] **Step 1: Write failing domain tests**
+- [x] **Step 1: Write failing domain tests**
 
 Add tests to `src/test/product-state.test.ts` covering:
 
@@ -149,7 +149,7 @@ function stateWithTwoTextElements(): DesignState {
 
 Use these helpers only to create meaningful domain fixtures; do not test implementation details such as object cloning alone.
 
-- [ ] **Step 2: Run focused tests and verify failure**
+- [x] **Step 2: Run focused tests and verify failure**
 
 Run:
 
@@ -159,7 +159,7 @@ node --test --experimental-strip-types src/test/product-state.test.ts
 
 Expected: FAIL because text payload/actions/helpers are not implemented.
 
-- [ ] **Step 3: Add typed text payload and factories**
+- [x] **Step 3: Add typed text payload and factories**
 
 In `src/lib/product-state.ts`, add:
 
@@ -195,7 +195,7 @@ export interface CreateTextElementParams {
 
 Use one reliable Vietnamese-compatible default font, the existing `Be Vietnam Pro` family. Set heading/body defaults explicitly. Create the element at `x=50`, `y=50`, `width=70`, with a bounded width and initial height suitable for one or two lines. Derive layer labels through `getTextLayerName`; do not store a second heading/paragraph type.
 
-- [ ] **Step 4: Add reducer actions and compatibility synchronization**
+- [x] **Step 4: Add reducer actions and compatibility synchronization**
 
 Extend `DesignAction` with the actions listed in Interfaces. Implement:
 
@@ -209,11 +209,11 @@ Extend `DesignAction` with the actions listed in Interfaces. Implement:
 
 Implement `getDefaultElements` so legacy top-level text becomes a text element through the same factory, and implement `migrateLegacyText` as an idempotent hydration helper.
 
-- [ ] **Step 5: Update storage hydration boundary**
+- [x] **Step 5: Update storage hydration boundary**
 
 In `src/lib/storage.ts`, extend `RecentProject` with `elements?: CanvasElement[]`, persist `state.elements`, and leave missing `elements` valid for old JSON. `loadState` continues parsing stored data; `CustomizerShell` calls `migrateLegacyText` after load and recent-project resume. Do not write migration synchronously on every keystroke.
 
-- [ ] **Step 6: Run focused tests and verify pass**
+- [x] **Step 6: Run focused tests and verify pass**
 
 Run:
 
@@ -237,7 +237,7 @@ Expected: all existing tests plus new text tests pass.
 - `DesignCanvas` consumes `textElements: CanvasElement[]`, `selectedTextId: string | null`, `onSelectText(id)`, and `onDoubleTapText(id)` while preserving image behavior.
 - Produces text element selection and transform callbacks in existing shell-compatible form.
 
-- [ ] **Step 1: Write failing interaction tests**
+- [x] **Step 1: Write failing interaction tests**
 
 Create `src/test/canvas-interaction.test.ts` with pure tests:
 
@@ -260,7 +260,7 @@ test('bounded text width never grows beyond configured maximum', () => {
 });
 ```
 
-- [ ] **Step 2: Run focused tests and verify failure**
+- [x] **Step 2: Run focused tests and verify failure**
 
 Run:
 
@@ -270,7 +270,7 @@ node --test --experimental-strip-types src/test/canvas-interaction.test.ts
 
 Expected: FAIL because `clampTextBoxWidth` is not defined/exported.
 
-- [ ] **Step 3: Add text width constraint helper**
+- [x] **Step 3: Add text width constraint helper**
 
 In `src/lib/canvas-interaction.ts`, add:
 
@@ -282,7 +282,7 @@ export function clampTextBoxWidth(value: number, min = 60, max = 75): number {
 
 Use percent-of-canvas coordinates consistently with existing element geometry. Keep side-width handles out of MVP.
 
-- [ ] **Step 4: Render all text elements from document state**
+- [x] **Step 4: Render all text elements from document state**
 
 Refactor `DesignCanvas` so it accepts and renders text nodes from `state.elements`; `CustomizerShell` always passes migrated state, so no second canvas fallback path exists. Each text node must:
 
@@ -294,7 +294,7 @@ Refactor `DesignCanvas` so it accepts and renders text nodes from `state.element
 
 Keep `isMockup` output unaffected by deriving one preview-only text element from the existing mockup props without mutating document state.
 
-- [ ] **Step 5: Preserve single/double tap and lock behavior**
+- [x] **Step 5: Preserve single/double tap and lock behavior**
 
 Keep pointer gesture threshold and double-tap timing from `canvas-interaction.ts`. For text:
 
@@ -306,7 +306,7 @@ Keep pointer gesture threshold and double-tap timing from `canvas-interaction.ts
 
 Avoid putting an editable textarea inside the transformed text node; editing uses Task 4 overlay.
 
-- [ ] **Step 6: Run typecheck and interaction tests**
+- [x] **Step 6: Run typecheck and interaction tests**
 
 Run:
 
@@ -341,7 +341,7 @@ type TextEditState = {
 - `EditorSheets` and `BottomNavigation` receive selected text element data through existing callback boundaries.
 - Navigation resolver accepts `isTextEditing: boolean` and returns an edit-exit action before sheet/deselect/editor actions.
 
-- [ ] **Step 1: Write failing navigation tests**
+- [x] **Step 1: Write failing navigation tests**
 
 Add:
 
@@ -368,7 +368,7 @@ Update existing resolver tests to assert the priority:
 unsaved/overlay/sheet → text edit → focus crop → deselect → viewport reset → leave editor
 ```
 
-- [ ] **Step 2: Run focused navigation tests and verify failure**
+- [x] **Step 2: Run focused navigation tests and verify failure**
 
 Run:
 
@@ -378,7 +378,7 @@ node --test --experimental-strip-types src/test/navigation.test.ts
 
 Expected: FAIL until `isTextEditing` and `EXIT_TEXT_EDIT` exist.
 
-- [ ] **Step 3: Add shell selection state**
+- [x] **Step 3: Add shell selection state**
 
 Add `selectedTextId` and `textEditState` to `CustomizerShell`. On hydration, run `migrateLegacyText` and select no object. On resume/template load, preserve text nodes and selected state only when explicitly entering edit.
 
@@ -413,15 +413,15 @@ const exitTextEdit = (): void => {
 
 `beginTextEdit` must refuse locked/missing nodes and set `activeSheet(null)`. `commitTextEdit` dispatches one `COMMIT_TEXT_EDIT`, clears edit state, keeps `selectedTarget='text'` and `selectedTextId=elementId` unless the text was empty, in which case it clears selection.
 
-- [ ] **Step 4: Update back hierarchy**
+- [x] **Step 4: Update back hierarchy**
 
 Extend `EditorBackState` with `isTextEditing`. Add `EXIT_TEXT_EDIT`. In `handleUnifiedBack`, commit current draft through `exitTextEdit` before clearing other focus state. Do not navigate to setup/launcher while text edit is active. Browser Back, Escape, and editor back button use the same resolver.
 
-- [ ] **Step 5: Wire canvas selection and transforms**
+- [x] **Step 5: Wire canvas selection and transforms**
 
 Pass migrated text elements, selected text ID, and callbacks to `DesignCanvas`. Single tap updates `selectedTarget='text'` and selected ID. Double tap calls `beginTextEdit(id, placeholder || templatePlaceholder)`. Transform commit updates the addressed element's transform with one history action. On deleting selected text, remove element and clear selection. On duplicate, select the duplicate but do not enter edit.
 
-- [ ] **Step 6: Run typecheck and navigation tests**
+- [x] **Step 6: Run typecheck and navigation tests**
 
 Run:
 
@@ -456,7 +456,7 @@ interface TextEditOverlayProps {
 }
 ```
 
-- [ ] **Step 1: Write failing edit-session tests**
+- [x] **Step 1: Write failing edit-session tests**
 
 Create pure session tests for commit policy:
 
@@ -480,7 +480,7 @@ test('composition keeps edit session active until composition ends', () => {
 
 Implement these pure helpers in `src/lib/text-edit-session.ts` with exact signatures: `shouldSelectTextOnFocus(input: { placeholder: boolean; text: string }): boolean`, `startTextEdit(elementId: string, draft: string, selectAll: boolean): ActiveTextEditState`, `updateComposition(session: ActiveTextEditState, isComposing: boolean): ActiveTextEditState`, and `canCommitTextEdit(session: ActiveTextEditState): boolean`. `ActiveTextEditState` is the non-null shape used by `CustomizerShell`. Keep DOM focus code in the overlay; tests cover only commit policy.
 
-- [ ] **Step 2: Run focused tests and verify failure**
+- [x] **Step 2: Run focused tests and verify failure**
 
 Run:
 
@@ -490,7 +490,7 @@ node --test --experimental-strip-types src/test/text-edit-session.test.ts
 
 Expected: FAIL before helpers and overlay behavior exist.
 
-- [ ] **Step 3: Implement native textarea overlay**
+- [x] **Step 3: Implement native textarea overlay**
 
 Create `TextEditOverlay` as a client component:
 
@@ -505,13 +505,13 @@ Create `TextEditOverlay` as a client component:
 
 Remove the existing `Hủy`, character counter, `maxLength={160}`, and full-screen editing copy. Long text remains editable and wraps; preflight can warn later without blocking input.
 
-- [ ] **Step 4: Add keyboard-safe viewport adjustment**
+- [x] **Step 4: Add keyboard-safe viewport adjustment**
 
 In `CustomizerShell`, record viewport and selected element geometry when edit starts. Use `visualViewport` resize/scroll listeners while editing. Adjust only the workspace viewport transform/pan so the active textarea/caret region remains above `visualViewport.height`; never mutate the text element's document `x`/`y`. On exit, restore the recorded viewport or `resetToFit()` when the old viewport is invalid.
 
 Use CSS `env(safe-area-inset-bottom)` and `dvh` for the focused layer. Clean up listeners on exit/unmount. Do not add an animation loop; a short GSAP transform tween is allowed only for a state transition and must respect `prefers-reduced-motion`.
 
-- [ ] **Step 5: Wire commit semantics**
+- [x] **Step 5: Wire commit semantics**
 
 `Xong`, Back, and Escape use one exit path. Visibility loss flushes the current committed document state but does not end an active IME composition:
 
@@ -524,7 +524,7 @@ Use CSS `env(safe-area-inset-bottom)` and `dvh` for the focused layer. Clean up 
 
 Use existing debounced autosave; do not persist draft state per keystroke. On `visibilitychange`, commit only after composition has ended, then call `flushAutosave` with the resulting document state.
 
-- [ ] **Step 6: Run typecheck and focused tests**
+- [x] **Step 6: Run typecheck and focused tests**
 
 Run:
 
@@ -555,7 +555,7 @@ onSetTextStyle: (patch: Partial<TextElementData>) => void;
 
 - Bottom toolbar text state exposes only `Font`, `Màu`, `Cỡ chữ`, `Căn chỉnh`, `•••`; content editing is double tap.
 
-- [ ] **Step 1: Write failing formatting tests**
+- [x] **Step 1: Write failing formatting tests**
 
 Add reducer tests:
 
@@ -579,7 +579,7 @@ test('duplicate preserves text style and offsets new element', () => {
 });
 ```
 
-- [ ] **Step 2: Run focused tests and verify failure**
+- [x] **Step 2: Run focused tests and verify failure**
 
 Run:
 
@@ -589,7 +589,7 @@ node --test --experimental-strip-types src/test/product-state.test.ts
 
 Expected: FAIL until formatting and duplicate actions are complete.
 
-- [ ] **Step 3: Split Add → Chữ into heading/body presets**
+- [x] **Step 3: Split Add → Chữ into heading/body presets**
 
 In `EditorSheets`, replace the single `Thêm dòng chữ` action with two convenience choices:
 
@@ -603,11 +603,11 @@ Nhập nội dung
 
 Both call `onAddText('heading' | 'body')`, close the drawer, and let the shell create/select/edit the same text element type. Use comfortable buttons, short copy, and no permanent heading/body layer type.
 
-- [ ] **Step 4: Simplify selected text toolbar**
+- [x] **Step 4: Simplify selected text toolbar**
 
 In `BottomNavigation`, remove `Sửa chữ` from the primary text toolbar. Keep exactly the prioritized actions and labels. While `textEditState !== null`, render no bottom contextual toolbar. Preserve image toolbar/default toolbar behavior.
 
-- [ ] **Step 5: Connect formatting sheets to selected text ID**
+- [x] **Step 5: Connect formatting sheets to selected text ID**
 
 Update shell callbacks so Font, Color, Size, and Alignment mutate `UPDATE_TEXT_STYLE` for `selectedTextId`, not only legacy top-level state. Keep current sheets lightweight:
 
@@ -617,7 +617,7 @@ Update shell callbacks so Font, Color, Size, and Alignment mutate `UPDATE_TEXT_S
 - Alignment sheet exposes `Trái`, `Giữa`, `Phải` only.
 - More contains only supported actions: weight/style when font capability exists, line height, letter spacing, opacity, duplicate, lock, delete.
 
-- [ ] **Step 6: Run typecheck and tests**
+- [x] **Step 6: Run typecheck and tests**
 
 Run:
 
@@ -638,7 +638,7 @@ Expected: pass.
 - Modify: `src/app/globals.css` only for focused editor/toolbar defects.
 - Test: no permanent browser test required unless an existing browser suite is present.
 
-- [ ] **Step 1: Start a clean production-like server**
+- [x] **Step 1: Start a clean production-like server**
 
 Run:
 
@@ -649,7 +649,7 @@ pnpm start -p 3000
 
 Use a clean browser context at mobile viewport `390×844` and desktop viewport `1280×800`.
 
-- [ ] **Step 2: Exercise the required mobile flow**
+- [x] **Step 2: Exercise the required mobile flow**
 
 At mobile width:
 
@@ -667,15 +667,15 @@ At mobile width:
 12. Add body text and verify smaller/default body styling.
 13. Test browser Back during text edit; assert it exits edit but stays in editor and leaves text selected.
 
-- [ ] **Step 3: Exercise template and lock flow**
+- [x] **Step 3: Exercise template and lock flow**
 
 Load a template with unlocked text, single tap it, double tap it, replace content, and assert normal behavior. Load a locked text element, tap/double tap/drag it, and assert lock feedback with no text edit or transform.
 
-- [ ] **Step 4: Exercise viewport and resize behavior**
+- [x] **Step 4: Exercise viewport and resize behavior**
 
 Place/select text near the bottom of the canvas, enter edit, and assert active text stays above the virtual viewport/keyboard region. After `Xong`, assert document coordinates match their pre-edit values. Drag a corner handle and assert glyphs remain proportionally scaled; type enough content to force wrapping and assert height grows without horizontal infinite expansion.
 
-- [ ] **Step 5: Capture bounded visual review**
+- [x] **Step 5: Capture bounded visual review**
 
 Capture one mobile and one desktop screenshot for:
 
@@ -686,7 +686,7 @@ Capture one mobile and one desktop screenshot for:
 
 Inspect focus rings, touch targets, toolbar overflow, safe-area padding, Vietnamese diacritics, and reduced-motion behavior. Fix defects in one batch, then capture one confirmation pass.
 
-- [ ] **Step 6: Run final verification**
+- [x] **Step 6: Run final verification**
 
 Run:
 
@@ -705,6 +705,6 @@ pnpm build
 
 Expected: typecheck, all tests, and production build pass. Detector findings must be resolved or explicitly intentional in the changed surface.
 
-- [ ] **Step 7: Remove temporary scaffolding**
+- [x] **Step 7: Remove temporary scaffolding**
 
 Delete throwaway screenshots/scripts outside the project’s intended review artifacts. Keep only production code, permanent tests, and the approved spec/plan.
