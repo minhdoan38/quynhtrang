@@ -355,6 +355,24 @@ test('text layer names use content and truncate long content', () => {
   assert.equal(getTextLayerName(element), 'Một dòng chữ tiếng Việt rất dài…');
 });
 
+test('updates selected text alignment without changing content', () => {
+  const state = stateWithTextElement();
+  const next = transitionState(state, {
+    type: 'UPDATE_TEXT_STYLE',
+    id: 'text-1',
+    patch: { align: 'center' },
+  });
+  assert.equal(getTextData(next.elements?.[0]!)?.align, 'center');
+  assert.equal(getTextData(next.elements?.[0]!)?.text, 'Nhập nội dung');
+});
+
+test('duplicate preserves text style and offsets new element', () => {
+  const next = transitionState(stateWithTextElement(), { type: 'DUPLICATE_ELEMENT', id: 'text-1' });
+  assert.equal(next.elements?.length, 2);
+  assert.deepEqual(getTextData(next.elements?.[1]!)?.fontFamily, getTextData(next.elements?.[0]!)?.fontFamily);
+  assert.notEqual(next.elements?.[1].x, next.elements?.[0].x);
+});
+
 function textElementWithContent(text: string): CanvasElement {
   return createTextElement({ id: 'text-1', preset: 'body', text });
 }

@@ -183,18 +183,18 @@ export function AddContentSheet({
                 type="button"
                 onClick={() => handleTileClick(item.id)}
                 className={`flex items-center gap-3 p-3.5 rounded-xl border text-left transition-all active:scale-[0.98] ${isPrimary
-                    ? 'border-[#315F86]/30 bg-white hover:border-[#315F86] shadow-xs'
-                    : isUtility
-                      ? 'border-[#ECE6DC] bg-[#FFFDF8] hover:bg-white text-[#666A6D]'
-                      : 'border-[#ECE6DC] bg-white hover:bg-[#F8F3E8]'
+                  ? 'border-[#315F86]/30 bg-white hover:border-[#315F86] shadow-xs'
+                  : isUtility
+                    ? 'border-[#ECE6DC] bg-[#FFFDF8] hover:bg-white text-[#666A6D]'
+                    : 'border-[#ECE6DC] bg-white hover:bg-[#F8F3E8]'
                   }`}
               >
                 <div
                   className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${isPrimary
-                      ? 'bg-[#DCEBF4]'
-                      : isUtility
-                        ? 'bg-[#ECE6DC]/60'
-                        : 'bg-[#F8F3E8]'
+                    ? 'bg-[#DCEBF4]'
+                    : isUtility
+                      ? 'bg-[#ECE6DC]/60'
+                      : 'bg-[#F8F3E8]'
                     }`}
                 >
                   {renderIcon(item.id, isPrimary)}
@@ -285,7 +285,7 @@ export function AddContentSheet({
             </div>
             <div>
               <span className="block text-sm font-bold text-[#2E3338]">Thêm tiêu đề</span>
-              <span className="block text-[11px] text-[#666A6D]">Cỡ chữ lớn, chữ đậm nổi bật</span>
+              <span className="block text-[11px] text-[#666A6D]">Nhập tiêu đề</span>
             </div>
           </button>
 
@@ -302,7 +302,7 @@ export function AddContentSheet({
             </div>
             <div>
               <span className="block text-xs font-semibold text-[#2E3338]">Thêm nội dung</span>
-              <span className="block text-[11px] text-[#666A6D]">Cỡ chữ chuẩn, ghi chú hoặc lời chúc</span>
+              <span className="block text-[11px] text-[#666A6D]">Nhập nội dung</span>
             </div>
           </button>
         </div>

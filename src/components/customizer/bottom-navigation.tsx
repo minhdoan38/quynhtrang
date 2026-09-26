@@ -10,10 +10,10 @@ import {
   ImagePlus,
   Wand2,
   SunMedium,
-  Type,
   CaseSensitive,
   Palette,
   AArrowUp,
+  AlignCenter,
   MoreHorizontal,
 } from 'lucide-react';
 
@@ -22,6 +22,7 @@ export type SelectedTarget = 'image' | 'text' | null;
 interface BottomNavigationProps {
   selectedTarget: SelectedTarget;
   isLocked?: boolean;
+  isTextEditing?: boolean;
   onDeselect: () => void;
   onAction: (actionKey: string) => void;
 }
@@ -29,9 +30,12 @@ interface BottomNavigationProps {
 export function BottomNavigation({
   selectedTarget,
   isLocked = false,
+  isTextEditing = false,
   onDeselect,
   onAction,
 }: BottomNavigationProps) {
+  if (isTextEditing) return null;
+
   // If target is selected, render Contextual Toolbar
   if (selectedTarget !== null) {
     return (
@@ -109,15 +113,6 @@ export function BottomNavigation({
             <div className="flex-1 flex items-center justify-around gap-0.5">
               <button
                 type="button"
-                onClick={() => onAction('edit-text')}
-                className="flex flex-col items-center justify-center min-w-[44px] h-[48px] px-1 rounded-lg text-[#2E3338] hover:bg-[#F8F3E8] active:scale-95 transition-all"
-              >
-                <Type className="w-4 h-4 text-[#315F86]" />
-                <span className="text-[11px] font-medium mt-0.5">Sửa chữ</span>
-              </button>
-
-              <button
-                type="button"
                 onClick={() => onAction('font')}
                 className="flex flex-col items-center justify-center min-w-[44px] h-[48px] px-1 rounded-lg text-[#2E3338] hover:bg-[#F8F3E8] active:scale-95 transition-all"
               >
@@ -141,6 +136,15 @@ export function BottomNavigation({
               >
                 <AArrowUp className="w-4 h-4 text-[#315F86]" />
                 <span className="text-[11px] font-medium mt-0.5">Cỡ chữ</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => onAction('align')}
+                className="flex flex-col items-center justify-center min-w-[44px] h-[48px] px-1 rounded-lg text-[#2E3338] hover:bg-[#F8F3E8] active:scale-95 transition-all"
+              >
+                <AlignCenter className="w-4 h-4 text-[#315F86]" />
+                <span className="text-[11px] font-medium mt-0.5">Căn chỉnh</span>
               </button>
 
               <button

@@ -17,6 +17,9 @@ import {
   ArrowDown,
   Trash2,
   Check,
+  AlignLeft,
+  AlignCenter,
+  AlignRight,
 } from 'lucide-react';
 import { TEMPLATES, type ProductId, type CanvasElement } from '@/lib/product-state';
 import { AddContentSheet } from './add-content-sheet';
@@ -31,6 +34,7 @@ export type ActiveSheetType =
   | 'color'
   | 'opacity'
   | 'font-size'
+  | 'align'
   | 'more'
   | null;
 
@@ -51,6 +55,7 @@ interface EditorSheetsProps {
   imageOpacity: number;
   fontSize: number;
   fontFamily: string;
+  textAlign?: 'left' | 'center' | 'right';
   onSelectTemplate: (tplId: string) => void;
   onOpenTemplateBrowser: () => void;
   onAddText: (preset?: TextStylePreset) => void;
@@ -59,6 +64,7 @@ interface EditorSheetsProps {
   onSetColor: (color: string) => void;
   onSetFont: (font: string) => void;
   onSetFontSize: (size: number) => void;
+  onSetTextAlign?: (align: 'left' | 'center' | 'right') => void;
   onSetOpacity: (opacity: number) => void;
   onToggleLock: () => void;
   onDuplicate: () => void;
@@ -99,6 +105,7 @@ export function EditorSheets({
   imageOpacity,
   fontSize,
   fontFamily,
+  textAlign = 'center',
   onSelectTemplate,
   onOpenTemplateBrowser,
   onAddText,
@@ -107,6 +114,7 @@ export function EditorSheets({
   onSetColor,
   onSetFont,
   onSetFontSize,
+  onSetTextAlign,
   onSetOpacity,
   onToggleLock,
   onDuplicate,
@@ -372,6 +380,43 @@ export function EditorSheets({
           </div>
         )}
 
+
+        {/* ALIGNMENT SHEET */}
+        {activeSheet === 'align' && (
+          <div className="space-y-4">
+            <DrawerHeader className="px-0 py-2">
+              <DrawerTitle className="text-sm font-semibold text-center text-[#2E3338]">
+                Căn chỉnh dòng chữ
+              </DrawerTitle>
+            </DrawerHeader>
+            <div className="grid grid-cols-3 gap-2.5 pt-1">
+              {[
+                { id: 'left' as const, label: 'Trái', icon: AlignLeft },
+                { id: 'center' as const, label: 'Giữa', icon: AlignCenter },
+                { id: 'right' as const, label: 'Phải', icon: AlignRight },
+              ].map(({ id, label, icon: Icon }) => {
+                const isSelected = textAlign === id;
+                return (
+                  <button
+                    key={id}
+                    type="button"
+                    onClick={() => {
+                      onSetTextAlign?.(id);
+                      onClose();
+                    }}
+                    className={`flex flex-col items-center gap-2 p-3.5 rounded-xl border transition-all text-xs font-medium ${isSelected
+                        ? 'border-[#315F86] bg-[#DCEBF4]/40 text-[#315F86]'
+                        : 'border-[#ECE6DC] bg-white hover:bg-[#F8F3E8] text-[#2E3338]'
+                      }`}
+                  >
+                    <Icon className="w-5 h-5" />
+                    <span>{label}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
         {/* MORE SHEET */}
         {activeSheet === 'more' && (
           <div className="space-y-2">

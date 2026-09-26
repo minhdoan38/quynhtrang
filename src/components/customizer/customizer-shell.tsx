@@ -24,6 +24,7 @@ import {
   type DesignAction,
   type ProductId,
   type CanvasElement,
+  type TextPreset,
 } from '@/lib/product-state';
 import {
   getRecentProjects,
@@ -108,16 +109,6 @@ export function CustomizerShell() {
     }
     setActiveSheet(null);
   }, [activeSheet, state]);
-
-  const handleSetFont = useCallback((fontFamily: string) => {
-    setState((curr) => ({
-      ...curr,
-      productOptions: {
-        ...curr.productOptions,
-        fontFamily,
-      },
-    }));
-  }, []);
 
   const executeAutosave = useCallback((currentState: DesignState) => {
     setSaveStatus('saving');
@@ -206,6 +197,63 @@ export function CustomizerShell() {
       return next;
     });
   }, []);
+
+  const handleSetFont = useCallback((fontFamily: string) => {
+    if (selectedTarget === 'text' && selectedTextId) {
+      dispatch({
+        type: 'UPDATE_TEXT_STYLE',
+        id: selectedTextId,
+        patch: { fontFamily },
+      });
+    }
+    setState((curr) => ({
+      ...curr,
+      productOptions: {
+        ...curr.productOptions,
+        fontFamily,
+      },
+    }));
+  }, [selectedTarget, selectedTextId, dispatch]);
+
+  const handleSetColor = useCallback((color: string) => {
+    if (selectedTarget === 'text' && selectedTextId) {
+      dispatch({
+        type: 'UPDATE_TEXT_STYLE',
+        id: selectedTextId,
+        patch: { color },
+      });
+    } else {
+      dispatch({ type: 'SET_COLOR', value: color });
+    }
+  }, [selectedTarget, selectedTextId, dispatch]);
+
+  const handleSetFontSize = useCallback((fontSize: number) => {
+    if (selectedTarget === 'text' && selectedTextId) {
+      dispatch({
+        type: 'UPDATE_TEXT_STYLE',
+        id: selectedTextId,
+        patch: { fontSize },
+      });
+    }
+    setState((curr) => ({
+      ...curr,
+      productOptions: {
+        ...curr.productOptions,
+        fontSize,
+      },
+    }));
+  }, [selectedTarget, selectedTextId, dispatch]);
+
+  const handleSetTextAlign = useCallback((align: 'left' | 'center' | 'right') => {
+    if (selectedTarget === 'text' && selectedTextId) {
+      dispatch({
+        type: 'UPDATE_TEXT_STYLE',
+        id: selectedTextId,
+        patch: { align },
+      });
+    }
+  }, [selectedTarget, selectedTextId, dispatch]);
+
 
   const handleSelectProduct = useCallback((productId: ProductId) => {
     setState(createInitialState(productId));
@@ -499,15 +547,23 @@ export function CustomizerShell() {
     fileInputRef.current.click();
   };
 
-  const handleInsertText = (preset: TextStylePreset = 'heading') => {
-    const defaultContent = preset === 'heading' ? 'Tiêu đề thiết kế' : 'Nội dung lời chúc';
-    const defaultSize = preset === 'heading' ? 24 : 16;
-
-    dispatch({ type: 'SET_TEXT', value: defaultContent });
-    dispatch({ type: 'SET_PRODUCT_OPTION', key: 'fontSize', value: defaultSize });
-    setSelectedTarget('text');
-    showToast(preset === 'heading' ? 'Đã thêm tiêu đề.' : 'Đã thêm nội dung.');
-  };
+  const handleInsertText = useCallback(
+    (preset: TextStylePreset = 'heading') => {
+      const textPreset: TextPreset = preset === 'heading' ? 'heading' : 'body';
+      const newId = `text-${Date.now()}`;
+      dispatch({
+        type: 'ADD_TEXT_ELEMENT',
+        preset: textPreset,
+        id: newId,
+      });
+      setSelectedTarget('text');
+      setSelectedElementId(newId);
+      setSelectedTextId(newId);
+      setActiveSheet(null);
+      beginTextEdit(newId, true);
+    },
+    [dispatch, beginTextEdit]
+  );
 
   const handleInsertShape = (shapeType: ShapePrimitiveType) => {
     const newElement = {
@@ -794,6 +850,9 @@ export function CustomizerShell() {
       case 'font-size':
         setActiveSheet('font-size');
         break;
+      case 'align':
+        setActiveSheet('align');
+        break;
       case 'more':
         setActiveSheet('more');
         break;
@@ -836,17 +895,18 @@ export function CustomizerShell() {
   const selectedElement = (state.elements ?? getDefaultElements(state)).find(
     (el) => el.id === (selectedTextId || selectedElementId)
   );
+  const selectedTextData =
+    selectedElement && selectedElement.type === 'text' ? getTextData(selectedElement) : null;
   const isCurrentTargetLocked = Boolean(selectedElement?.locked ?? state.productOptions.isLocked);
   const currentImageOpacity = typeof state.productOptions.imageOpacity === 'number'
     ? state.productOptions.imageOpacity
     : 100;
-  const currentFontSize = typeof state.productOptions.fontSize === 'number'
-    ? state.productOptions.fontSize
-    : 20;
-  const currentFontFamily = typeof state.productOptions.fontFamily === 'string'
-    ? state.productOptions.fontFamily
-    : '"Be Vietnam Pro", system-ui, sans-serif';
-
+  const currentFontSize = selectedTextData?.fontSize ??
+    (typeof state.productOptions.fontSize === 'number' ? state.productOptions.fontSize : 20);
+  const currentFontFamily = selectedTextData?.fontFamily ??
+    (typeof state.productOptions.fontFamily === 'string' ? state.productOptions.fontFamily : '"Be Vietnam Pro", system-ui, sans-serif');
+  const currentTextAlign = selectedTextData?.align ?? 'center';
+  const currentTextColor = selectedTextData?.color ?? state.color;
   if (view === 'launcher') {
     return (
       <ProductLauncher
@@ -1153,6 +1213,7 @@ export function CustomizerShell() {
       <BottomNavigation
         selectedTarget={selectedTarget}
         isLocked={isCurrentTargetLocked}
+        isTextEditing={Boolean(textEditState)}
         onDeselect={() => setSelectedTarget(null)}
         onAction={handleToolbarAction}
       />
@@ -1170,11 +1231,12 @@ export function CustomizerShell() {
         text={state.text}
         hasImage={Boolean(state.image?.src)}
         imageThumbnailSrc={state.image?.src}
-        color={state.color}
+        color={currentTextColor}
         isLocked={isCurrentTargetLocked}
         imageOpacity={currentImageOpacity}
         fontSize={currentFontSize}
         fontFamily={currentFontFamily}
+        textAlign={currentTextAlign}
         onSelectTemplate={(key) => dispatch({ type: 'SET_TEMPLATE', value: key })}
         onOpenTemplateBrowser={() => {
           setTemplateReturnView('editor');
@@ -1183,9 +1245,10 @@ export function CustomizerShell() {
         onAddText={(preset) => handleInsertText(preset)}
         onUploadImageClick={(source) => handleOpenImagePicker(source)}
         onAddShape={(shape) => handleInsertShape(shape)}
-        onSetColor={(newColor) => dispatch({ type: 'SET_COLOR', value: newColor })}
+        onSetColor={handleSetColor}
         onSetFont={handleSetFont}
-        onSetFontSize={(size) => dispatch({ type: 'SET_PRODUCT_OPTION', key: 'fontSize', value: size })}
+        onSetFontSize={handleSetFontSize}
+        onSetTextAlign={handleSetTextAlign}
         onSetOpacity={(val) => dispatch({ type: 'SET_PRODUCT_OPTION', key: 'imageOpacity', value: val })}
         onToggleLock={() => {
           if (selectedElementId) {
