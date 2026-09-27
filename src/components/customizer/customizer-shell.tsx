@@ -20,12 +20,15 @@ import {
   PRODUCTS,
   migrateLegacyText,
   getTextData,
+  getImageData,
   type DesignState,
   type DesignAction,
   type ProductId,
   type CanvasElement,
   type TextPreset,
 } from '@/lib/product-state';
+import { getBackgroundRemovalProvider } from '@/lib/background-removal/provider';
+import { BackgroundRefineOverlay } from './background-refine-overlay';
 import {
   getRecentProjects,
   loadState,
@@ -94,6 +97,7 @@ export function CustomizerShell() {
   const preEditViewportRef = useRef<ViewportState | null>(null);
   const [activeSheet, setActiveSheet] = useState<ActiveSheetType>(null);
   const [focusMode, setFocusMode] = useState<FocusMode>(null);
+  const [bgRemovalState, setBgRemovalState] = useState<'idle' | 'processing' | 'result'>('idle');
   // Overlay Mode: Preview and Preflight full-screen within Editor
   // Autosave and unsaved warning states
   const [saveStatus, setSaveStatus] = useState<SaveStatus>('saved');
@@ -1334,6 +1338,7 @@ export function CustomizerShell() {
             selectedTarget={selectedTarget}
             selectedTextId={selectedTextId}
             textElements={state.elements ?? getDefaultElements(state)}
+            elements={state.elements ?? getDefaultElements(state)}
             onSelectTarget={(target) => {
               setSelectedTarget(target);
               if (target === 'image') {

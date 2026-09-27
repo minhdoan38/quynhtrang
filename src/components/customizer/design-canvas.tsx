@@ -8,6 +8,7 @@ import {
   type TextElementData,
   createTextElement,
   getTextData,
+  getImageData,
 } from '@/lib/product-state';
 import { evaluateImageQuality, type ImageQualityReport } from '@/lib/image-quality';
 import {
@@ -44,6 +45,7 @@ export interface DesignCanvasProps {
   selectedTarget?: 'image' | 'text' | null;
   selectedTextId?: string | null;
   textElements?: CanvasElement[];
+  elements?: CanvasElement[];
   onSelectTarget?: (target: 'image' | 'text' | null) => void;
   onSelectText?: (id: string | null) => void;
   onDoubleTap?: (target: 'image' | 'text') => void;
@@ -73,6 +75,7 @@ export function DesignCanvas({
   selectedTarget = null,
   selectedTextId = null,
   textElements,
+  elements,
   onSelectTarget,
   onSelectText,
   onDoubleTap,
@@ -298,17 +301,30 @@ export function DesignCanvas({
 
   const isImageSelected = !isMockup && selectedTarget === 'image';
 
+  const imgElement = useMemo(() => {
+    const list = elements && elements.length > 0 ? elements : (textElements ?? []);
+    return list.find((e) => e.type === 'image');
+  }, [elements, textElements]);
+
+  const imgData = useMemo(() => {
+    return imgElement ? getImageData(imgElement) : null;
+  }, [imgElement]);
+
   const imageQuality = useMemo<ImageQualityReport | null>(() => {
     if (!image?.src) return null;
+    const cropFraction = imgData?.crop
+      ? (imgData.crop.width * imgData.crop.height) /
+      ((imgData.sourceWidth || image.width || 800) * (imgData.sourceHeight || image.height || 800))
+      : 1;
+
     return evaluateImageQuality({
-      sourceWidth: image.width ?? 1200,
-      sourceHeight: image.height ?? 1200,
+      sourceWidth: imgData?.sourceWidth ?? image.width ?? 1200,
+      sourceHeight: imgData?.sourceHeight ?? image.height ?? 1200,
       scale: effectiveImageTransform.scale,
-      cropFraction: 1,
+      cropFraction: Math.max(0.05, Math.min(1, cropFraction)),
       productId,
     });
-  }, [image?.src, image?.width, image?.height, effectiveImageTransform.scale, productId]);
-
+  }, [image?.src, image?.width, image?.height, imgData, effectiveImageTransform.scale, productId]);
   const imageOpacity = typeof productOptions.imageOpacity === 'number'
     ? productOptions.imageOpacity / 100
     : 1;
@@ -352,7 +368,12 @@ export function DesignCanvas({
           role="button"
           tabIndex={0}
           aria-label="Đối tượng ảnh"
-          className="relative max-h-[70%] max-w-[70%] inline-flex items-center justify-center select-none touch-none"
+          className={`relative max-h-[70%] max-w-[70%] inline-flex items-center justify-center select-none touch-none overflow-hidden ${imgData?.mask === 'circle'
+              ? 'rounded-full'
+              : imgData?.mask === 'rounded'
+                ? 'rounded-2xl'
+                : 'rounded-none'
+            }`}
           style={{
             transform: `translate3d(${effectiveImageTransform.x}px, ${effectiveImageTransform.y}px, 0) rotate(${effectiveImageTransform.rotation}deg) scale(${effectiveImageTransform.scale})`,
             transformOrigin: 'center center',
@@ -365,7 +386,7 @@ export function DesignCanvas({
           <img
             src={image.src}
             alt={image.name || 'Ảnh đã tải lên'}
-            className="design-image max-h-full max-w-full object-contain pointer-events-none select-none"
+            className="design-image w-full h-full object-cover pointer-events-none select-none"
             style={{ opacity: imageOpacity }}
           />
 
