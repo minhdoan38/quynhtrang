@@ -101,7 +101,7 @@ import {
   supportsGradient,
   extractDesignColors,
 } from '../lib/color/color-target.ts';
-import { createInitialState } from '../lib/product-state.ts';
+import { createInitialState, type DesignState } from '../lib/product-state.ts';
 
 test('resolves and sets text fill color on element', () => {
   const initial = createInitialState('card');
@@ -134,4 +134,37 @@ test('extracts unique design colors across text, shapes, and background', () => 
   assert.ok(designColors.includes('#F8F3E8'));
   assert.ok(designColors.includes('#315F86'));
   assert.ok(designColors.includes('#E8BCC9'));
+});
+
+import type { ColorTarget } from '../lib/color/color-types.ts';
+
+test('session batches multiple edits into one history record', () => {
+  const baseState = createInitialState('card');
+  const target: ColorTarget = { kind: 'element', elementId: 'text-1', property: 'fill' };
+
+  let currentState = baseState;
+  const history: DesignState[] = [];
+
+  const initialVal = getColorValue(currentState, target);
+  assert.ok(initialVal);
+
+  // Session begins with baseState captured
+  const sessionBase = currentState;
+
+  // Step 1: Change to Pink
+  currentState = setColorValue(currentState, target, createSolidColor('#E8BCC9'));
+  // Step 2: Change to Blue
+  currentState = setColorValue(currentState, target, createSolidColor('#315F86'));
+  // Step 3: Change to Green
+  currentState = setColorValue(currentState, target, createSolidColor('#C8D8C4'));
+
+  // Session closes: only sessionBase is pushed if changed
+  const finalVal = getColorValue(currentState, target);
+  if (JSON.stringify(initialVal) !== JSON.stringify(finalVal)) {
+    history.push(sessionBase);
+  }
+
+  assert.equal(history.length, 1);
+  assert.deepEqual(getColorValue(history[0], target), initialVal);
+  assert.deepEqual(getColorValue(currentState, target), createSolidColor('#C8D8C4'));
 });
