@@ -1651,6 +1651,13 @@ export function CustomizerShell() {
         onClose={handleCloseSheet}
         selectedTarget={selectedTarget}
         selectedElementId={selectedElementId}
+        selectionMode={selectionMode}
+        selectedElementIds={selectedElementIds}
+        activeGroupId={activeGroupId}
+        onEnterMultiSelect={() => handleEnterMultiSelect()}
+        onExitMultiSelect={handleExitMultiSelect}
+        onToggleSelectElement={handleToggleMultiSelect}
+        onSelectChildInGroup={handleEnterGroupEdit}
         elements={state.elements ?? getDefaultElements(state)}
         surface={String(state.productOptions.surface || 'front')}
         productId={state.productId}

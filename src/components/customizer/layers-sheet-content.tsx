@@ -25,7 +25,14 @@ interface LayersSheetContentProps {
   elements: CanvasElement[];
   selectedId: string | null;
   surface?: string;
+  selectionMode?: 'default' | 'multi-select' | 'group-edit';
+  selectedElementIds?: string[];
+  activeGroupId?: string | null;
   onSelect: (id: string | null) => void;
+  onToggleSelectElement?: (id: string) => void;
+  onEnterMultiSelect?: () => void;
+  onExitMultiSelect?: () => void;
+  onSelectChildInGroup?: (groupId: string, childId: string) => void;
   onReorder: (orderedIds: string[]) => void;
   onAddClick: () => void;
   onClose: () => void;
@@ -37,7 +44,14 @@ export function LayersSheetContent({
   elements,
   selectedId,
   surface = 'front',
+  selectionMode = 'default',
+  selectedElementIds = [],
+  activeGroupId = null,
   onSelect,
+  onToggleSelectElement,
+  onEnterMultiSelect,
+  onExitMultiSelect,
+  onSelectChildInGroup,
   onReorder,
   onAddClick,
   onClose,
@@ -53,7 +67,9 @@ export function LayersSheetContent({
   const surfaceElements = getSurfaceLayers(elements, surface);
 
   // Stacking order: top row in list = visually in front (highest zIndex first)
+  // Stacking order: top row in list = visually in front (highest zIndex first)
   const sortedLayers = [...surfaceElements].sort((a, b) => (b.zIndex ?? 0) - (a.zIndex ?? 0));
+  const rootLayers = sortedLayers.filter((el) => !el.parentGroupId);
 
   const toggleGroup = useCallback((groupId: string, e: React.MouseEvent) => {
     e.stopPropagation();
@@ -195,14 +211,33 @@ export function LayersSheetContent({
             {surfaceElements.length} lớp
           </span>
         </div>
-        <button
-          type="button"
-          onClick={onClose}
-          aria-label="Đóng bảng quản lý lớp"
-          className="w-8 h-8 rounded-full flex items-center justify-center text-[#666A6D] hover:bg-[#F8F3E8] active:scale-95 transition-all"
-        >
-          <X className="w-4 h-4" />
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => {
+              if (selectionMode === 'multi-select') {
+                onExitMultiSelect?.();
+              } else {
+                onEnterMultiSelect?.();
+              }
+            }}
+            className={`text-xs px-2.5 py-1 rounded-full font-medium transition-all ${
+              selectionMode === 'multi-select'
+                ? 'bg-[#315F86] text-white shadow-xs'
+                : 'bg-[#F8F3E8] text-[#2E3338] hover:bg-[#ECE6DC]'
+            }`}
+          >
+            {selectionMode === 'multi-select' ? 'Xong chọn nhiều' : 'Chọn nhiều'}
+          </button>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Đóng bảng quản lý lớp"
+            className="w-8 h-8 rounded-full flex items-center justify-center text-[#666A6D] hover:bg-[#F8F3E8] active:scale-95 transition-all"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
       </div>
 
       {/* Layer List or Empty State */}
@@ -210,7 +245,7 @@ export function LayersSheetContent({
         ref={containerRef}
         className="flex-1 overflow-y-auto py-2 space-y-1.5 min-h-[160px] touch-pan-y"
       >
-        {sortedLayers.length === 0 ? (
+        {rootLayers.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-8 text-center px-4">
             <p className="text-xs text-[#666A6D] mb-3">Chưa có thành phần nào trên bề mặt này.</p>
             <button
@@ -223,87 +258,139 @@ export function LayersSheetContent({
             </button>
           </div>
         ) : (
-          sortedLayers.map((el, index) => {
-            const isSelected = selectedId === el.id;
+          rootLayers.map((el, index) => {
+            const isSelected =
+              selectionMode === 'multi-select'
+                ? selectedElementIds.includes(el.id)
+                : selectedId === el.id;
             const isDragging = draggedId === el.id;
             const isDropTarget = dragOverIndex === index && draggedId !== null && draggedId !== el.id;
             const isGroup = el.type === 'group';
             const isExpanded = expandedGroupIds.has(el.id);
+            const children = surfaceElements.filter((c) => c.parentGroupId === el.id);
 
             return (
-              <div
-                key={el.id}
-                data-layer-id={el.id}
-                onClick={() => {
-                  if (el.locked) {
-                    onLockedFeedback?.();
-                  }
-                  onSelect(el.id);
-                }}
-                className={`relative flex items-center justify-between p-2.5 rounded-xl border transition-all cursor-pointer ${isSelected
-                    ? 'border-[#315F86] bg-[#DCEBF4]/40 font-medium shadow-xs'
-                    : 'border-[#ECE6DC] bg-white hover:bg-[#F8F3E8]/80'
-                  } ${isDragging ? 'opacity-40 scale-[0.98]' : ''} ${isDropTarget ? 'border-t-2 border-t-[#315F86]' : ''
+              <React.Fragment key={el.id}>
+                <div
+                  data-layer-id={el.id}
+                  onClick={() => {
+                    if (el.locked) {
+                      onLockedFeedback?.();
+                    }
+                    if (selectionMode === 'multi-select') {
+                      onToggleSelectElement?.(el.id);
+                    } else {
+                      onSelect(el.id);
+                    }
+                  }}
+                  className={`relative flex items-center justify-between p-2.5 rounded-xl border transition-all cursor-pointer ${
+                    isSelected
+                      ? 'border-[#315F86] bg-[#DCEBF4]/40 font-medium shadow-xs'
+                      : 'border-[#ECE6DC] bg-white hover:bg-[#F8F3E8]/80'
+                  } ${isDragging ? 'opacity-40 scale-[0.98]' : ''} ${
+                    isDropTarget ? 'border-t-2 border-t-[#315F86]' : ''
                   }`}
-              >
-                {/* Left section: Drag handle + Group expander + Icon + Name */}
-                <div className="flex items-center gap-2 min-w-0 flex-1 pr-2">
-                  {/* Dedicated Drag Handle */}
-                  {!el.locked ? (
-                    <div
-                      role="button"
-                      tabIndex={0}
-                      aria-label="Kéo để sắp xếp thứ tự lớp"
-                      onPointerDown={(e) => handleDragStart(el.id, index, e)}
-                      className="touch-none p-1 -ml-1 text-[#666A6D] hover:text-[#2E3338] active:text-[#315F86] cursor-grab active:cursor-grabbing shrink-0"
-                    >
-                      <GripVertical className="w-4 h-4" />
-                    </div>
-                  ) : (
-                    <div className="w-4 h-4 shrink-0 text-transparent select-none">-</div>
-                  )}
+                >
+                  {/* Left section: Drag handle + Group expander + Icon + Name */}
+                  <div className="flex items-center gap-2 min-w-0 flex-1 pr-2">
+                    {/* Dedicated Drag Handle */}
+                    {!el.locked ? (
+                      <div
+                        role="button"
+                        tabIndex={0}
+                        aria-label="Kéo để sắp xếp thứ tự lớp"
+                        onPointerDown={(e) => handleDragStart(el.id, index, e)}
+                        className="touch-none p-1 -ml-1 text-[#666A6D] hover:text-[#2E3338] active:text-[#315F86] cursor-grab active:cursor-grabbing shrink-0"
+                      >
+                        <GripVertical className="w-4 h-4" />
+                      </div>
+                    ) : (
+                      <div className="w-4 h-4 shrink-0 text-transparent select-none">-</div>
+                    )}
 
-                  {/* Group Expander if Group */}
-                  {isGroup && (
-                    <button
-                      type="button"
-                      onClick={(e) => toggleGroup(el.id, e)}
-                      aria-label={isExpanded ? 'Thu gọn nhóm' : 'Mở rộng nhóm'}
-                      className="p-0.5 text-[#666A6D] hover:text-[#2E3338] shrink-0"
-                    >
-                      {isExpanded ? (
-                        <ChevronDown className="w-3.5 h-3.5" />
-                      ) : (
-                        <ChevronRight className="w-3.5 h-3.5" />
-                      )}
-                    </button>
-                  )}
+                    {/* Group Expander if Group */}
+                    {isGroup && (
+                      <button
+                        type="button"
+                        onClick={(e) => toggleGroup(el.id, e)}
+                        aria-label={isExpanded ? 'Thu gọn nhóm' : 'Mở rộng nhóm'}
+                        className="p-0.5 text-[#666A6D] hover:text-[#2E3338] shrink-0"
+                      >
+                        {isExpanded ? (
+                          <ChevronDown className="w-3.5 h-3.5" />
+                        ) : (
+                          <ChevronRight className="w-3.5 h-3.5" />
+                        )}
+                      </button>
+                    )}
 
-                  {/* Type / Thumbnail Indicator */}
-                  {renderTypeIndicator(el)}
+                    {/* Type / Thumbnail Indicator */}
+                    {renderTypeIndicator(el)}
 
-                  {/* Layer Name */}
-                  <span className="text-xs text-[#2E3338] truncate flex-1">
-                    {getLayerDisplayName(el)}
-                  </span>
-                </div>
-
-                {/* Right section: Lock indicator or Selection Check */}
-                <div className="flex items-center gap-1.5 shrink-0">
-                  {el.locked && (
-                    <span
-                      title="Thành phần đã được khóa trong mẫu"
-                      className="flex items-center gap-0.5 text-[10px] text-[#666A6D] bg-[#F8F3E8] px-1.5 py-0.5 rounded font-medium border border-[#ECE6DC]"
-                    >
-                      <Lock className="w-3 h-3 text-[#A86E22]" />
-                      <span>Khóa</span>
+                    {/* Layer Name */}
+                    <span className="text-xs text-[#2E3338] truncate flex-1">
+                      {getLayerDisplayName(el)}
                     </span>
-                  )}
-                  {isSelected && (
-                    <span className="w-2 h-2 rounded-full bg-[#315F86]" />
-                  )}
+                  </div>
+
+                  {/* Right section: Lock indicator or Selection Check */}
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    {el.locked && (
+                      <span
+                        title="Thành phần đã được khóa trong mẫu"
+                        className="flex items-center gap-0.5 text-[10px] text-[#666A6D] bg-[#F8F3E8] px-1.5 py-0.5 rounded font-medium border border-[#ECE6DC]"
+                      >
+                        <Lock className="w-3 h-3 text-[#A86E22]" />
+                        <span>Khóa</span>
+                      </span>
+                    )}
+                    {isSelected && (
+                      <span className="w-2 h-2 rounded-full bg-[#315F86]" />
+                    )}
+                  </div>
                 </div>
-              </div>
+
+                {/* Render indented children if this is an expanded group */}
+                {isGroup && isExpanded && children.length > 0 && (
+                  <div className="pl-6 ml-4 border-l-2 border-[#ECE6DC] space-y-1.5 my-1">
+                    {children.map((child) => {
+                      const isChildSelected =
+                        selectionMode === 'multi-select'
+                          ? selectedElementIds.includes(child.id)
+                          : selectedId === child.id;
+                      return (
+                        <div
+                          key={child.id}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            if (child.locked) {
+                              onLockedFeedback?.();
+                            }
+                            if (selectionMode === 'multi-select') {
+                              onToggleSelectElement?.(child.id);
+                            } else {
+                              onSelectChildInGroup?.(el.id, child.id);
+                            }
+                          }}
+                          className={`flex items-center justify-between p-2 rounded-lg border transition-all cursor-pointer ${
+                            isChildSelected
+                              ? 'border-[#315F86] bg-[#DCEBF4]/40 font-medium'
+                              : 'border-[#ECE6DC] bg-white hover:bg-[#F8F3E8]'
+                          }`}
+                        >
+                          <div className="flex items-center gap-2 min-w-0 flex-1 pr-1">
+                            {renderTypeIndicator(child)}
+                            <span className="text-xs text-[#2E3338] truncate flex-1">
+                              {getLayerDisplayName(child)}
+                            </span>
+                          </div>
+                          {isChildSelected && <span className="w-2 h-2 rounded-full bg-[#315F86]" />}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </React.Fragment>
             );
           })
         )}

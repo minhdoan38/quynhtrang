@@ -52,6 +52,13 @@ interface EditorSheetsProps {
   onClose: () => void;
   selectedTarget: 'image' | 'text' | 'group' | null;
   selectedElementId?: string | null;
+  selectionMode?: 'default' | 'multi-select' | 'group-edit';
+  selectedElementIds?: string[];
+  activeGroupId?: string | null;
+  onEnterMultiSelect?: () => void;
+  onExitMultiSelect?: () => void;
+  onToggleSelectElement?: (id: string) => void;
+  onSelectChildInGroup?: (groupId: string, childId: string) => void;
   elements?: CanvasElement[];
   surface?: string;
   productId: ProductId;
@@ -153,6 +160,13 @@ export function EditorSheets({
   onSelectLayer,
   onReorderElements,
   onOpenAddSheet,
+  selectionMode = 'default',
+  selectedElementIds = [],
+  activeGroupId = null,
+  onEnterMultiSelect,
+  onExitMultiSelect,
+  onToggleSelectElement,
+  onSelectChildInGroup,
 }: EditorSheetsProps) {
   const isOpen = activeSheet !== null;
 
@@ -306,6 +320,13 @@ export function EditorSheets({
             }}
             onClose={onClose}
             imageThumbnailSrc={imageThumbnailSrc}
+            selectionMode={selectionMode}
+            selectedElementIds={selectedElementIds}
+            activeGroupId={activeGroupId}
+            onEnterMultiSelect={onEnterMultiSelect}
+            onExitMultiSelect={onExitMultiSelect}
+            onToggleSelectElement={onToggleSelectElement}
+            onSelectChildInGroup={onSelectChildInGroup}
           />
         )}
 
