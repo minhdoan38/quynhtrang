@@ -10,6 +10,7 @@ import {
   Type,
   Sparkles,
   Layers,
+  Crop,
   Copy,
   Lock,
   Unlock,
@@ -26,6 +27,9 @@ import { AddContentSheet } from './add-content-sheet';
 import { LayersSheetContent } from './layers-sheet-content';
 import type { ImageSourceType, TextStylePreset, ShapePrimitiveType } from '@/lib/add-content';
 import { FontBrowserContent } from './font-browser-sheet';
+import { ColorPickerContent } from './color-picker-sheet';
+import type { ColorValue, HexColor } from '@/lib/color/color-types';
+import { createSolidColor } from '@/lib/color/color-validation';
 export type ActiveSheetType =
   | 'add'
   | 'templates'
@@ -51,6 +55,11 @@ interface EditorSheetsProps {
   hasImage: boolean;
   imageThumbnailSrc?: string;
   color: string;
+  colorValue?: ColorValue;
+  onUpdateColorValue?: (val: ColorValue) => void;
+  designColors?: HexColor[];
+  recentColors?: HexColor[];
+  isGradientSupported?: boolean;
   isLocked: boolean;
   imageOpacity: number;
   fontSize: number;
@@ -66,6 +75,8 @@ interface EditorSheetsProps {
   onSetFontSize: (size: number) => void;
   onSetTextAlign?: (align: 'left' | 'center' | 'right') => void;
   onSetOpacity: (opacity: number) => void;
+  onCommitOpacity?: (opacity: number) => void;
+  onMaskClick?: () => void;
   onToggleLock: () => void;
   onDuplicate: () => void;
   onBringForward: () => void;
@@ -101,6 +112,11 @@ export function EditorSheets({
   hasImage,
   imageThumbnailSrc,
   color,
+  colorValue,
+  onUpdateColorValue,
+  designColors,
+  recentColors,
+  isGradientSupported,
   isLocked,
   imageOpacity,
   fontSize,
@@ -116,6 +132,8 @@ export function EditorSheets({
   onSetFontSize,
   onSetTextAlign,
   onSetOpacity,
+  onCommitOpacity,
+  onMaskClick,
   onToggleLock,
   onDuplicate,
   onBringForward,
@@ -135,9 +153,11 @@ export function EditorSheets({
           ? ['420px', '82vh']
           : activeSheet === 'font'
             ? ['460px', '85vh']
-            : undefined
+            : activeSheet === 'color'
+              ? ['440px', '80vh']
+              : undefined
       }
-      showSwipeHandle={activeSheet === 'layers' || activeSheet === 'font'}
+      showSwipeHandle={activeSheet === 'layers' || activeSheet === 'font' || activeSheet === 'color'}
       onOpenChange={(open) => {
         if (!open) onClose();
       }}
@@ -279,53 +299,20 @@ export function EditorSheets({
 
         {/* COLOR SHEET */}
         {activeSheet === 'color' && (
-          <div className="space-y-4">
-            <DrawerHeader className="px-0 py-2">
-              <DrawerTitle className="text-sm font-semibold text-center text-[#2E3338]">
-                Chọn màu sắc
-              </DrawerTitle>
-            </DrawerHeader>
-            <div className="grid grid-cols-4 gap-2.5 pt-1">
-              {PALETTE.map((p) => {
-                const isSelected = color.toLowerCase() === p.hex.toLowerCase();
-                return (
-                  <button
-                    key={p.hex}
-                    type="button"
-                    onClick={() => {
-                      onSetColor(p.hex);
-                      onClose();
-                    }}
-                    className="flex flex-col items-center gap-1.5 p-2 rounded-xl border border-[#ECE6DC] bg-white hover:bg-[#F8F3E8] transition-all"
-                  >
-                    <span
-                      className="w-7 h-7 rounded-full border border-black/10 shadow-xs flex items-center justify-center"
-                      style={{ backgroundColor: p.hex }}
-                    >
-                      {isSelected && (
-                        <Check
-                          className={`w-3.5 h-3.5 ${p.hex === '#FFFFFF' ? 'text-black' : 'text-white'
-                            }`}
-                        />
-                      )}
-                    </span>
-                    <span className="text-xs text-[#666A6D] text-center font-medium leading-tight">
-                      {p.name}
-                    </span>
-                  </button>
-                );
-              })}
-            </div>
-            <div className="flex items-center justify-between px-3 py-2 bg-white rounded-xl border border-[#ECE6DC]">
-              <span className="text-xs font-medium text-[#2E3338]">Màu tùy chỉnh</span>
-              <input
-                type="color"
-                value={color}
-                onChange={(e) => onSetColor(e.target.value)}
-                className="w-8 h-8 rounded-md border border-[#ECE6DC] cursor-pointer"
-              />
-            </div>
-          </div>
+          <ColorPickerContent
+            currentColor={colorValue || createSolidColor(color || '#315F86')}
+            onUpdateColor={(val) => {
+              if (onUpdateColorValue) {
+                onUpdateColorValue(val);
+              } else {
+                onSetColor(val.kind === 'solid' ? val.color : val.colors[0]);
+              }
+            }}
+            designColors={designColors || []}
+            recentColors={recentColors || []}
+            isGradientSupported={isGradientSupported ?? true}
+            onClose={onClose}
+          />
         )}
 
         {/* OPACITY SHEET */}
@@ -339,16 +326,19 @@ export function EditorSheets({
             <div className="py-4 px-2">
               <input
                 type="range"
-                min="10"
+                min="0"
                 max="100"
-                step="5"
+                step="1"
                 value={imageOpacity}
                 onChange={(e) => onSetOpacity(Number(e.target.value))}
+                onPointerUp={(e) => onCommitOpacity?.(Number((e.target as HTMLInputElement).value))}
+                onTouchEnd={(e) => onCommitOpacity?.(Number((e.target as HTMLInputElement).value))}
+                onKeyUp={(e) => onCommitOpacity?.(Number((e.target as HTMLInputElement).value))}
                 className="w-full accent-[#315F86] cursor-pointer h-2 bg-[#ECE6DC] rounded-lg"
               />
               <div className="flex justify-between text-xs text-[#666A6D] mt-2 font-medium">
-                <span>10% (Mờ)</span>
-                <span>100% (Rõ)</span>
+                <span>0% (Trong suốt)</span>
+                <span>100% (Rõ nét)</span>
               </div>
             </div>
           </div>
@@ -405,8 +395,8 @@ export function EditorSheets({
                       onClose();
                     }}
                     className={`flex flex-col items-center gap-2 p-3.5 rounded-xl border transition-all text-xs font-medium ${isSelected
-                        ? 'border-[#315F86] bg-[#DCEBF4]/40 text-[#315F86]'
-                        : 'border-[#ECE6DC] bg-white hover:bg-[#F8F3E8] text-[#2E3338]'
+                      ? 'border-[#315F86] bg-[#DCEBF4]/40 text-[#315F86]'
+                      : 'border-[#ECE6DC] bg-white hover:bg-[#F8F3E8] text-[#2E3338]'
                       }`}
                   >
                     <Icon className="w-5 h-5" />
@@ -426,8 +416,21 @@ export function EditorSheets({
               </DrawerTitle>
             </DrawerHeader>
             <div className="space-y-1 pt-1">
+              {selectedTarget === 'image' && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    onClose();
+                    onMaskClick?.();
+                  }}
+                  className="w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-left hover:bg-[#F8F3E8] active:scale-98 transition-all text-xs font-medium"
+                >
+                  <Crop className="w-4 h-4 text-[#315F86]" />
+                  <span>Mặt nạ cắt (Mask)</span>
+                </button>
+              )}
+
               <button
-                type="button"
                 onClick={() => {
                   onDuplicate();
                   onClose();

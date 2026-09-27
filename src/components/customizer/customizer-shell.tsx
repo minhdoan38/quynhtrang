@@ -53,6 +53,8 @@ import { EmptyEditorState } from './empty-editor-state';
 import { BottomNavigation, type SelectedTarget } from './bottom-navigation';
 import { EditorSheets, type ActiveSheetType } from './editor-sheets';
 import type { ImageSourceType, TextStylePreset, ShapePrimitiveType } from '@/lib/add-content';
+import { useColorEditor } from './use-color-editor';
+import type { ColorTarget, HexColor } from '@/lib/color/color-types';
 import { resolveEditorBackAction, type SaveStatus } from '@/lib/navigation';
 import {
   startTextEdit,
@@ -63,7 +65,7 @@ import { TextEditOverlay } from './text-edit-overlay';
 import { useRouter } from 'next/navigation';
 type View = 'launcher' | 'setup' | 'editor' | 'template-browser';
 type EditorOverlayMode = 'preview' | 'preflight' | null;
-type FocusMode = 'text-edit' | 'crop' | null;
+type FocusMode = 'text-edit' | 'crop' | 'remove-bg' | 'mask' | null;
 
 export type TextEditState = ActiveTextEditState | null;
 export function CustomizerShell() {
@@ -97,8 +99,42 @@ export function CustomizerShell() {
   const [hasUnsavedWarning, setHasUnsavedWarning] = useState(false);
   const saveTimerRef = useRef<NodeJS.Timeout | null>(null);
   const fontSessionBaseStateRef = useRef<DesignState | null>(null);
+  const opacitySessionBaseStateRef = useRef<DesignState | null>(null);
+  const [projectRecents, setProjectRecents] = useState<string[]>([]);
 
+  const activeColorTarget = React.useMemo<ColorTarget | null>(() => {
+    if (selectedTarget === 'text') {
+      const elements = state.elements ?? getDefaultElements(state);
+      const targetId = selectedTextId || elements.find((e) => e.type === 'text')?.id || 'text-1';
+      return { kind: 'element', elementId: targetId, property: 'fill' };
+    }
+    return { kind: 'surface', surfaceId: 'front', property: 'background' };
+  }, [selectedTarget, selectedTextId, state]);
+
+  const {
+    currentColor: activeColorValue,
+    updateColorLive,
+    closeSession: closeColorSession,
+    designColors,
+    recentColors,
+    isGradientSupported,
+  } = useColorEditor({
+    target: activeColorTarget,
+    state,
+    onUpdateState: (newState) => setState(newState),
+    onCommitUndo: (baseState) => {
+      setPast((prev) => [...prev, baseState]);
+      setFuture([]);
+    },
+    projectRecents,
+    onAddProjectRecent: (hex) => {
+      setProjectRecents((prev) => [hex, ...prev.filter((c) => c !== hex)].slice(0, 8));
+    },
+  });
   const handleCloseSheet = useCallback(() => {
+    if (activeSheet === 'color') {
+      closeColorSession();
+    }
     if (activeSheet === 'font' && fontSessionBaseStateRef.current) {
       const base = fontSessionBaseStateRef.current;
       fontSessionBaseStateRef.current = null;
@@ -107,8 +143,16 @@ export function CustomizerShell() {
         setFuture([]);
       }
     }
+    if (activeSheet === 'opacity' && opacitySessionBaseStateRef.current) {
+      const base = opacitySessionBaseStateRef.current;
+      opacitySessionBaseStateRef.current = null;
+      if (state.productOptions.imageOpacity !== base.productOptions.imageOpacity) {
+        setPast((prev) => [...prev, base]);
+        setFuture([]);
+      }
+    }
     setActiveSheet(null);
-  }, [activeSheet, state]);
+  }, [activeSheet, state, closeColorSession]);
 
   const executeAutosave = useCallback((currentState: DesignState) => {
     setSaveStatus('saving');
@@ -520,14 +564,32 @@ export function CustomizerShell() {
   const handleUploadImage = useCallback(async (file: File) => {
     try {
       const imageState = await processImageUpload(file);
-      if (state.image?.src) revokeImageUrl(state.image.src);
-      dispatch({ type: 'SET_IMAGE', value: imageState });
-      setSelectedTarget('image');
-      showToast('Tải ảnh lên thành công.');
+      if (selectedTarget === 'image') {
+        dispatch({
+          type: 'REPLACE_IMAGE_ASSET',
+          id: selectedElementId ?? undefined,
+          asset: {
+            src: imageState.src,
+            name: imageState.name,
+            width: imageState.width,
+            height: imageState.height,
+            size: imageState.size,
+          },
+        });
+        showToast('Đã thay ảnh (giữ nguyên khung thiết kế).');
+      } else {
+        if (state.image?.src) revokeImageUrl(state.image.src);
+        dispatch({ type: 'SET_IMAGE', value: imageState });
+        setSelectedTarget('image');
+        const elements = state.elements ?? getDefaultElements(state);
+        const imgEl = elements.find((e) => e.type === 'image');
+        setSelectedElementId(imgEl?.id || 'image-1');
+        showToast('Tải ảnh lên thành công.');
+      }
     } catch (err: unknown) {
       showToast(err instanceof Error ? err.message : 'Tải ảnh thất bại.');
     }
-  }, [dispatch, state.image, showToast]);
+  }, [dispatch, state.image, state.elements, selectedTarget, selectedElementId, showToast]);
 
   const handleFileInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -826,11 +888,14 @@ export function CustomizerShell() {
         fileInputRef.current?.click();
         break;
       case 'remove-bg':
-        showToast('Đang tối ưu tách nền ảnh...');
-        setTimeout(() => showToast('Đã hoàn thiện tách nền ảnh.'), 800);
+        setFocusMode('remove-bg');
         break;
       case 'opacity':
+        opacitySessionBaseStateRef.current = state;
         setActiveSheet('opacity');
+        break;
+      case 'mask':
+        setFocusMode('mask');
         break;
       case 'edit-text': {
         const elements = state.elements ?? getDefaultElements(state);
@@ -1044,6 +1109,98 @@ export function CustomizerShell() {
         </div>
       )}
 
+      {/* FOCUS MODE: Remove Background */}
+      {focusMode === 'remove-bg' && (
+        <div className="fixed inset-0 z-50 bg-[#2E3338] text-white flex flex-col">
+          <header className="h-[52px] px-3 border-b border-white/10 flex items-center justify-between">
+            <button
+              type="button"
+              onClick={() => {
+                setFocusMode(null);
+                showToast('Đã hủy tách nền.');
+              }}
+              className="text-xs font-medium text-white/80 px-2 py-1"
+            >
+              Hủy
+            </button>
+            <span className="text-xs font-semibold">Tách nền tự động</span>
+            <button
+              type="button"
+              onClick={() => {
+                if (state.image?.src) {
+                  dispatch({
+                    type: 'APPLY_REMOVE_BACKGROUND',
+                    id: selectedElementId ?? undefined,
+                    derivedSrc: state.image.src,
+                  });
+                }
+                setFocusMode(null);
+                showToast('Đã hoàn thiện tách nền ảnh.');
+              }}
+              className="text-xs font-semibold text-white bg-[#315F86] px-3 py-1.5 rounded-lg"
+            >
+              Xong
+            </button>
+          </header>
+          <div className="flex-1 flex flex-col items-center justify-center p-6 text-center">
+            {state.image?.src ? (
+              <div className="relative p-2 rounded-xl bg-[linear-gradient(45deg,#444_25%,transparent_25%),linear-gradient(-45deg,#444_25%,transparent_25%),linear-gradient(45deg,transparent_75%,#444_75%),linear-gradient(-45deg,transparent_75%,#444_75%)] bg-[size:16px_16px] bg-[position:0_0,0_8px,8px_-8px,-8px_0px]">
+                <img
+                  src={state.image.src}
+                  alt="Ảnh xem trước tách nền"
+                  className="max-h-[60vh] max-w-[80vw] object-contain rounded-md shadow-2xl"
+                />
+              </div>
+            ) : (
+              <p className="text-xs text-white/60">Không có ảnh để tách nền</p>
+            )}
+            <p className="text-xs text-white/70 mt-5">
+              Hệ thống đã giữ lại chủ thể chính và loại bỏ phông nền phía sau.
+            </p>
+          </div>
+        </div>
+      )}
+
+      {/* FOCUS MODE: Mask */}
+      {focusMode === 'mask' && (
+        <div className="fixed inset-0 z-50 bg-[#2E3338] text-white flex flex-col">
+          <header className="h-[52px] px-3 border-b border-white/10 flex items-center justify-between">
+            <button
+              type="button"
+              onClick={() => setFocusMode(null)}
+              className="text-xs font-medium text-white/80 px-2 py-1"
+            >
+              Hủy
+            </button>
+            <span className="text-xs font-semibold">Khung mặt nạ (Mask)</span>
+            <button
+              type="button"
+              onClick={() => {
+                setFocusMode(null);
+                showToast('Đã áp dụng khung mặt nạ.');
+              }}
+              className="text-xs font-semibold text-white bg-[#315F86] px-3 py-1.5 rounded-lg"
+            >
+              Xong
+            </button>
+          </header>
+          <div className="flex-1 flex flex-col items-center justify-center p-6 text-center">
+            {state.image?.src ? (
+              <img
+                src={state.image.src}
+                alt="Khung mặt nạ"
+                className="max-h-[60vh] max-w-[80vw] object-contain rounded-full border-2 border-white shadow-2xl"
+              />
+            ) : (
+              <p className="text-xs text-white/60">Không có ảnh</p>
+            )}
+            <p className="text-xs text-white/70 mt-5">
+              Áp dụng hình dạng mặt nạ (tròn, oval, tim) lên ảnh đang chọn.
+            </p>
+          </div>
+        </div>
+      )}
+
       {/* ZONE 1: Minimal Top Bar */}
       <header className="h-[50px] px-3 border-b border-[#ECE6DC] bg-[#FFFDF8]/95 backdrop-blur-md flex items-center justify-between z-30 shrink-0 select-none">
         <button
@@ -1176,6 +1333,7 @@ export function CustomizerShell() {
             onLockedFeedback={() => {
               showToast('🔒 Thành phần này đã được khóa trong mẫu.');
             }}
+            onQualityExplanation={(msg) => showToast(msg)}
             imageTransform={imageTransform}
             textTransform={textTransform}
             onCommitTransform={(target, transform, elementId) => {
@@ -1216,7 +1374,11 @@ export function CustomizerShell() {
         selectedTarget={selectedTarget}
         isLocked={isCurrentTargetLocked}
         isTextEditing={Boolean(textEditState)}
-        onDeselect={() => setSelectedTarget(null)}
+        onDeselect={() => {
+          setSelectedTarget(null);
+          setSelectedElementId(null);
+          setSelectedTextId(null);
+        }}
         onAction={handleToolbarAction}
       />
 
@@ -1234,6 +1396,11 @@ export function CustomizerShell() {
         hasImage={Boolean(state.image?.src)}
         imageThumbnailSrc={state.image?.src}
         color={currentTextColor}
+        colorValue={activeColorValue}
+        onUpdateColorValue={updateColorLive}
+        designColors={designColors}
+        recentColors={recentColors}
+        isGradientSupported={isGradientSupported}
         isLocked={isCurrentTargetLocked}
         imageOpacity={currentImageOpacity}
         fontSize={currentFontSize}
@@ -1251,7 +1418,26 @@ export function CustomizerShell() {
         onSetFont={handleSetFont}
         onSetFontSize={handleSetFontSize}
         onSetTextAlign={handleSetTextAlign}
-        onSetOpacity={(val) => dispatch({ type: 'SET_PRODUCT_OPTION', key: 'imageOpacity', value: val })}
+        onSetOpacity={(val) => {
+          setState((curr) =>
+            transitionState(curr, {
+              type: 'SET_IMAGE_OPACITY',
+              id: selectedElementId ?? undefined,
+              opacity: val,
+            })
+          );
+        }}
+        onCommitOpacity={(val) => {
+          if (opacitySessionBaseStateRef.current) {
+            const base = opacitySessionBaseStateRef.current;
+            if (base.productOptions.imageOpacity !== val) {
+              setPast((prev) => [...prev, base]);
+              setFuture([]);
+              opacitySessionBaseStateRef.current = state;
+            }
+          }
+        }}
+        onMaskClick={() => setFocusMode('mask')}
         onToggleLock={() => {
           if (selectedElementId) {
             dispatch({

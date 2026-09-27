@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useRef, useEffect, useCallback } from 'react';
+import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import {
   type ProductId,
   type ImageState,
@@ -9,6 +9,7 @@ import {
   createTextElement,
   getTextData,
 } from '@/lib/product-state';
+import { evaluateImageQuality, type ImageQualityReport } from '@/lib/image-quality';
 import {
   TAP_THRESHOLD_PX,
   isDoubleTap,
@@ -18,6 +19,8 @@ import {
   type TapPoint,
 } from '@/lib/canvas-interaction';
 import { SelectionOverlay } from './selection-overlay';
+import { colorValueToCss, colorValueToTextStyle } from '@/lib/color';
+import type { ColorValue } from '@/lib/color/color-types';
 
 export interface TransformState {
   x: number;
@@ -48,6 +51,7 @@ export interface DesignCanvasProps {
   onMeasureText?: (id: string, height: number) => void;
   isLocked?: boolean;
   onLockedFeedback?: () => void;
+  onQualityExplanation?: (message: string) => void;
   imageTransform?: TransformState;
   textTransform?: TransformState;
   textTransforms?: Record<string, TransformState>;
@@ -76,13 +80,17 @@ export function DesignCanvas({
   onMeasureText,
   isLocked = false,
   onLockedFeedback,
+  onQualityExplanation,
   imageTransform = DEFAULT_IMAGE_TRANSFORM,
   textTransform = DEFAULT_TEXT_TRANSFORM,
   textTransforms = DEFAULT_TEXT_TRANSFORMS,
   onCommitTransform,
 }: DesignCanvasProps) {
+  const backgroundCss = productOptions.backgroundColorValue
+    ? colorValueToCss(productOptions.backgroundColorValue as ColorValue)
+    : backgroundColor;
   const styles: React.CSSProperties & Record<string, string | number | undefined> = {
-    backgroundColor,
+    background: backgroundCss,
   };
 
   const classes: string[] = [
@@ -290,10 +298,20 @@ export function DesignCanvas({
 
   const isImageSelected = !isMockup && selectedTarget === 'image';
 
+  const imageQuality = useMemo<ImageQualityReport | null>(() => {
+    if (!image?.src) return null;
+    return evaluateImageQuality({
+      sourceWidth: image.width ?? 1200,
+      sourceHeight: image.height ?? 1200,
+      scale: effectiveImageTransform.scale,
+      cropFraction: 1,
+      productId,
+    });
+  }, [image?.src, image?.width, image?.height, effectiveImageTransform.scale, productId]);
+
   const imageOpacity = typeof productOptions.imageOpacity === 'number'
     ? productOptions.imageOpacity / 100
     : 1;
-
   // Resolve effective text elements
   const resolvedTextElements: CanvasElement[] = React.useMemo(() => {
     if (textElements && textElements.length > 0) {
@@ -356,6 +374,12 @@ export function DesignCanvas({
               isLocked={isLocked}
               isRotating={isRotating}
               rotationAngle={effectiveImageTransform.rotation}
+              qualityReport={imageQuality}
+              onQualityClick={() => {
+                if (imageQuality) {
+                  onQualityExplanation?.(`${imageQuality.description} ${imageQuality.advice}`);
+                }
+              }}
               onHandlePointerDown={(handle, e) => {
                 if (handle === 'rotate') {
                   startGesture('image', undefined, 'rotate', 'rotate', e);
@@ -379,8 +403,12 @@ export function DesignCanvas({
             (selectedTarget === 'text' && (!selectedTextId || resolvedTextElements.length === 1)));
         const transform = getEffectiveTextTransform(el.id);
 
+        const effectiveColorValue = (el.data as Record<string, unknown> | undefined)?.colorValue as ColorValue | undefined;
+        const colorStyles: React.CSSProperties = effectiveColorValue
+          ? colorValueToTextStyle(effectiveColorValue)
+          : { color: data.color || color };
+
         const textStyle: React.CSSProperties = {
-          color: data.color || color,
           fontFamily: data.fontFamily || (typeof productOptions.fontFamily === 'string' ? productOptions.fontFamily : undefined),
           fontSize: `${data.fontSize || 20}px`,
           fontWeight: data.fontWeight === 'bold' ? 700 : data.fontWeight === 'medium' ? 500 : 400,
@@ -388,6 +416,7 @@ export function DesignCanvas({
           textAlign: data.align || 'center',
           lineHeight: data.lineHeight || 1.4,
           letterSpacing: `${data.letterSpacing || 0}px`,
+          ...colorStyles,
         };
 
         return (
