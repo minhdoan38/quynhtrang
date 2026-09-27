@@ -1,6 +1,7 @@
 'use client';
 
 import { useRef } from 'react';
+import Link from 'next/link';
 import gsap from 'gsap';
 import { useGSAP } from '@gsap/react';
 import { ArrowUpRight, Sparkles } from 'lucide-react';
@@ -106,6 +107,12 @@ export function ProductLauncher({
           <span className="launcher-brand__mark"><Sparkles size={15} strokeWidth={2.2} /></span>
           <span>quỳnh trang</span>
         </div>
+        <Link
+          href="/products"
+          className="text-xs font-semibold text-[#315F86] hover:underline px-2.5 py-1.5 rounded-lg hover:bg-[#DCEBF4]/40 transition-colors"
+        >
+          Xem toàn bộ danh mục & mẫu →
+        </Link>
       </header>
 
       <main className="launcher-main">
