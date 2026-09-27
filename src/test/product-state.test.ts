@@ -11,6 +11,7 @@ import {
   createTextElement,
   getTextElement,
   getTextData,
+  getImageData,
   getTextLayerName,
   migrateLegacyText,
   type DesignState,
@@ -371,6 +372,90 @@ test('duplicate preserves text style and offsets new element', () => {
   assert.equal(next.elements?.length, 2);
   assert.deepEqual(getTextData(next.elements?.[1]!)?.fontFamily, getTextData(next.elements?.[0]!)?.fontFamily);
   assert.notEqual(next.elements?.[1].x, next.elements?.[0].x);
+});
+
+test('REPLACE_IMAGE_ASSET updates source while preserving element layout, crop, and transforms', () => {
+  const base = createInitialState('wrapping');
+  const stateWithImage = transitionState(base, {
+    type: 'SET_IMAGE',
+    value: { src: 'blob:old-img', name: 'old.jpg', width: 800, height: 600 },
+  });
+  // Move element
+  const moved = transitionState(stateWithImage, {
+    type: 'MOVE_ELEMENT',
+    id: 'image-1',
+    x: 65,
+    y: 70,
+  });
+
+  const replaced = transitionState(moved, {
+    type: 'REPLACE_IMAGE_ASSET',
+    id: 'image-1',
+    asset: {
+      id: 'asset-new',
+      src: 'blob:new-img',
+      name: 'new.jpg',
+      width: 1600,
+      height: 1200,
+    },
+  });
+
+  const imgEl = replaced.elements?.find((el) => el.id === 'image-1');
+  assert.ok(imgEl);
+  assert.equal(imgEl.x, 65);
+  assert.equal(imgEl.y, 70);
+  assert.equal(getImageData(imgEl)?.src, 'blob:new-img');
+  assert.equal(getImageData(imgEl)?.originalSrc, 'blob:new-img');
+  assert.equal(replaced.image?.src, 'blob:new-img');
+  assert.equal(replaced.image?.name, 'new.jpg');
+});
+
+test('APPLY_REMOVE_BACKGROUND and RESTORE_ORIGINAL_IMAGE behave non-destructively', () => {
+  const base = createInitialState('card');
+  const withImg = transitionState(base, {
+    type: 'SET_IMAGE',
+    value: { src: 'blob:photo.jpg', name: 'photo.jpg' },
+  });
+
+  const removedBg = transitionState(withImg, {
+    type: 'APPLY_REMOVE_BACKGROUND',
+    id: 'image-1',
+    derivedSrc: 'blob:photo-no-bg.png',
+  });
+
+  const imgEl = removedBg.elements?.find((el) => el.id === 'image-1');
+  assert.ok(imgEl);
+  assert.equal(getImageData(imgEl)?.src, 'blob:photo-no-bg.png');
+  assert.equal(getImageData(imgEl)?.originalSrc, 'blob:photo.jpg');
+  assert.equal(removedBg.image?.src, 'blob:photo-no-bg.png');
+
+  // Restore original photo
+  const restored = transitionState(removedBg, {
+    type: 'RESTORE_ORIGINAL_IMAGE',
+    id: 'image-1',
+  });
+  const restoredEl = restored.elements?.find((el) => el.id === 'image-1');
+  assert.ok(restoredEl);
+  assert.equal(getImageData(restoredEl)?.src, 'blob:photo.jpg');
+  assert.equal(restored.image?.src, 'blob:photo.jpg');
+});
+
+test('SET_IMAGE_OPACITY updates element opacity and productOptions in sync', () => {
+  const base = createInitialState('wrapping');
+  const withImg = transitionState(base, {
+    type: 'SET_IMAGE',
+    value: { src: 'blob:test.jpg', name: 'test.jpg' },
+  });
+
+  const next = transitionState(withImg, {
+    type: 'SET_IMAGE_OPACITY',
+    id: 'image-1',
+    opacity: 45,
+  });
+
+  assert.equal(next.productOptions.imageOpacity, 45);
+  const imgEl = next.elements?.find((el) => el.id === 'image-1');
+  assert.equal(getImageData(imgEl!)?.opacity, 45);
 });
 
 function textElementWithContent(text: string): CanvasElement {

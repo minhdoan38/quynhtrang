@@ -245,7 +245,7 @@ export function AddContentSheet({
             </div>
             <div>
               <span className="block text-sm font-bold text-[#2E3338]">Thêm tiêu đề</span>
-              <span className="block text-[11px] text-[#666A6D]">Nhập tiêu đề</span>
+              <span className="block text-xs text-[#666A6D]">Nhập tiêu đề</span>
             </div>
           </button>
 
@@ -262,7 +262,7 @@ export function AddContentSheet({
             </div>
             <div>
               <span className="block text-xs font-semibold text-[#2E3338]">Thêm nội dung</span>
-              <span className="block text-[11px] text-[#666A6D]">Nhập nội dung</span>
+              <span className="block text-xs text-[#666A6D]">Nhập nội dung</span>
             </div>
           </button>
         </div>
@@ -302,7 +302,7 @@ export function AddContentSheet({
             <p className="text-xs font-semibold text-[#2E3338]">
               {getProviderStatus('sticker').message}
             </p>
-            <p className="text-[11px] text-[#666A6D]">
+            <p className="text-xs text-[#666A6D]">
               Bộ sưu tập sticker vẽ tay phong cách vintage pastel đang được đội ngũ quản trị tuyển chọn và cập nhật sớm.
             </p>
           </div>
@@ -321,7 +321,7 @@ export function AddContentSheet({
                 ? getProviderStatus('qr').message
                 : getProviderStatus('barcode').message}
             </p>
-            <p className="text-[11px] text-[#666A6D]">
+            <p className="text-xs text-[#666A6D]">
               Tính năng tiện ích này yêu cầu thư viện mã hóa client-side bảo mật và sẽ sẵn sàng trong bản nâng cấp tiếp theo.
             </p>
           </div>

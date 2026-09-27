@@ -112,8 +112,8 @@ export interface ImageObjectData {
   placeholder?: boolean;
   sourceWidth?: number;
   sourceHeight?: number;
+  refineMaskData?: string;
 }
-
 export function getImageData(element: CanvasElement): ImageObjectData | null {
   if (element.type !== 'image' || !element.data) return null;
   return element.data as unknown as ImageObjectData;
@@ -176,7 +176,8 @@ export type DesignAction =
   | { type: 'REPLACE_IMAGE_ASSET'; id?: string; asset: Partial<ImageAsset> & { src: string; name?: string } }
   | { type: 'SET_IMAGE_OPACITY'; id?: string; opacity: number }
   | { type: 'APPLY_REMOVE_BACKGROUND'; id?: string; derivedSrc: string }
-  | { type: 'RESTORE_ORIGINAL_IMAGE'; id?: string };
+  | { type: 'RESTORE_ORIGINAL_IMAGE'; id?: string }
+  | { type: 'COMMIT_REFINE_MASK'; id?: string; refinedSrc: string; maskData?: string };
 export interface DesignSummary {
   product: string;
   variant: string;
@@ -1092,10 +1093,32 @@ export function transitionState(state: DesignState, action: DesignAction): Desig
     }
 
     case 'REPLACE_IMAGE_ASSET': {
-      const currentList = state.elements ?? getDefaultElements(state);
-      const target = action.id
+      let currentList = state.elements && state.elements.length > 0
+        ? state.elements
+        : getDefaultElements(state);
+
+      let target = action.id
         ? currentList.find((el) => el.id === action.id && el.type === 'image')
         : currentList.find((el) => el.type === 'image');
+
+      if (!target && !action.id && state.image) {
+        target = {
+          id: 'image-1',
+          type: 'image',
+          x: 50,
+          y: 45,
+          width: 60,
+          height: 60,
+          rotation: 0,
+          locked: false,
+          zIndex: 1,
+          data: {
+            src: state.image.src,
+            name: state.image.name,
+          },
+        };
+        currentList = [...currentList, target];
+      }
 
       if (!target) return state;
 
@@ -1210,6 +1233,35 @@ export function transitionState(state: DesignState, action: DesignAction): Desig
       };
     }
 
+    case 'COMMIT_REFINE_MASK': {
+      const currentList = state.elements ?? getDefaultElements(state);
+      const target = action.id
+        ? currentList.find((el) => el.id === action.id && el.type === 'image')
+        : currentList.find((el) => el.type === 'image');
+
+      if (!target) return state;
+
+      const existingData = (target.data ?? {}) as Record<string, unknown>;
+      const originalSrc = (existingData.originalSrc as string | undefined) ?? (existingData.src as string) ?? state.image?.src ?? '';
+
+      const updatedData: Record<string, unknown> = {
+        ...existingData,
+        originalSrc,
+        removedBackgroundSrc: action.refinedSrc,
+        src: action.refinedSrc,
+        refineMaskData: action.maskData ?? (existingData.refineMaskData as string | undefined),
+      };
+
+      const nextList = currentList.map((el) =>
+        el.id === target.id ? { ...el, data: updatedData } : el
+      );
+
+      return {
+        ...state,
+        image: state.image ? { ...state.image, src: action.refinedSrc } : null,
+        elements: nextList,
+      };
+    }
     case 'RESTORE_ORIGINAL_IMAGE': {
       const currentList = state.elements ?? getDefaultElements(state);
       const target = action.id

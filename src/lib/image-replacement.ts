@@ -73,8 +73,30 @@ export function replaceImageInState(
   targetId: string,
   newAsset: ReplaceImageNewAsset
 ): DesignState {
-  const elements = state.elements ?? [];
-  const target = elements.find((el) => el.id === targetId && el.type === 'image');
+  let currentList = state.elements && state.elements.length > 0 ? state.elements : [];
+  let target = targetId
+    ? currentList.find((el) => el.id === targetId && el.type === 'image')
+    : currentList.find((el) => el.type === 'image');
+
+  if (!target && !targetId && state.image) {
+    target = {
+      id: 'image-1',
+      type: 'image',
+      x: 50,
+      y: 45,
+      width: 60,
+      height: 60,
+      rotation: 0,
+      locked: false,
+      zIndex: 1,
+      data: {
+        src: state.image.src,
+        name: state.image.name,
+      },
+    };
+    currentList = [...currentList, target];
+  }
+
   if (!target) return state;
 
   const existingData = ((target.data ?? {}) as unknown) as Partial<ImageObjectData>;
@@ -103,8 +125,8 @@ export function replaceImageInState(
     placeholder: false,
   };
 
-  const nextElements = elements.map((el) =>
-    el.id === targetId ? { ...el, data: updatedData as unknown as Record<string, unknown> } : el
+  const nextElements = currentList.map((el) =>
+    el.id === target.id ? { ...el, data: updatedData as unknown as Record<string, unknown> } : el
   );
 
   return {

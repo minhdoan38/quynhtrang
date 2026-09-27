@@ -90,7 +90,12 @@ export function CustomizerShell() {
   // Redesigned Shell State Model
   const [selectedTarget, setSelectedTarget] = useState<SelectedTarget>(null);
   const [selectedElementId, setSelectedElementId] = useState<string | null>(null);
-  const [imageSourceContext, setImageSourceContext] = useState<ImageSourceContext>({ mode: 'add' });
+  const imageSourceContextRef = useRef<ImageSourceContext>({ mode: 'add' });
+  const [imageSourceContext, setImageSourceContextState] = useState<ImageSourceContext>({ mode: 'add' });
+  const setImageSourceContext = useCallback((ctx: ImageSourceContext) => {
+    imageSourceContextRef.current = ctx;
+    setImageSourceContextState(ctx);
+  }, []);
   const [selectedTextId, setSelectedTextId] = useState<string | null>(null);
   const [textEditState, setTextEditState] = useState<TextEditState>(null);
   const pendingExitOnCompositionEndRef = useRef(false);
@@ -116,6 +121,15 @@ export function CustomizerShell() {
     return { kind: 'surface', surfaceId: 'front', property: 'background' };
   }, [selectedTarget, selectedTextId, state]);
 
+  const currentImageElement = React.useMemo(() => {
+    const elements = state.elements ?? getDefaultElements(state);
+    return selectedElementId
+      ? elements.find((e) => e.id === selectedElementId && e.type === 'image')
+      : elements.find((e) => e.type === 'image');
+  }, [state.elements, selectedElementId, state]);
+
+  const currentImageData = currentImageElement ? getImageData(currentImageElement) : null;
+  const hasRemovedBackground = Boolean(currentImageData?.removedBackgroundSrc);
   const {
     currentColor: activeColorValue,
     updateColorLive,
@@ -586,11 +600,9 @@ export function CustomizerShell() {
   const handleUploadImage = useCallback(async (file: File) => {
     try {
       const imageState = await processImageUpload(file);
-      if (imageSourceContext.mode === 'replace') {
-        const targetId = imageSourceContext.targetElementId;
-        // Record exact base state for atomic undo
-        setPast((prev) => [...prev, state]);
-        setFuture([]);
+      const currentCtx = imageSourceContextRef.current;
+      const targetId = currentCtx.mode === 'replace' ? currentCtx.targetElementId : (selectedElementId || 'image-1');
+      if (currentCtx.mode === 'replace') {
 
         dispatch({
           type: 'REPLACE_IMAGE_ASSET',
@@ -620,7 +632,7 @@ export function CustomizerShell() {
     } catch (err: unknown) {
       showToast(err instanceof Error ? err.message : 'Không thể sử dụng ảnh này.');
     }
-  }, [dispatch, state, imageSourceContext, showToast]);
+  }, [dispatch, state, showToast]);
 
   const handleFileInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -925,9 +937,55 @@ export function CustomizerShell() {
         setActiveSheet('image-source');
         break;
       }
-      case 'remove-bg':
+      case 'remove-bg': {
+        if (isCurrentTargetLocked) {
+          showToast('🔒 Thành phần này đã được khóa trong mẫu.');
+          break;
+        }
+        if (hasRemovedBackground) {
+          setBgRemovalState('result');
+          break;
+        }
+        const sourceSrc = currentImageData?.originalSrc || currentImageData?.src || state.image?.src;
+        if (!sourceSrc) {
+          showToast('Không tìm thấy ảnh để xóa nền.');
+          break;
+        }
+        setBgRemovalState('processing');
+        getBackgroundRemovalProvider()
+          .removeBackground(sourceSrc)
+          .then((result) => {
+            dispatch({
+              type: 'APPLY_REMOVE_BACKGROUND',
+              id: selectedElementId ?? undefined,
+              derivedSrc: result.derivedSrc,
+            });
+            setBgRemovalState('result');
+            showToast('Đã xóa nền ảnh thành công.');
+          })
+          .catch((err) => {
+            setBgRemovalState('idle');
+            showToast(err instanceof Error ? err.message : 'Không thể xóa nền ảnh. Vui lòng thử lại.');
+          });
+        break;
+      }
+      case 'restore-bg': {
+        dispatch({
+          type: 'RESTORE_ORIGINAL_IMAGE',
+          id: selectedElementId ?? undefined,
+        });
+        setBgRemovalState('idle');
+        showToast('Đã khôi phục ảnh gốc ban đầu.');
+        break;
+      }
+      case 'refine-bg': {
         setFocusMode('remove-bg');
         break;
+      }
+      case 'finish-bg-result': {
+        setBgRemovalState('idle');
+        break;
+      }
       case 'opacity':
         opacitySessionBaseStateRef.current = state;
         setActiveSheet('opacity');
@@ -989,6 +1047,17 @@ export function CustomizerShell() {
     });
   }, { dependencies: [state.productId, view], scope: containerRef });
 
+  // Background removal processing badge entrance animation
+  useGSAP(() => {
+    if (bgRemovalState === 'processing') {
+      gsap.fromTo('#bg-processing-badge', { y: -8, autoAlpha: 0 }, {
+        y: 0,
+        autoAlpha: 1,
+        duration: 0.25,
+        ease: 'power2.out',
+      });
+    }
+  }, { dependencies: [bgRemovalState], scope: containerRef });
   const summary = getDesignSummary(state);
   const preflight = getPreflight(state);
 
@@ -1071,7 +1140,9 @@ export function CustomizerShell() {
         ref={fileInputRef}
         type="file"
         accept="image/*"
-        className="hidden"
+        className="sr-only"
+        tabIndex={-1}
+        aria-hidden="true"
         onChange={handleFileInputChange}
       />
 
@@ -1147,56 +1218,27 @@ export function CustomizerShell() {
         </div>
       )}
 
-      {/* FOCUS MODE: Remove Background */}
+      {/* FOCUS MODE: Remove Background Refine */}
       {focusMode === 'remove-bg' && (
-        <div className="fixed inset-0 z-50 bg-[#2E3338] text-white flex flex-col">
-          <header className="h-[52px] px-3 border-b border-white/10 flex items-center justify-between">
-            <button
-              type="button"
-              onClick={() => {
-                setFocusMode(null);
-                showToast('Đã hủy tách nền.');
-              }}
-              className="text-xs font-medium text-white/80 px-2 py-1"
-            >
-              Hủy
-            </button>
-            <span className="text-xs font-semibold">Tách nền tự động</span>
-            <button
-              type="button"
-              onClick={() => {
-                if (state.image?.src) {
-                  dispatch({
-                    type: 'APPLY_REMOVE_BACKGROUND',
-                    id: selectedElementId ?? undefined,
-                    derivedSrc: state.image.src,
-                  });
-                }
-                setFocusMode(null);
-                showToast('Đã hoàn thiện tách nền ảnh.');
-              }}
-              className="text-xs font-semibold text-white bg-[#315F86] px-3 py-1.5 rounded-lg"
-            >
-              Xong
-            </button>
-          </header>
-          <div className="flex-1 flex flex-col items-center justify-center p-6 text-center">
-            {state.image?.src ? (
-              <div className="relative p-2 rounded-xl bg-[linear-gradient(45deg,#444_25%,transparent_25%),linear-gradient(-45deg,#444_25%,transparent_25%),linear-gradient(45deg,transparent_75%,#444_75%),linear-gradient(-45deg,transparent_75%,#444_75%)] bg-[size:16px_16px] bg-[position:0_0,0_8px,8px_-8px,-8px_0px]">
-                <img
-                  src={state.image.src}
-                  alt="Ảnh xem trước tách nền"
-                  className="max-h-[60vh] max-w-[80vw] object-contain rounded-md shadow-2xl"
-                />
-              </div>
-            ) : (
-              <p className="text-xs text-white/60">Không có ảnh để tách nền</p>
-            )}
-            <p className="text-xs text-white/70 mt-5">
-              Hệ thống đã giữ lại chủ thể chính và loại bỏ phông nền phía sau.
-            </p>
-          </div>
-        </div>
+        <BackgroundRefineOverlay
+          originalSrc={currentImageData?.originalSrc || currentImageData?.src || state.image?.src || ''}
+          currentSrc={currentImageData?.removedBackgroundSrc || currentImageData?.src || state.image?.src || ''}
+          onDone={(refinedSrc, maskData) => {
+            dispatch({
+              type: 'COMMIT_REFINE_MASK',
+              id: selectedElementId ?? undefined,
+              refinedSrc,
+              maskData,
+            });
+            setFocusMode(null);
+            setBgRemovalState('result');
+            showToast('Đã lưu chỉnh sửa vùng cắt.');
+          }}
+          onCancel={() => {
+            setFocusMode(null);
+            setBgRemovalState('result');
+          }}
+        />
       )}
 
       {/* FOCUS MODE: Mask */}
@@ -1322,6 +1364,18 @@ export function CustomizerShell() {
         onPointerMove={handleWorkspacePointerMove}
         onPointerUp={handleWorkspacePointerUp}
       >
+        {bgRemovalState === 'processing' && (
+          <div
+            id="bg-processing-badge"
+            role="status"
+            aria-live="polite"
+            className="absolute top-4 left-1/2 -translate-x-1/2 z-30 flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-[#2E3338]/90 text-white text-xs font-medium shadow-md backdrop-blur-sm pointer-events-none"
+          >
+            <span className="w-2 h-2 rounded-full bg-[#315F86] animate-pulse" />
+            <span>Đang xóa nền... Giữ nguyên bố cục</span>
+          </div>
+        )}
+
         <div
           className="w-full h-full max-w-2xl flex items-center justify-center origin-center transition-transform duration-75 ease-out"
           style={{
@@ -1338,7 +1392,6 @@ export function CustomizerShell() {
             selectedTarget={selectedTarget}
             selectedTextId={selectedTextId}
             textElements={state.elements ?? getDefaultElements(state)}
-            elements={state.elements ?? getDefaultElements(state)}
             onSelectTarget={(target) => {
               setSelectedTarget(target);
               if (target === 'image') {
@@ -1413,7 +1466,11 @@ export function CustomizerShell() {
         selectedTarget={selectedTarget}
         isLocked={isCurrentTargetLocked}
         isTextEditing={Boolean(textEditState)}
+        isProcessingBg={bgRemovalState === 'processing'}
+        bgRemovalState={bgRemovalState}
+        hasRemovedBackground={hasRemovedBackground}
         onDeselect={() => {
+          setBgRemovalState('idle');
           setSelectedTarget(null);
           setSelectedElementId(null);
           setSelectedTextId(null);
