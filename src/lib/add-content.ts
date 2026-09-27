@@ -33,6 +33,9 @@ export const ADD_MENU_ITEMS: readonly AddMenuItemConfig[] = [
 
 export type ImageSourceType = 'gallery' | 'camera' | 'file';
 
+export type ImageSourceContext =
+  | { mode: 'add' }
+  | { mode: 'replace'; targetElementId: string };
 export type TextStylePreset = 'heading' | 'body';
 
 export type ShapePrimitiveType =

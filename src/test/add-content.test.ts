@@ -7,6 +7,7 @@ import {
   getProviderStatus,
   calculateCenteredPlacement,
   type AddContentType,
+  type ImageSourceContext,
 } from '../lib/add-content.ts';
 
 test('defines exactly 6 primary add content categories in expected visual order', () => {
@@ -72,4 +73,11 @@ test('calculates center-safe element placement within canvas bounds', () => {
   const posBig = calculateCenteredPlacement(90, 90, 10);
   assert.ok(posBig.x >= 10 && posBig.x <= 90);
   assert.ok(posBig.y >= 10 && posBig.y <= 90);
+});
+test('ImageSourceContext supports explicit add and replace modes', () => {
+  const addCtx: ImageSourceContext = { mode: 'add' };
+  const replaceCtx: ImageSourceContext = { mode: 'replace', targetElementId: 'image-1' };
+  assert.equal(addCtx.mode, 'add');
+  assert.equal(replaceCtx.mode, 'replace');
+  assert.equal((replaceCtx as { targetElementId: string }).targetElementId, 'image-1');
 });

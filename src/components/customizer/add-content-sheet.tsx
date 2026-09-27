@@ -32,7 +32,7 @@ import {
   type TextStylePreset,
   type ShapePrimitiveType,
 } from '@/lib/add-content';
-
+import { ImageSourceChooser } from './image-source-chooser';
 interface AddContentSheetProps {
   onClose: () => void;
   onSelectImageSource: (source: ImageSourceType) => void;
@@ -215,57 +215,17 @@ export function AddContentSheet({
 
       {/* 2. IMAGE SOURCE SUBFLOW */}
       {subflow.mode === 'image-source' && (
-        <div className="add-flow-content space-y-2 pt-1">
-          <button
-            type="button"
-            onClick={() => {
+        <div className="add-flow-content pt-1">
+          <ImageSourceChooser
+            context={{ mode: 'add' }}
+            showBack={true}
+            onBack={() => setSubflow({ mode: 'root' })}
+            onClose={onClose}
+            onSelectSource={(source) => {
               onClose();
-              onSelectImageSource('gallery');
+              onSelectImageSource(source);
             }}
-            className="w-full flex items-center gap-3 p-3 rounded-xl border border-[#ECE6DC] bg-white hover:bg-[#F8F3E8] transition-all text-left"
-          >
-            <div className="w-9 h-9 rounded-lg bg-[#DCEBF4] text-[#315F86] flex items-center justify-center shrink-0">
-              <FolderOpen className="w-4 h-4" />
-            </div>
-            <div>
-              <span className="block text-xs font-semibold text-[#2E3338]">Thư viện ảnh</span>
-              <span className="block text-[11px] text-[#666A6D]">Chọn ảnh từ bộ nhớ thiết bị</span>
-            </div>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => {
-              onClose();
-              onSelectImageSource('camera');
-            }}
-            className="w-full flex items-center gap-3 p-3 rounded-xl border border-[#ECE6DC] bg-white hover:bg-[#F8F3E8] transition-all text-left"
-          >
-            <div className="w-9 h-9 rounded-lg bg-[#F8F3E8] text-[#2E3338] flex items-center justify-center shrink-0">
-              <Camera className="w-4 h-4" />
-            </div>
-            <div>
-              <span className="block text-xs font-semibold text-[#2E3338]">Chụp ảnh</span>
-              <span className="block text-[11px] text-[#666A6D]">Mở camera chụp ảnh trực tiếp</span>
-            </div>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => {
-              onClose();
-              onSelectImageSource('file');
-            }}
-            className="w-full flex items-center gap-3 p-3 rounded-xl border border-[#ECE6DC] bg-white hover:bg-[#F8F3E8] transition-all text-left"
-          >
-            <div className="w-9 h-9 rounded-lg bg-[#F8F3E8] text-[#2E3338] flex items-center justify-center shrink-0">
-              <ImagePlus className="w-4 h-4" />
-            </div>
-            <div>
-              <span className="block text-xs font-semibold text-[#2E3338]">Chọn tệp</span>
-              <span className="block text-[11px] text-[#666A6D]">PNG, JPG, WebP</span>
-            </div>
-          </button>
+          />
         </div>
       )}
 

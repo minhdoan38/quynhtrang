@@ -77,7 +77,7 @@ export function replaceImageInState(
   const target = elements.find((el) => el.id === targetId && el.type === 'image');
   if (!target) return state;
 
-  const existingData = (target.data ?? {}) as ImageObjectData;
+  const existingData = ((target.data ?? {}) as unknown) as Partial<ImageObjectData>;
   const frameWidth = target.width || 60;
   const frameHeight = target.height || 60;
   const imgWidth = newAsset.width || 800;
