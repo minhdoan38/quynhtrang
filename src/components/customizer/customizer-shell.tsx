@@ -29,6 +29,7 @@ import {
 } from '@/lib/product-state';
 import { getBackgroundRemovalProvider } from '@/lib/background-removal/provider';
 import { BackgroundRefineOverlay } from './background-refine-overlay';
+import { CropFocusMode } from './crop-focus-mode';
 import {
   getRecentProjects,
   loadState,
@@ -66,9 +67,25 @@ import {
 } from '@/lib/text-edit-session';
 import { TextEditOverlay } from './text-edit-overlay';
 import { useRouter } from 'next/navigation';
+import {
+  groupElements,
+  ungroupElement,
+  duplicateSelectedElements,
+  deleteSelectedElements,
+} from '@/lib/grouping';
+import {
+  moveElements,
+  scaleElementsUniform,
+  rotateElementsAroundCenter,
+  filterEditableSelection,
+  computeCombinedBounds,
+  type CombinedBounds,
+} from '@/lib/multi-selection';
+
 type View = 'launcher' | 'setup' | 'editor' | 'template-browser';
 type EditorOverlayMode = 'preview' | 'preflight' | null;
 type FocusMode = 'text-edit' | 'crop' | 'remove-bg' | 'mask' | null;
+export type SelectionMode = 'default' | 'multi-select' | 'group-edit';
 
 export type TextEditState = ActiveTextEditState | null;
 export function CustomizerShell() {
@@ -90,6 +107,9 @@ export function CustomizerShell() {
   // Redesigned Shell State Model
   const [selectedTarget, setSelectedTarget] = useState<SelectedTarget>(null);
   const [selectedElementId, setSelectedElementId] = useState<string | null>(null);
+  const [selectionMode, setSelectionMode] = useState<SelectionMode>('default');
+  const [selectedElementIds, setSelectedElementIds] = useState<string[]>([]);
+  const [activeGroupId, setActiveGroupId] = useState<string | null>(null);
   const imageSourceContextRef = useRef<ImageSourceContext>({ mode: 'add' });
   const [imageSourceContext, setImageSourceContextState] = useState<ImageSourceContext>({ mode: 'add' });
   const setImageSourceContext = useCallback((ctx: ImageSourceContext) => {
@@ -459,6 +479,131 @@ export function CustomizerShell() {
       setSelectedTarget(null);
     }
   }, []);
+  const handleExitMultiSelect = useCallback(() => {
+    setSelectionMode('default');
+    setSelectedElementIds([]);
+  }, []);
+
+  const handleExitGroupEdit = useCallback(() => {
+    const returnGroupId = activeGroupId;
+    setSelectionMode('default');
+    setActiveGroupId(null);
+    if (returnGroupId) {
+      setSelectedElementId(returnGroupId);
+      setSelectedTarget('group');
+    } else {
+      setSelectedElementId(null);
+      setSelectedTarget(null);
+    }
+  }, [activeGroupId]);
+
+  const handleEnterMultiSelect = useCallback((initialId?: string) => {
+    setSelectionMode('multi-select');
+    const elements = state.elements ?? getDefaultElements(state);
+    const startId = initialId || selectedElementId;
+    if (startId) {
+      const el = elements.find((e) => e.id === startId);
+      if (el && !el.locked) {
+        setSelectedElementIds([startId]);
+      } else {
+        setSelectedElementIds([]);
+      }
+    } else {
+      setSelectedElementIds([]);
+    }
+    setSelectedTarget(null);
+    setSelectedElementId(null);
+    setSelectedTextId(null);
+  }, [state, selectedElementId]);
+
+  const handleToggleMultiSelect = useCallback((id: string) => {
+    const elements = state.elements ?? getDefaultElements(state);
+    const el = elements.find((e) => e.id === id);
+    if (el?.locked) {
+      showToast('🔒 Thành phần này đã được khóa trong mẫu.');
+      return;
+    }
+    setSelectedElementIds((prev) => {
+      if (prev.includes(id)) {
+        return prev.filter((i) => i !== id);
+      }
+      return [...prev, id];
+    });
+  }, [state, showToast]);
+
+  const handleGroupSelected = useCallback(() => {
+    if (selectedElementIds.length < 2) return;
+    setPast((prev) => [...prev, state]);
+    setFuture([]);
+    const result = groupElements(state, selectedElementIds);
+    setState(result.state);
+    setSelectionMode('default');
+    setSelectedElementIds([]);
+    setSelectedElementId(result.groupId);
+    setSelectedTarget('group');
+    showToast('Đã tạo nhóm đối tượng.');
+  }, [state, selectedElementIds, showToast]);
+
+  const handleUngroupSelected = useCallback(() => {
+    const currentList = state.elements ?? getDefaultElements(state);
+    const targetGroupId = (selectedElementId && currentList.find(e => e.id === selectedElementId)?.type === 'group')
+      ? selectedElementId
+      : activeGroupId;
+
+    if (!targetGroupId) return;
+
+    setPast((prev) => [...prev, state]);
+    setFuture([]);
+    const childIds = currentList.filter((e) => e.parentGroupId === targetGroupId).map((e) => e.id);
+    const nextState = ungroupElement(state, targetGroupId);
+    setState(nextState);
+    setSelectionMode('multi-select');
+    setSelectedElementIds(childIds);
+    setSelectedElementId(null);
+    setSelectedTarget(null);
+    setActiveGroupId(null);
+    showToast('Đã bỏ nhóm đối tượng.');
+  }, [state, selectedElementId, activeGroupId, showToast]);
+
+  const handleEnterGroupEdit = useCallback((groupId: string, childId?: string) => {
+    setSelectionMode('group-edit');
+    setActiveGroupId(groupId);
+    if (childId) {
+      setSelectedElementId(childId);
+      const elements = state.elements ?? getDefaultElements(state);
+      const child = elements.find((e) => e.id === childId);
+      if (child) {
+        if (child.type === 'image') setSelectedTarget('image');
+        else if (child.type === 'text') setSelectedTarget('text');
+        else setSelectedTarget(null);
+      }
+    } else {
+      setSelectedElementId(null);
+      setSelectedTarget(null);
+    }
+    showToast('Đang chỉnh nhóm.');
+  }, [state, showToast]);
+
+  const handleDuplicateMultiSelected = useCallback(() => {
+    if (selectedElementIds.length === 0) return;
+    setPast((prev) => [...prev, state]);
+    setFuture([]);
+    const { state: nextState, newIds } = duplicateSelectedElements(state, selectedElementIds);
+    setState(nextState);
+    setSelectedElementIds(newIds);
+    showToast('Đã nhân bản các mục đã chọn.');
+  }, [state, selectedElementIds, showToast]);
+
+  const handleDeleteMultiSelected = useCallback(() => {
+    if (selectedElementIds.length === 0) return;
+    setPast((prev) => [...prev, state]);
+    setFuture([]);
+    const nextState = deleteSelectedElements(state, selectedElementIds);
+    setState(nextState);
+    setSelectedElementIds([]);
+    setSelectionMode('default');
+    showToast('Đã xóa các mục đã chọn.');
+  }, [state, selectedElementIds, showToast]);
   // Strict local-first Back navigation hierarchy:
   // Strict unified Back navigation resolver across Editor transient states
   const handleUnifiedBack = useCallback(() => {
@@ -482,6 +627,8 @@ export function CustomizerShell() {
       activeSheet,
       isTextEditing: Boolean(textEditState),
       focusMode,
+      selectionMode,
+      activeGroupId,
       selectedTarget,
       saveStatus,
       returnView: 'setup',
@@ -503,6 +650,12 @@ export function CustomizerShell() {
         break;
       case 'EXIT_FOCUS_MODE':
         setFocusMode(null);
+        break;
+      case 'EXIT_GROUP_EDIT':
+        handleExitGroupEdit();
+        break;
+      case 'EXIT_MULTI_SELECT':
+        handleExitMultiSelect();
         break;
       case 'DESELECT_TARGET':
         setSelectedTarget(null);
@@ -530,6 +683,10 @@ export function CustomizerShell() {
     exitTextEdit,
     focusMode,
     selectedTarget,
+    selectionMode,
+    activeGroupId,
+    handleExitGroupEdit,
+    handleExitMultiSelect,
     saveStatus,
     viewport.isFit,
     handleCloseSheet,
@@ -991,7 +1148,7 @@ export function CustomizerShell() {
         setActiveSheet('opacity');
         break;
       case 'mask':
-        setFocusMode('mask');
+        setActiveSheet('mask');
         break;
       case 'edit-text': {
         const elements = state.elements ?? getDefaultElements(state);
@@ -1058,6 +1215,18 @@ export function CustomizerShell() {
       });
     }
   }, { dependencies: [bgRemovalState], scope: containerRef });
+
+  // Crop focus mode entrance animation
+  useGSAP(() => {
+    if (focusMode === 'crop') {
+      const isReduced = typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+      gsap.fromTo(
+        '#crop-focus-container',
+        { autoAlpha: isReduced ? 1 : 0, scale: isReduced ? 1 : 0.98 },
+        { autoAlpha: 1, scale: 1, duration: isReduced ? 0 : 0.2, ease: 'power2.out' }
+      );
+    }
+  }, { dependencies: [focusMode], scope: containerRef });
   const summary = getDesignSummary(state);
   const preflight = getPreflight(state);
 
@@ -1180,42 +1349,25 @@ export function CustomizerShell() {
 
       {/* FOCUS MODE: Crop */}
       {focusMode === 'crop' && (
-        <div className="fixed inset-0 z-50 bg-[#2E3338] text-white flex flex-col">
-          <header className="h-[52px] px-3 border-b border-white/10 flex items-center justify-between">
-            <button
-              type="button"
-              onClick={() => setFocusMode(null)}
-              className="text-xs font-medium text-white/80 px-2 py-1"
-            >
-              Hủy
-            </button>
-            <span className="text-xs font-semibold">Cắt & Căn chỉnh ảnh</span>
-            <button
-              type="button"
-              onClick={() => {
-                setFocusMode(null);
-                showToast('Đã áp dụng cắt ảnh.');
-              }}
-              className="text-xs font-semibold text-white bg-[#315F86] px-3 py-1.5 rounded-lg"
-            >
-              Xong
-            </button>
-          </header>
-          <div className="flex-1 flex flex-col items-center justify-center p-6 text-center">
-            {state.image?.src ? (
-              <img
-                src={state.image.src}
-                alt="Ảnh đang cắt"
-                className="max-h-[60%] max-w-[85%] object-contain rounded-md border border-white/20 shadow-xl"
-              />
-            ) : (
-              <p className="text-xs text-white/60">Không có ảnh để cắt</p>
-            )}
-            <p className="text-xs text-white/70 mt-6">
-              Kéo góc để phóng to / thu nhỏ khung ảnh theo ý muốn.
-            </p>
-          </div>
-        </div>
+        <CropFocusMode
+          src={currentImageData?.removedBackgroundSrc || currentImageData?.src || state.image?.src || ''}
+          frameWidth={currentImageElement?.width || 260}
+          frameHeight={currentImageElement?.height || 260}
+          initialCrop={currentImageData?.crop}
+          mask={currentImageData?.mask}
+          onDone={(newCrop) => {
+            dispatch({
+              type: 'COMMIT_IMAGE_CROP',
+              id: selectedElementId ?? undefined,
+              crop: newCrop,
+            });
+            setFocusMode(null);
+            showToast('Đã áp dụng cắt ảnh.');
+          }}
+          onCancel={() => {
+            setFocusMode(null);
+          }}
+        />
       )}
 
       {/* FOCUS MODE: Remove Background Refine */}
@@ -1241,45 +1393,7 @@ export function CustomizerShell() {
         />
       )}
 
-      {/* FOCUS MODE: Mask */}
-      {focusMode === 'mask' && (
-        <div className="fixed inset-0 z-50 bg-[#2E3338] text-white flex flex-col">
-          <header className="h-[52px] px-3 border-b border-white/10 flex items-center justify-between">
-            <button
-              type="button"
-              onClick={() => setFocusMode(null)}
-              className="text-xs font-medium text-white/80 px-2 py-1"
-            >
-              Hủy
-            </button>
-            <span className="text-xs font-semibold">Khung mặt nạ (Mask)</span>
-            <button
-              type="button"
-              onClick={() => {
-                setFocusMode(null);
-                showToast('Đã áp dụng khung mặt nạ.');
-              }}
-              className="text-xs font-semibold text-white bg-[#315F86] px-3 py-1.5 rounded-lg"
-            >
-              Xong
-            </button>
-          </header>
-          <div className="flex-1 flex flex-col items-center justify-center p-6 text-center">
-            {state.image?.src ? (
-              <img
-                src={state.image.src}
-                alt="Khung mặt nạ"
-                className="max-h-[60vh] max-w-[80vw] object-contain rounded-full border-2 border-white shadow-2xl"
-              />
-            ) : (
-              <p className="text-xs text-white/60">Không có ảnh</p>
-            )}
-            <p className="text-xs text-white/70 mt-5">
-              Áp dụng hình dạng mặt nạ (tròn, oval, tim) lên ảnh đang chọn.
-            </p>
-          </div>
-        </div>
-      )}
+
 
       {/* ZONE 1: Minimal Top Bar */}
       <header className="h-[50px] px-3 border-b border-[#ECE6DC] bg-[#FFFDF8]/95 backdrop-blur-md flex items-center justify-between z-30 shrink-0 select-none">
@@ -1533,7 +1647,18 @@ export function CustomizerShell() {
             }
           }
         }}
-        onMaskClick={() => setFocusMode('mask')}
+        currentMask={currentImageData?.mask}
+        onSelectMask={(maskId) => {
+          dispatch({
+            type: 'SET_IMAGE_MASK',
+            id: selectedElementId ?? undefined,
+            mask: maskId,
+          });
+          showToast('Đã áp dụng khung hình ảnh.');
+        }}
+        onMaskClick={() => {
+          setActiveSheet('mask');
+        }}
         onToggleLock={() => {
           if (selectedElementId) {
             dispatch({

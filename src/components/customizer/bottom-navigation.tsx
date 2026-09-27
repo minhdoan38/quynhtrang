@@ -15,14 +15,21 @@ import {
   AArrowUp,
   AlignCenter,
   MoreHorizontal,
+  RotateCcw,
+  Scissors,
+  Check,
+  Loader2,
 } from 'lucide-react';
 
-export type SelectedTarget = 'image' | 'text' | null;
+export type SelectedTarget = 'image' | 'text' | 'group' | null;
 
 interface BottomNavigationProps {
   selectedTarget: SelectedTarget;
   isLocked?: boolean;
   isTextEditing?: boolean;
+  isProcessingBg?: boolean;
+  bgRemovalState?: 'idle' | 'processing' | 'result';
+  hasRemovedBackground?: boolean;
   onDeselect: () => void;
   onAction: (actionKey: string) => void;
 }
@@ -31,6 +38,9 @@ export function BottomNavigation({
   selectedTarget,
   isLocked = false,
   isTextEditing = false,
+  isProcessingBg = false,
+  bgRemovalState = 'idle',
+  hasRemovedBackground = false,
   onDeselect,
   onAction,
 }: BottomNavigationProps) {
@@ -61,53 +71,94 @@ export function BottomNavigation({
               <span>🔒 Thành phần này đã được khóa trong mẫu.</span>
             </div>
           ) : selectedTarget === 'image' ? (
-            <div className="flex-1 flex items-center justify-around gap-0.5">
-              <button
-                type="button"
-                onClick={() => onAction('crop')}
-                className="flex flex-col items-center justify-center min-w-[44px] h-[48px] px-1 rounded-lg text-[#2E3338] hover:bg-[#F8F3E8] active:scale-95 transition-all"
-              >
-                <Crop className="w-4 h-4 text-[#315F86]" />
-                <span className="text-[11px] font-medium mt-0.5">Cắt</span>
-              </button>
+            isProcessingBg || bgRemovalState === 'processing' ? (
+              <div className="flex-1 flex items-center justify-center gap-2 py-1 px-3 text-xs font-semibold text-[#315F86]">
+                <Loader2 className="w-4 h-4 animate-spin text-[#315F86]" />
+                <span>Đang xóa nền...</span>
+              </div>
+            ) : bgRemovalState === 'result' ? (
+              <div className="flex-1 flex items-center justify-around gap-1">
+                <button
+                  type="button"
+                  onClick={() => onAction('restore-bg')}
+                  className="flex flex-col items-center justify-center min-w-[50px] h-[48px] px-1 rounded-lg text-[#2E3338] hover:bg-[#F8F3E8] active:scale-95 transition-all"
+                >
+                  <RotateCcw className="w-4 h-4 text-[#666A6D]" />
+                  <span className="text-[10px] font-medium mt-0.5">Khôi phục nền</span>
+                </button>
 
-              <button
-                type="button"
-                onClick={() => onAction('replace-image')}
-                className="flex flex-col items-center justify-center min-w-[44px] h-[48px] px-1 rounded-lg text-[#2E3338] hover:bg-[#F8F3E8] active:scale-95 transition-all"
-              >
-                <ImagePlus className="w-4 h-4 text-[#315F86]" />
-                <span className="text-[11px] font-medium mt-0.5">Thay ảnh</span>
-              </button>
+                <button
+                  type="button"
+                  onClick={() => onAction('refine-bg')}
+                  className="flex flex-col items-center justify-center min-w-[50px] h-[48px] px-1 rounded-lg text-[#2E3338] hover:bg-[#F8F3E8] active:scale-95 transition-all"
+                >
+                  <Scissors className="w-4 h-4 text-[#315F86]" />
+                  <span className="text-[10px] font-medium mt-0.5">Chỉnh vùng cắt</span>
+                </button>
 
-              <button
-                type="button"
-                onClick={() => onAction('remove-bg')}
-                className="flex flex-col items-center justify-center min-w-[44px] h-[48px] px-1 rounded-lg text-[#2E3338] hover:bg-[#F8F3E8] active:scale-95 transition-all"
-              >
-                <Wand2 className="w-4 h-4 text-[#315F86]" />
-                <span className="text-[11px] font-medium mt-0.5">Xóa nền</span>
-              </button>
+                <button
+                  type="button"
+                  onClick={() => onAction('finish-bg-result')}
+                  className="flex items-center justify-center gap-1 h-[38px] px-3.5 rounded-lg bg-[#315F86] text-white hover:bg-[#244A69] active:scale-95 transition-all text-xs font-semibold shadow-xs"
+                >
+                  <Check className="w-3.5 h-3.5" />
+                  <span>Xong</span>
+                </button>
+              </div>
+            ) : (
+              <div className="flex-1 flex items-center justify-around gap-0.5">
+                <button
+                  type="button"
+                  onClick={() => onAction('crop')}
+                  className="flex flex-col items-center justify-center min-w-[44px] h-[48px] px-1 rounded-lg text-[#2E3338] hover:bg-[#F8F3E8] active:scale-95 transition-all"
+                >
+                  <Crop className="w-4 h-4 text-[#315F86]" />
+                  <span className="text-[11px] font-medium mt-0.5">Cắt</span>
+                </button>
 
-              <button
-                type="button"
-                onClick={() => onAction('opacity')}
-                className="flex flex-col items-center justify-center min-w-[44px] h-[48px] px-1 rounded-lg text-[#2E3338] hover:bg-[#F8F3E8] active:scale-95 transition-all"
-              >
-                <SunMedium className="w-4 h-4 text-[#315F86]" />
-                <span className="text-[11px] font-medium mt-0.5">Độ mờ</span>
-              </button>
+                <button
+                  type="button"
+                  onClick={() => onAction('replace-image')}
+                  className="flex flex-col items-center justify-center min-w-[44px] h-[48px] px-1 rounded-lg text-[#2E3338] hover:bg-[#F8F3E8] active:scale-95 transition-all"
+                >
+                  <ImagePlus className="w-4 h-4 text-[#315F86]" />
+                  <span className="text-[11px] font-medium mt-0.5">Thay ảnh</span>
+                </button>
 
-              <button
-                type="button"
-                onClick={() => onAction('more')}
-                aria-label="Thao tác khác"
-                className="flex flex-col items-center justify-center min-w-[44px] h-[48px] px-1 rounded-lg text-[#2E3338] hover:bg-[#F8F3E8] active:scale-95 transition-all"
-              >
-                <MoreHorizontal className="w-4 h-4 text-[#666A6D]" />
-                <span className="text-[11px] font-medium mt-0.5">•••</span>
-              </button>
-            </div>
+                <button
+                  type="button"
+                  onClick={() => onAction('remove-bg')}
+                  className={`flex flex-col items-center justify-center min-w-[44px] h-[48px] px-1 rounded-lg active:scale-95 transition-all ${hasRemovedBackground
+                      ? 'text-[#315F86] bg-[#DCEBF4]/40 font-semibold'
+                      : 'text-[#2E3338] hover:bg-[#F8F3E8]'
+                    }`}
+                >
+                  <Wand2 className="w-4 h-4 text-[#315F86]" />
+                  <span className="text-[11px] font-medium mt-0.5">
+                    {hasRemovedBackground ? 'Đã tách nền' : 'Xóa nền'}
+                  </span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => onAction('opacity')}
+                  className="flex flex-col items-center justify-center min-w-[44px] h-[48px] px-1 rounded-lg text-[#2E3338] hover:bg-[#F8F3E8] active:scale-95 transition-all"
+                >
+                  <SunMedium className="w-4 h-4 text-[#315F86]" />
+                  <span className="text-[11px] font-medium mt-0.5">Độ mờ</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => onAction('more')}
+                  aria-label="Thao tác khác"
+                  className="flex flex-col items-center justify-center min-w-[44px] h-[48px] px-1 rounded-lg text-[#2E3338] hover:bg-[#F8F3E8] active:scale-95 transition-all"
+                >
+                  <MoreHorizontal className="w-4 h-4 text-[#666A6D]" />
+                  <span className="text-[11px] font-medium mt-0.5">•••</span>
+                </button>
+              </div>
+            )
           ) : (
             /* text selected */
             <div className="flex-1 flex items-center justify-around gap-0.5">

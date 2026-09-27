@@ -22,7 +22,8 @@ import {
 import { SelectionOverlay } from './selection-overlay';
 import { colorValueToCss, colorValueToTextStyle } from '@/lib/color';
 import type { ColorValue } from '@/lib/color/color-types';
-
+import { getMaskStyle, HEART_MASK_PATH } from '@/lib/image-mask';
+import { getCropTransformStyle } from '@/lib/image-crop';
 export interface TransformState {
   x: number;
   y: number;
@@ -42,11 +43,11 @@ export interface DesignCanvasProps {
   image?: ImageState | null;
   productOptions: Record<string, unknown>;
   isMockup?: boolean;
-  selectedTarget?: 'image' | 'text' | null;
+  selectedTarget?: 'image' | 'text' | 'group' | null;
   selectedTextId?: string | null;
   textElements?: CanvasElement[];
   elements?: CanvasElement[];
-  onSelectTarget?: (target: 'image' | 'text' | null) => void;
+  onSelectTarget?: (target: 'image' | 'text' | 'group' | null) => void;
   onSelectText?: (id: string | null) => void;
   onDoubleTap?: (target: 'image' | 'text') => void;
   onDoubleTapText?: (id: string) => void;
@@ -313,8 +314,12 @@ export function DesignCanvas({
   const imageQuality = useMemo<ImageQualityReport | null>(() => {
     if (!image?.src) return null;
     const cropFraction = imgData?.crop
-      ? (imgData.crop.width * imgData.crop.height) /
-      ((imgData.sourceWidth || image.width || 800) * (imgData.sourceHeight || image.height || 800))
+      ? imgData.crop.scale && imgData.crop.scale > 1
+        ? 1 / (imgData.crop.scale * imgData.crop.scale)
+        : (imgData.crop.width && imgData.crop.height)
+          ? (imgData.crop.width * imgData.crop.height) /
+          ((imgData.sourceWidth || image.width || 800) * (imgData.sourceHeight || image.height || 800))
+          : 1
       : 1;
 
     return evaluateImageQuality({
@@ -362,18 +367,22 @@ export function DesignCanvas({
         }
       }}
     >
+      {/* Global SVG clipPath definitions for heart mask */}
+      <svg className="absolute w-0 h-0 pointer-events-none" aria-hidden="true">
+        <defs>
+          <clipPath id="mask-heart" clipPathUnits="objectBoundingBox">
+            <path d={HEART_MASK_PATH} />
+          </clipPath>
+        </defs>
+      </svg>
+
       {/* Uploaded Image element */}
       {image?.src && (
         <div
           role="button"
           tabIndex={0}
           aria-label="Đối tượng ảnh"
-          className={`relative max-h-[70%] max-w-[70%] inline-flex items-center justify-center select-none touch-none overflow-hidden ${imgData?.mask === 'circle'
-              ? 'rounded-full'
-              : imgData?.mask === 'rounded'
-                ? 'rounded-2xl'
-                : 'rounded-none'
-            }`}
+          className="relative max-h-[70%] max-w-[70%] inline-flex items-center justify-center select-none touch-none"
           style={{
             transform: `translate3d(${effectiveImageTransform.x}px, ${effectiveImageTransform.y}px, 0) rotate(${effectiveImageTransform.rotation}deg) scale(${effectiveImageTransform.scale})`,
             transformOrigin: 'center center',
@@ -383,12 +392,21 @@ export function DesignCanvas({
             startGesture('image', undefined, 'move', undefined, e);
           }}
         >
-          <img
-            src={image.src}
-            alt={image.name || 'Ảnh đã tải lên'}
-            className="design-image w-full h-full object-cover pointer-events-none select-none"
-            style={{ opacity: imageOpacity }}
-          />
+          {/* Fixed Frame with Mask */}
+          <div
+            className="w-full h-full relative overflow-hidden"
+            style={{
+              ...getMaskStyle(imgData?.mask),
+              opacity: imageOpacity,
+            }}
+          >
+            <img
+              src={image.src}
+              alt={image.name || 'Ảnh đã tải lên'}
+              className="design-image w-full h-full object-cover pointer-events-none select-none origin-center will-change-transform"
+              style={getCropTransformStyle(imgData?.crop)}
+            />
+          </div>
 
           {isImageSelected && (
             <SelectionOverlay

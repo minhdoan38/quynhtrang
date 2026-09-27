@@ -29,6 +29,8 @@ import { LayersSheetContent } from './layers-sheet-content';
 import type { ImageSourceType, TextStylePreset, ShapePrimitiveType, ImageSourceContext } from '@/lib/add-content';
 import { FontBrowserContent } from './font-browser-sheet';
 import { ColorPickerContent } from './color-picker-sheet';
+import { MaskSheetContent } from './mask-sheet-content';
+import type { MaskType } from '@/lib/image-mask';
 import type { ColorValue, HexColor } from '@/lib/color/color-types';
 import { createSolidColor } from '@/lib/color/color-validation';
 export type ActiveSheetType =
@@ -39,6 +41,7 @@ export type ActiveSheetType =
   | 'font'
   | 'color'
   | 'opacity'
+  | 'mask'
   | 'font-size'
   | 'align'
   | 'more'
@@ -47,7 +50,7 @@ export type ActiveSheetType =
 interface EditorSheetsProps {
   activeSheet: ActiveSheetType;
   onClose: () => void;
-  selectedTarget: 'image' | 'text' | null;
+  selectedTarget: 'image' | 'text' | 'group' | null;
   selectedElementId?: string | null;
   elements?: CanvasElement[];
   surface?: string;
@@ -79,6 +82,8 @@ interface EditorSheetsProps {
   onSetTextAlign?: (align: 'left' | 'center' | 'right') => void;
   onSetOpacity: (opacity: number) => void;
   onCommitOpacity?: (opacity: number) => void;
+  currentMask?: string | null;
+  onSelectMask?: (maskId: MaskType) => void;
   onMaskClick?: () => void;
   onToggleLock: () => void;
   onDuplicate: () => void;
@@ -137,6 +142,8 @@ export function EditorSheets({
   onSetTextAlign,
   onSetOpacity,
   onCommitOpacity,
+  currentMask,
+  onSelectMask,
   onMaskClick,
   onToggleLock,
   onDuplicate,
@@ -357,6 +364,15 @@ export function EditorSheets({
             </div>
           </div>
         )}
+        {/* MASK SHEET */}
+        {activeSheet === 'mask' && (
+          <MaskSheetContent
+            currentMask={currentMask}
+            onSelectMask={(maskId) => onSelectMask?.(maskId)}
+            onClose={onClose}
+          />
+        )}
+
 
         {/* FONT SIZE SHEET */}
         {activeSheet === 'font-size' && (

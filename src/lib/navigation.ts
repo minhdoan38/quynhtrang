@@ -18,6 +18,8 @@ export interface EditorBackState {
  activeSheet?: string | null;
  isTextEditing?: boolean;
  focusMode?: string | null;
+ selectionMode?: 'default' | 'multi-select' | 'group-edit';
+ activeGroupId?: string | null;
  selectedTarget?: string | null;
  saveStatus?: SaveStatus;
  isDirty?: boolean;
@@ -34,6 +36,8 @@ export type EditorBackAction =
  | { type: 'CLOSE_SHEET' }
  | { type: 'EXIT_TEXT_EDIT'; commitChanges: true }
  | { type: 'EXIT_FOCUS_MODE'; cancelChanges: true }
+ | { type: 'EXIT_GROUP_EDIT' }
+ | { type: 'EXIT_MULTI_SELECT' }
  | { type: 'DESELECT_TARGET' }
  | { type: 'PROMPT_UNSAVED'; reason: 'saving' | 'error' }
  | { type: 'LEAVE_EDITOR'; destination: 'setup' | 'launcher' };
@@ -101,12 +105,20 @@ export function resolveEditorBackAction(state: EditorBackState): EditorBackActio
  if (state.focusMode !== null && state.focusMode !== undefined) {
   return { type: 'EXIT_FOCUS_MODE', cancelChanges: true };
  }
+ // 6.5 Group edit mode: exit to group selected
+ if (state.selectionMode === 'group-edit') {
+  return { type: 'EXIT_GROUP_EDIT' };
+ }
+
+ // 6.6 Multi-select mode: exit to default editor
+ if (state.selectionMode === 'multi-select') {
+  return { type: 'EXIT_MULTI_SELECT' };
+ }
 
  // 7. Selected object on canvas
  if (state.selectedTarget !== null && state.selectedTarget !== undefined) {
   return { type: 'DESELECT_TARGET' };
  }
-
  // 8. Base editor exit check
  if (state.saveStatus === 'saving') {
   return { type: 'PROMPT_UNSAVED', reason: 'saving' };
