@@ -1220,10 +1220,36 @@ export function CustomizerShell() {
       case 'delete':
         handleDeleteSelected();
         break;
+      case 'group':
+        handleGroupSelected();
+        break;
+      case 'ungroup':
+        handleUngroupSelected();
+        break;
+      case 'group-edit':
+        if (selectedElementId) {
+          handleEnterGroupEdit(selectedElementId);
+        }
+        break;
+      case 'duplicate-multi':
+        handleDuplicateMultiSelected();
+        break;
+      case 'delete-multi':
+        handleDeleteMultiSelected();
+        break;
       default:
         break;
     }
-  }, [state.text, showToast]);
+  }, [
+    state.text,
+    selectedElementId,
+    handleGroupSelected,
+    handleUngroupSelected,
+    handleEnterGroupEdit,
+    handleDuplicateMultiSelected,
+    handleDeleteMultiSelected,
+    showToast,
+  ]);
 
   // Canvas entrance animation
   useGSAP(() => {
@@ -1631,12 +1657,23 @@ export function CustomizerShell() {
       {/* ZONE 3: One Adaptive Bottom Toolbar */}
       <BottomNavigation
         selectedTarget={selectedTarget}
+        selectionMode={selectionMode}
+        selectedCount={selectedElementIds.length}
+        canGroup={selectedElementIds.length >= 2}
         isLocked={isCurrentTargetLocked}
         isTextEditing={Boolean(textEditState)}
         isProcessingBg={bgRemovalState === 'processing'}
         bgRemovalState={bgRemovalState}
         hasRemovedBackground={hasRemovedBackground}
         onDeselect={() => {
+          if (selectionMode === 'multi-select') {
+            handleExitMultiSelect();
+            return;
+          }
+          if (selectionMode === 'group-edit') {
+            handleExitGroupEdit();
+            return;
+          }
           setBgRemovalState('idle');
           setSelectedTarget(null);
           setSelectedElementId(null);
@@ -1658,6 +1695,7 @@ export function CustomizerShell() {
         onExitMultiSelect={handleExitMultiSelect}
         onToggleSelectElement={handleToggleMultiSelect}
         onSelectChildInGroup={handleEnterGroupEdit}
+        onUngroup={handleUngroupSelected}
         elements={state.elements ?? getDefaultElements(state)}
         surface={String(state.productOptions.surface || 'front')}
         productId={state.productId}

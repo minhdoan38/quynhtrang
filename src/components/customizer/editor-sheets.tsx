@@ -21,6 +21,8 @@ import {
   AlignLeft,
   AlignCenter,
   AlignRight,
+  FolderMinus,
+  CheckSquare,
 } from 'lucide-react';
 import { TEMPLATES, type ProductId, type CanvasElement } from '@/lib/product-state';
 import { AddContentSheet } from './add-content-sheet';
@@ -59,6 +61,7 @@ interface EditorSheetsProps {
   onExitMultiSelect?: () => void;
   onToggleSelectElement?: (id: string) => void;
   onSelectChildInGroup?: (groupId: string, childId: string) => void;
+  onUngroup?: () => void;
   elements?: CanvasElement[];
   surface?: string;
   productId: ProductId;
@@ -167,6 +170,7 @@ export function EditorSheets({
   onExitMultiSelect,
   onToggleSelectElement,
   onSelectChildInGroup,
+  onUngroup,
 }: EditorSheetsProps) {
   const isOpen = activeSheet !== null;
 
@@ -478,6 +482,33 @@ export function EditorSheets({
                 >
                   <Crop className="w-4 h-4 text-[#315F86]" />
                   <span>Mặt nạ cắt (Mask)</span>
+                </button>
+              )}
+              {selectedTarget === 'group' && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    onUngroup?.();
+                    onClose();
+                  }}
+                  className="w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-left hover:bg-[#F8F3E8] active:scale-98 transition-all text-xs font-medium"
+                >
+                  <FolderMinus className="w-4 h-4 text-[#315F86]" />
+                  <span>Bỏ nhóm (Ungroup)</span>
+                </button>
+              )}
+
+              {selectionMode !== 'multi-select' && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    onClose();
+                    onEnterMultiSelect?.();
+                  }}
+                  className="w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-left hover:bg-[#F8F3E8] active:scale-98 transition-all text-xs font-medium"
+                >
+                  <CheckSquare className="w-4 h-4 text-[#315F86]" />
+                  <span>Chọn nhiều</span>
                 </button>
               )}
 
