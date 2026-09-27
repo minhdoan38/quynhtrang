@@ -81,6 +81,43 @@ export interface CreateTextElementParams {
   fontFamily?: string;
 }
 
+export interface ImageAsset {
+  id: string;
+  originalSrc: string;
+  previewSrc?: string;
+  removedBackgroundSrc?: string;
+  name?: string;
+  type?: string;
+  size?: number;
+  width?: number;
+  height?: number;
+}
+
+export interface ImageCropData {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+export interface ImageObjectData {
+  assetId?: string;
+  src: string;
+  originalSrc?: string;
+  removedBackgroundSrc?: string;
+  name?: string;
+  opacity?: number;
+  crop?: ImageCropData;
+  mask?: string | null;
+  placeholder?: boolean;
+  sourceWidth?: number;
+  sourceHeight?: number;
+}
+
+export function getImageData(element: CanvasElement): ImageObjectData | null {
+  if (element.type !== 'image' || !element.data) return null;
+  return element.data as unknown as ImageObjectData;
+}
 export interface CanvasElement {
   id: string;
   type: ElementType;
@@ -135,7 +172,11 @@ export type DesignAction =
   | { type: 'SEND_BACKWARD'; id: string }
   | { type: 'ADD_TEXT_ELEMENT'; preset: TextPreset; id?: string; text?: string; color?: string }
   | { type: 'COMMIT_TEXT_EDIT'; id: string; text: string }
-  | { type: 'UPDATE_TEXT_STYLE'; id: string; patch: Partial<TextElementData> };
+  | { type: 'UPDATE_TEXT_STYLE'; id: string; patch: Partial<TextElementData> }
+  | { type: 'REPLACE_IMAGE_ASSET'; id?: string; asset: Partial<ImageAsset> & { src: string; name?: string } }
+  | { type: 'SET_IMAGE_OPACITY'; id?: string; opacity: number }
+  | { type: 'APPLY_REMOVE_BACKGROUND'; id?: string; derivedSrc: string }
+  | { type: 'RESTORE_ORIGINAL_IMAGE'; id?: string };
 export interface DesignSummary {
   product: string;
   variant: string;
@@ -406,6 +447,43 @@ export const TEMPLATES: Readonly<Record<string, TemplateConfig>> = Object.freeze
       notebook: Object.freeze({ finish: 'matte' }),
     }),
   }),
+  'notebook-minimal': Object.freeze({
+    name: 'Ghi chú Tối giản',
+    category: 'minimal',
+    productIds: ['notebook'] as const,
+    text: 'Thoughts & Ideas',
+    color: '#344E66',
+    backgroundColor: '#F3F5F7',
+    previewHint: 'Bìa sổ phong cách typography hiện đại',
+    productOptions: Object.freeze({
+      notebook: Object.freeze({ finish: 'matte' }),
+    }),
+  }),
+  'wrapping-birthday-balloons': Object.freeze({
+    name: 'Bóng bay Sinh nhật',
+    category: 'birthday',
+    productIds: ['wrapping'] as const,
+    text: 'Happy Birthday',
+    color: '#8C3B2F',
+    backgroundColor: '#FFF2EB',
+    previewHint: 'Họa tiết bóng bay rực rỡ vui tươi',
+    productOptions: Object.freeze({
+      wrapping: Object.freeze({ mode: 'repeat', repeatStyle: 'brick', patternScale: 110 }),
+    }),
+  }),
+  'sticker-coffee-cozy': Object.freeze({
+    name: 'Tách cà phê Ấm',
+    category: 'minimal',
+    productIds: ['sticker'] as const,
+    variantIds: ['fixed-shape', 'die-cut'] as const,
+    text: 'Warm Coffee & Book',
+    color: '#5C381E',
+    backgroundColor: '#FDF7EE',
+    previewHint: 'Sticker góc chill cà phê cho sổ và laptop',
+    productOptions: Object.freeze({
+      sticker: Object.freeze({ hasWhiteBorder: true, borderWidth: 5 }),
+    }),
+  }),
 });
 
 export interface FilterTemplatesParams {
@@ -429,8 +507,8 @@ export function getCompatibleTemplates({
       if (tpl.productIds && !tpl.productIds.includes(productId)) {
         return false;
       }
-      // Variant compatibility
-      if (tpl.variantIds && !tpl.variantIds.includes(variantId)) {
+      // Variant compatibility: if variantId is 'all' or empty, show all variants for product
+      if (variantId && variantId !== 'all' && tpl.variantIds && !tpl.variantIds.includes(variantId)) {
         return false;
       }
       // Category filter
@@ -1011,6 +1089,153 @@ export function transitionState(state: DesignState, action: DesignAction): Desig
       prev.zIndex = tempZ;
       sorted.sort((a, b) => (a.zIndex ?? 0) - (b.zIndex ?? 0));
       return { ...state, elements: sorted };
+    }
+
+    case 'REPLACE_IMAGE_ASSET': {
+      const currentList = state.elements ?? getDefaultElements(state);
+      const target = action.id
+        ? currentList.find((el) => el.id === action.id && el.type === 'image')
+        : currentList.find((el) => el.type === 'image');
+
+      if (!target) return state;
+
+      const existingData = target.data ? (target.data as Record<string, unknown>) : {};
+      const frameWidth = target.width || 60;
+      const frameHeight = target.height || 60;
+      const imgWidth = action.asset.width || (state.image?.width ?? 800);
+      const imgHeight = action.asset.height || (state.image?.height ?? 800);
+
+      // Uniform cover scale and centered crop
+      const frameAspect = Math.max(1, frameWidth) / Math.max(1, frameHeight);
+      const imageAspect = Math.max(1, imgWidth) / Math.max(1, imgHeight);
+      let cropW: number;
+      let cropH: number;
+      if (imageAspect > frameAspect) {
+        cropH = imgHeight;
+        cropW = Math.round(imgHeight * frameAspect);
+      } else {
+        cropW = imgWidth;
+        cropH = Math.round(imgWidth / frameAspect);
+      }
+      const cropX = Math.max(0, Math.round((imgWidth - cropW) / 2));
+      const cropY = Math.max(0, Math.round((imgHeight - cropH) / 2));
+
+      const updatedData: Record<string, unknown> = {
+        ...existingData,
+        src: action.asset.src,
+        name: action.asset.name ?? (existingData.name as string | undefined) ?? 'Ảnh đã thay thế',
+        originalSrc: action.asset.originalSrc ?? action.asset.src,
+        removedBackgroundSrc: undefined, // Strictly reset background removal on replace
+        assetId: action.asset.id ?? (existingData.assetId as string | undefined),
+        sourceWidth: action.asset.width ?? (existingData.sourceWidth as number | undefined),
+        sourceHeight: action.asset.height ?? (existingData.sourceHeight as number | undefined),
+        crop: { x: cropX, y: cropY, width: cropW, height: cropH },
+        placeholder: false,
+      };
+
+      const nextList = currentList.map((el) =>
+        el.id === target.id ? { ...el, data: updatedData } : el
+      );
+
+      const nextImage: ImageState = {
+        name: action.asset.name ?? state.image?.name ?? 'Ảnh đã thay thế',
+        src: action.asset.src,
+        width: action.asset.width ?? state.image?.width,
+        height: action.asset.height ?? state.image?.height,
+        size: action.asset.size ?? state.image?.size,
+      };
+
+      return {
+        ...state,
+        image: nextImage,
+        elements: nextList,
+      };
+    }
+
+    case 'SET_IMAGE_OPACITY': {
+      const currentList = state.elements ?? getDefaultElements(state);
+      const safeOpacity = Math.max(0, Math.min(100, action.opacity));
+      const targetId = action.id;
+
+      const nextList = currentList.map((el) => {
+        if (el.type !== 'image') return el;
+        if (!targetId || el.id === targetId) {
+          return {
+            ...el,
+            data: {
+              ...(el.data ?? {}),
+              opacity: safeOpacity,
+            },
+          };
+        }
+        return el;
+      });
+
+      return {
+        ...state,
+        elements: nextList,
+        productOptions: {
+          ...state.productOptions,
+          imageOpacity: safeOpacity,
+        },
+      };
+    }
+
+    case 'APPLY_REMOVE_BACKGROUND': {
+      const currentList = state.elements ?? getDefaultElements(state);
+      const target = action.id
+        ? currentList.find((el) => el.id === action.id && el.type === 'image')
+        : currentList.find((el) => el.type === 'image');
+
+      if (!target) return state;
+
+      const existingData = (target.data ?? {}) as Record<string, unknown>;
+      const originalSrc = (existingData.originalSrc as string | undefined) ?? (existingData.src as string) ?? state.image?.src ?? '';
+
+      const updatedData: Record<string, unknown> = {
+        ...existingData,
+        originalSrc,
+        removedBackgroundSrc: action.derivedSrc,
+        src: action.derivedSrc,
+      };
+
+      const nextList = currentList.map((el) =>
+        el.id === target.id ? { ...el, data: updatedData } : el
+      );
+
+      return {
+        ...state,
+        image: state.image ? { ...state.image, src: action.derivedSrc } : null,
+        elements: nextList,
+      };
+    }
+
+    case 'RESTORE_ORIGINAL_IMAGE': {
+      const currentList = state.elements ?? getDefaultElements(state);
+      const target = action.id
+        ? currentList.find((el) => el.id === action.id && el.type === 'image')
+        : currentList.find((el) => el.type === 'image');
+
+      if (!target) return state;
+
+      const existingData = (target.data ?? {}) as Record<string, unknown>;
+      const originalSrc = (existingData.originalSrc as string | undefined) ?? (existingData.src as string) ?? state.image?.src;
+      if (!originalSrc) return state;
+
+      const updatedData: Record<string, unknown> = {
+        ...existingData,
+        src: originalSrc,
+      };
+
+      const nextList = currentList.map((el) =>
+        el.id === target.id ? { ...el, data: updatedData } : el
+      );
+
+      return {
+        ...state,
+        image: state.image ? { ...state.image, src: originalSrc } : null,
+        elements: nextList,
+      };
     }
     default:
       return state;
