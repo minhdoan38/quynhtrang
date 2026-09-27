@@ -604,6 +604,38 @@ export function CustomizerShell() {
     setSelectionMode('default');
     showToast('Đã xóa các mục đã chọn.');
   }, [state, selectedElementIds, showToast]);
+  const handleCommitMultiTransform = useCallback(
+    (action: 'move' | 'resize' | 'rotate', dx: number, dy: number, scaleRatio: number, deltaDeg: number) => {
+      if (selectedElementIds.length === 0) return;
+      setPast((prev) => [...prev, state]);
+      setFuture([]);
+      const currentList = state.elements ?? getDefaultElements(state);
+      if (action === 'move') {
+        const nextElements = moveElements(currentList, selectedElementIds, dx, dy);
+        setState((curr) => ({ ...curr, elements: nextElements }));
+      } else if (action === 'resize') {
+        const selectedEls = currentList.filter((el) => selectedElementIds.includes(el.id));
+        const bounds = computeCombinedBounds(selectedEls);
+        if (bounds) {
+          const nextElements = scaleElementsUniform(currentList, selectedElementIds, bounds, scaleRatio);
+          setState((curr) => ({ ...curr, elements: nextElements }));
+        }
+      } else if (action === 'rotate') {
+        const selectedEls = currentList.filter((el) => selectedElementIds.includes(el.id));
+        const bounds = computeCombinedBounds(selectedEls);
+        if (bounds) {
+          const nextElements = rotateElementsAroundCenter(
+            currentList,
+            selectedElementIds,
+            { x: bounds.centerX, y: bounds.centerY },
+            deltaDeg
+          );
+          setState((curr) => ({ ...curr, elements: nextElements }));
+        }
+      }
+    },
+    [state, selectedElementIds]
+  );
   // Strict local-first Back navigation hierarchy:
   // Strict unified Back navigation resolver across Editor transient states
   const handleUnifiedBack = useCallback(() => {
@@ -1504,10 +1536,31 @@ export function CustomizerShell() {
             image={state.image}
             productOptions={state.productOptions}
             selectedTarget={selectedTarget}
+            selectedElementId={selectedElementId}
             selectedTextId={selectedTextId}
+            selectionMode={selectionMode}
+            selectedElementIds={selectedElementIds}
+            activeGroupId={activeGroupId}
             textElements={state.elements ?? getDefaultElements(state)}
+            elements={state.elements ?? getDefaultElements(state)}
+            onSelectElement={(id) => {
+              setSelectedElementId(id);
+              if (id) {
+                const elements = state.elements ?? getDefaultElements(state);
+                const el = elements.find((e) => e.id === id);
+                if (el?.type === 'group') {
+                  setSelectedTarget('group');
+                } else if (el?.type === 'image') {
+                  setSelectedTarget('image');
+                } else if (el?.type === 'text') {
+                  setSelectedTarget('text');
+                }
+              }
+            }}
+            onToggleSelectElement={handleToggleMultiSelect}
+            onDoubleTapGroup={handleEnterGroupEdit}
+            onCommitMultiTransform={handleCommitMultiTransform}
             onSelectTarget={(target) => {
-              setSelectedTarget(target);
               if (target === 'image') {
                 const elements = state.elements ?? getDefaultElements(state);
                 const imgEl = elements.find((e) => e.type === 'image');

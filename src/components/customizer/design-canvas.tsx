@@ -24,6 +24,7 @@ import { colorValueToCss, colorValueToTextStyle } from '@/lib/color';
 import type { ColorValue } from '@/lib/color/color-types';
 import { getMaskStyle, HEART_MASK_PATH } from '@/lib/image-mask';
 import { getCropTransformStyle } from '@/lib/image-crop';
+import { computeCombinedBounds } from '@/lib/multi-selection';
 export interface TransformState {
   x: number;
   y: number;
@@ -44,13 +45,20 @@ export interface DesignCanvasProps {
   productOptions: Record<string, unknown>;
   isMockup?: boolean;
   selectedTarget?: 'image' | 'text' | 'group' | null;
+  selectedElementId?: string | null;
   selectedTextId?: string | null;
+  selectionMode?: 'default' | 'multi-select' | 'group-edit';
+  selectedElementIds?: string[];
+  activeGroupId?: string | null;
   textElements?: CanvasElement[];
   elements?: CanvasElement[];
   onSelectTarget?: (target: 'image' | 'text' | 'group' | null) => void;
+  onSelectElement?: (id: string | null) => void;
   onSelectText?: (id: string | null) => void;
+  onToggleSelectElement?: (id: string) => void;
   onDoubleTap?: (target: 'image' | 'text') => void;
   onDoubleTapText?: (id: string) => void;
+  onDoubleTapGroup?: (groupId: string) => void;
   onMeasureText?: (id: string, height: number) => void;
   isLocked?: boolean;
   onLockedFeedback?: () => void;
@@ -63,6 +71,13 @@ export interface DesignCanvasProps {
     transform: TransformState,
     elementId?: string
   ) => void;
+  onCommitMultiTransform?: (
+    action: 'move' | 'resize' | 'rotate',
+    dx: number,
+    dy: number,
+    scaleRatio: number,
+    deltaDegrees: number
+  ) => void;
 }
 
 export function DesignCanvas({
@@ -74,13 +89,20 @@ export function DesignCanvas({
   productOptions,
   isMockup = false,
   selectedTarget = null,
+  selectedElementId = null,
   selectedTextId = null,
+  selectionMode = 'default',
+  selectedElementIds = [],
+  activeGroupId = null,
   textElements,
   elements,
   onSelectTarget,
+  onSelectElement,
   onSelectText,
+  onToggleSelectElement,
   onDoubleTap,
   onDoubleTapText,
+  onDoubleTapGroup,
   onMeasureText,
   isLocked = false,
   onLockedFeedback,
@@ -89,6 +111,7 @@ export function DesignCanvas({
   textTransform = DEFAULT_TEXT_TRANSFORM,
   textTransforms = DEFAULT_TEXT_TRANSFORMS,
   onCommitTransform,
+  onCommitMultiTransform,
 }: DesignCanvasProps) {
   const backgroundCss = productOptions.backgroundColorValue
     ? colorValueToCss(productOptions.backgroundColorValue as ColorValue)
@@ -299,6 +322,126 @@ export function DesignCanvas({
     window.addEventListener('pointermove', handlePointerMove);
     window.addEventListener('pointerup', handlePointerUp);
   };
+  const selectedElements = useMemo(() => {
+    if (selectionMode !== 'multi-select' || selectedElementIds.length === 0) return [];
+    const list = elements && elements.length > 0 ? elements : (textElements ?? []);
+    return list.filter((el) => selectedElementIds.includes(el.id));
+  }, [selectionMode, selectedElementIds, elements, textElements]);
+
+  const combinedBounds = useMemo(() => {
+    return computeCombinedBounds(selectedElements);
+  }, [selectedElements]);
+
+  const [liveMultiGesture, setLiveMultiGesture] = useState<{
+    dx: number;
+    dy: number;
+    scale: number;
+    rotation: number;
+  }>({ dx: 0, dy: 0, scale: 1, rotation: 0 });
+
+  const activeMultiGestureRef = useRef<{
+    action: 'move' | 'resize' | 'rotate';
+    handle?: TransformHandle;
+    startX: number;
+    startY: number;
+    hasExceededThreshold: boolean;
+    centerScreenX: number;
+    centerScreenY: number;
+  } | null>(null);
+
+  const handleMultiPointerMove = useCallback((e: PointerEvent) => {
+    const gesture = activeMultiGestureRef.current;
+    if (!gesture) return;
+
+    const dx = e.clientX - gesture.startX;
+    const dy = e.clientY - gesture.startY;
+
+    if (!gesture.hasExceededThreshold) {
+      if (Math.hypot(dx, dy) > TAP_THRESHOLD_PX) {
+        gesture.hasExceededThreshold = true;
+      } else {
+        return;
+      }
+    }
+
+    if (gesture.action === 'move') {
+      setLiveMultiGesture({ dx, dy, scale: 1, rotation: 0 });
+    } else if (gesture.action === 'resize') {
+      const diag = Math.hypot(dx, dy);
+      const sign = (dx + dy) >= 0 ? 1 : -1;
+      const scale = Math.max(0.2, Math.min(3.5, 1 + (sign * diag) / 150));
+      setLiveMultiGesture({ dx: 0, dy: 0, scale, rotation: 0 });
+    } else if (gesture.action === 'rotate') {
+      const angle = computeRotationAngle(
+        gesture.centerScreenX,
+        gesture.centerScreenY,
+        e.clientX,
+        e.clientY
+      );
+      setLiveMultiGesture({ dx: 0, dy: 0, scale: 1, rotation: angle });
+    }
+  }, []);
+
+  const handleMultiPointerUp = useCallback((e: PointerEvent) => {
+    const gesture = activeMultiGestureRef.current;
+    if (!gesture) return;
+
+    const dx = e.clientX - gesture.startX;
+    const dy = e.clientY - gesture.startY;
+    const hasMoved = gesture.hasExceededThreshold;
+
+    activeMultiGestureRef.current = null;
+    window.removeEventListener('pointermove', handleMultiPointerMove);
+    window.removeEventListener('pointerup', handleMultiPointerUp);
+
+    if (hasMoved) {
+      if (gesture.action === 'move') {
+        onCommitMultiTransform?.('move', Math.round(dx / 5), Math.round(dy / 5), 1, 0);
+      } else if (gesture.action === 'resize') {
+        const diag = Math.hypot(dx, dy);
+        const sign = (dx + dy) >= 0 ? 1 : -1;
+        const scale = Math.max(0.2, Math.min(3.5, 1 + (sign * diag) / 150));
+        onCommitMultiTransform?.('resize', 0, 0, scale, 0);
+      } else if (gesture.action === 'rotate') {
+        const angle = computeRotationAngle(
+          gesture.centerScreenX,
+          gesture.centerScreenY,
+          e.clientX,
+          e.clientY
+        );
+        onCommitMultiTransform?.('rotate', 0, 0, 1, angle);
+      }
+    } else {
+      const elementsUnder = document.elementsFromPoint(e.clientX, e.clientY);
+      const targetDom = elementsUnder.find((el) => el.getAttribute('data-element-id'));
+      const targetId = targetDom?.getAttribute('data-element-id');
+      if (targetId) {
+        onToggleSelectElement?.(targetId);
+      }
+    }
+
+    setLiveMultiGesture({ dx: 0, dy: 0, scale: 1, rotation: 0 });
+  }, [handleMultiPointerMove, onCommitMultiTransform, onToggleSelectElement]);
+
+  const startMultiGesture = (
+    action: 'move' | 'resize' | 'rotate',
+    handle: TransformHandle | undefined,
+    e: React.PointerEvent
+  ) => {
+    e.stopPropagation();
+    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    activeMultiGestureRef.current = {
+      action,
+      handle,
+      startX: e.clientX,
+      startY: e.clientY,
+      hasExceededThreshold: false,
+      centerScreenX: rect.left + rect.width / 2,
+      centerScreenY: rect.top + rect.height / 2,
+    };
+    window.addEventListener('pointermove', handleMultiPointerMove);
+    window.addEventListener('pointerup', handleMultiPointerUp);
+  };
 
   const isImageSelected = !isMockup && selectedTarget === 'image';
 
@@ -381,15 +524,32 @@ export function DesignCanvas({
         <div
           role="button"
           tabIndex={0}
+          data-element-id={imgElement?.id || 'image-1'}
           aria-label="Đối tượng ảnh"
-          className="relative max-h-[70%] max-w-[70%] inline-flex items-center justify-center select-none touch-none"
+          className={`relative max-h-[70%] max-w-[70%] inline-flex items-center justify-center select-none touch-none ${
+            selectionMode === 'multi-select' && selectedElementIds.includes(imgElement?.id || 'image-1')
+              ? 'ring-2 ring-[#315F86]/80 ring-offset-2 rounded-xs'
+              : ''
+          } ${
+            selectionMode === 'group-edit' && activeGroupId && imgElement?.parentGroupId !== activeGroupId
+              ? 'opacity-40 pointer-events-none'
+              : ''
+          }`}
           style={{
             transform: `translate3d(${effectiveImageTransform.x}px, ${effectiveImageTransform.y}px, 0) rotate(${effectiveImageTransform.rotation}deg) scale(${effectiveImageTransform.scale})`,
             transformOrigin: 'center center',
           }}
+          onClick={(e) => {
+            if (selectionMode === 'multi-select') {
+              e.stopPropagation();
+              onToggleSelectElement?.(imgElement?.id || 'image-1');
+            }
+          }}
           onPointerDown={(e) => {
             e.stopPropagation();
-            startGesture('image', undefined, 'move', undefined, e);
+            if (selectionMode !== 'multi-select') {
+              startGesture('image', undefined, 'move', undefined, e);
+            }
           }}
         >
           {/* Fixed Frame with Mask */}
@@ -480,9 +640,104 @@ export function DesignCanvas({
               }
             }}
             onMeasureText={onMeasureText}
+            isMultiSelected={selectionMode === 'multi-select' && selectedElementIds.includes(el.id)}
+            isDimmed={selectionMode === 'group-edit' && Boolean(activeGroupId) && el.parentGroupId !== activeGroupId}
+            onClick={(e: React.MouseEvent) => {
+              if (selectionMode === 'multi-select') {
+                e.stopPropagation();
+                if (el.locked) onLockedFeedback?.();
+                else onToggleSelectElement?.(el.id);
+              }
+            }}
           />
         );
       })}
+      {/* Group Elements */}
+      {elements?.filter((el) => el.type === 'group').map((grp) => {
+        const isSelected = !isMockup && selectedElementId === grp.id;
+        const isMultiSelected = selectionMode === 'multi-select' && selectedElementIds.includes(grp.id);
+        return (
+          <div
+            key={grp.id}
+            data-element-id={grp.id}
+            role="button"
+            tabIndex={0}
+            aria-label={`Nhóm: ${grp.name || 'Nhóm'}`}
+            className={`absolute select-none touch-none ${
+              isMultiSelected ? 'ring-2 ring-[#315F86]/80 ring-offset-2 rounded-xs' : ''
+            }`}
+            style={{
+              left: `${grp.x - (grp.width || 20) / 2}%`,
+              top: `${grp.y - (grp.height || 20) / 2}%`,
+              width: `${grp.width || 20}%`,
+              height: `${grp.height || 20}%`,
+              transform: `rotate(${grp.rotation || 0}deg)`,
+              transformOrigin: 'center center',
+            }}
+            onClick={(e) => {
+              e.stopPropagation();
+              if (selectionMode === 'multi-select') {
+                if (grp.locked) onLockedFeedback?.();
+                else onToggleSelectElement?.(grp.id);
+              } else {
+                onSelectTarget?.('group');
+                onSelectElement?.(grp.id);
+              }
+            }}
+            onDoubleClick={(e) => {
+              e.stopPropagation();
+              if (selectionMode !== 'multi-select') {
+                onDoubleTapGroup?.(grp.id);
+              }
+            }}
+          >
+            {isSelected && selectionMode !== 'multi-select' && (
+              <SelectionOverlay
+                mode="group"
+                isLocked={Boolean(grp.locked)}
+                onHandlePointerDown={() => {}}
+              />
+            )}
+          </div>
+        );
+      })}
+
+      {/* Combined Multi-selection Bounding Box */}
+      {selectionMode === 'multi-select' && combinedBounds && (
+        <div
+          className="absolute z-30 pointer-events-auto"
+          style={{
+            left: `${combinedBounds.minX}%`,
+            top: `${combinedBounds.minY}%`,
+            width: `${combinedBounds.width}%`,
+            height: `${combinedBounds.height}%`,
+            transform: `translate3d(${liveMultiGesture.dx}px, ${liveMultiGesture.dy}px, 0) scale(${liveMultiGesture.scale}) rotate(${liveMultiGesture.rotation}deg)`,
+            transformOrigin: 'center center',
+          }}
+        >
+          <SelectionOverlay
+            mode="multi"
+            selectionCount={selectedElementIds.length}
+            isRotating={activeMultiGestureRef.current?.action === 'rotate'}
+            rotationAngle={liveMultiGesture.rotation}
+            onBoxPointerDown={(e) => startMultiGesture('move', undefined, e)}
+            onHandlePointerDown={(handle, e) => {
+              if (handle === 'rotate') {
+                startMultiGesture('rotate', handle, e);
+              } else {
+                startMultiGesture('resize', handle, e);
+              }
+            }}
+          />
+        </div>
+      )}
+
+      {/* Group Edit floating mode banner */}
+      {selectionMode === 'group-edit' && (
+        <div className="absolute top-2 left-1/2 -translate-x-1/2 z-40 bg-[#2E3338]/90 text-white text-xs font-semibold px-3 py-1 rounded-full shadow-md flex items-center gap-2 pointer-events-auto">
+          <span>Đang chỉnh nhóm</span>
+        </div>
+      )}
 
       {!image?.src && resolvedTextElements.length === 0 && (
         <p
@@ -512,6 +767,9 @@ interface TextElementItemProps {
   onPointerDown: (e: React.PointerEvent) => void;
   onHandlePointerDown: (handle: TransformHandle, e: React.PointerEvent) => void;
   onMeasureText?: (id: string, height: number) => void;
+  isMultiSelected?: boolean;
+  isDimmed?: boolean;
+  onClick?: (e: React.MouseEvent) => void;
 }
 
 function TextElementItem({
@@ -525,6 +783,9 @@ function TextElementItem({
   onPointerDown,
   onHandlePointerDown,
   onMeasureText,
+  isMultiSelected = false,
+  isDimmed = false,
+  onClick,
 }: TextElementItemProps) {
   const nodeRef = useRef<HTMLDivElement>(null);
   const lastHeightRef = useRef<number | null>(null);
@@ -551,13 +812,18 @@ function TextElementItem({
       tabIndex={0}
       data-element-id={element.id}
       aria-label={`Đối tượng chữ: ${data.text}`}
-      className="relative select-none touch-none inline-block max-w-[85%]"
+      className={`relative select-none touch-none inline-block max-w-[85%] ${
+        isMultiSelected ? 'ring-2 ring-[#315F86]/80 ring-offset-2 rounded-xs' : ''
+      } ${isDimmed ? 'opacity-40 pointer-events-none' : ''}`}
       style={{
         width: `${element.width || 70}%`,
         transform: `translate3d(${transform.x}px, ${transform.y}px, 0) rotate(${transform.rotation}deg) scale(${transform.scale})`,
         transformOrigin: 'center center',
       }}
-      onPointerDown={onPointerDown}
+      onClick={onClick}
+      onPointerDown={(e) => {
+        if (!isMultiSelected) onPointerDown(e);
+      }}
     >
       <p
         className="design-text px-3 break-words pointer-events-none whitespace-pre-wrap"
