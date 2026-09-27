@@ -24,14 +24,16 @@ import {
 } from 'lucide-react';
 import { TEMPLATES, type ProductId, type CanvasElement } from '@/lib/product-state';
 import { AddContentSheet } from './add-content-sheet';
+import { ImageSourceChooser } from './image-source-chooser';
 import { LayersSheetContent } from './layers-sheet-content';
-import type { ImageSourceType, TextStylePreset, ShapePrimitiveType } from '@/lib/add-content';
+import type { ImageSourceType, TextStylePreset, ShapePrimitiveType, ImageSourceContext } from '@/lib/add-content';
 import { FontBrowserContent } from './font-browser-sheet';
 import { ColorPickerContent } from './color-picker-sheet';
 import type { ColorValue, HexColor } from '@/lib/color/color-types';
 import { createSolidColor } from '@/lib/color/color-validation';
 export type ActiveSheetType =
   | 'add'
+  | 'image-source'
   | 'templates'
   | 'layers'
   | 'font'
@@ -68,7 +70,8 @@ interface EditorSheetsProps {
   onSelectTemplate: (tplId: string) => void;
   onOpenTemplateBrowser: () => void;
   onAddText: (preset?: TextStylePreset) => void;
-  onUploadImageClick: (source?: ImageSourceType) => void;
+  onUploadImageClick: (source?: ImageSourceType, context?: ImageSourceContext) => void;
+  imageSourceContext?: ImageSourceContext;
   onAddShape?: (shape: ShapePrimitiveType) => void;
   onSetColor: (color: string) => void;
   onSetFont: (font: string) => void;
@@ -126,6 +129,7 @@ export function EditorSheets({
   onOpenTemplateBrowser,
   onAddText,
   onUploadImageClick,
+  imageSourceContext,
   onAddShape,
   onSetColor,
   onSetFont,
@@ -178,7 +182,17 @@ export function EditorSheets({
             }}
           />
         )}
-        {/* TEMPLATES SHEET */}
+        {/* IMAGE SOURCE SHEET (REPLACE IMAGE) */}
+        {activeSheet === 'image-source' && (
+          <ImageSourceChooser
+            context={imageSourceContext ?? { mode: 'replace', targetElementId: selectedElementId ?? 'image-1' }}
+            onClose={onClose}
+            onSelectSource={(source, ctx) => {
+              onClose();
+              onUploadImageClick(source, ctx);
+            }}
+          />
+        )}
         {activeSheet === 'templates' && (
           <div className="space-y-4">
             <DrawerHeader className="px-0 py-2">

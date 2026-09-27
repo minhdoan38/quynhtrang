@@ -52,7 +52,7 @@ import { EditorPreflightMode } from './editor-preflight-mode';
 import { EmptyEditorState } from './empty-editor-state';
 import { BottomNavigation, type SelectedTarget } from './bottom-navigation';
 import { EditorSheets, type ActiveSheetType } from './editor-sheets';
-import type { ImageSourceType, TextStylePreset, ShapePrimitiveType } from '@/lib/add-content';
+import type { ImageSourceType, TextStylePreset, ShapePrimitiveType, ImageSourceContext } from '@/lib/add-content';
 import { useColorEditor } from './use-color-editor';
 import type { ColorTarget, HexColor } from '@/lib/color/color-types';
 import { resolveEditorBackAction, type SaveStatus } from '@/lib/navigation';
@@ -87,6 +87,7 @@ export function CustomizerShell() {
   // Redesigned Shell State Model
   const [selectedTarget, setSelectedTarget] = useState<SelectedTarget>(null);
   const [selectedElementId, setSelectedElementId] = useState<string | null>(null);
+  const [imageSourceContext, setImageSourceContext] = useState<ImageSourceContext>({ mode: 'add' });
   const [selectedTextId, setSelectedTextId] = useState<string | null>(null);
   const [textEditState, setTextEditState] = useState<TextEditState>(null);
   const pendingExitOnCompositionEndRef = useRef(false);
@@ -206,8 +207,28 @@ export function CustomizerShell() {
     setMounted(true);
     const params = new URLSearchParams(window.location.search);
     const requestedProduct = params.get('product') as ProductId | null;
+    const requestedVariant = params.get('variant');
+    const requestedTemplate = params.get('template');
+    const requestedView = params.get('view') as View | null;
     const saved = loadState();
-    if (saved && saved.productId) {
+
+    if (requestedProduct && requestedProduct in PRODUCTS) {
+      let initial = createInitialState(requestedProduct);
+      if (requestedVariant) {
+        initial = transitionState(initial, { type: 'SET_VARIANT', value: requestedVariant });
+      }
+      if (requestedTemplate && TEMPLATES[requestedTemplate]) {
+        initial = transitionState(initial, { type: 'SET_TEMPLATE', value: requestedTemplate });
+      }
+      setState(migrateLegacyText(initial));
+      if (requestedView === 'editor' || requestedTemplate) {
+        setView('editor');
+      } else if (requestedView === 'template-browser') {
+        setView('template-browser');
+      } else {
+        setView('setup');
+      }
+    } else if (saved && saved.productId) {
       const base = createInitialState(saved.productId);
       const merged = {
         ...base,
@@ -216,15 +237,11 @@ export function CustomizerShell() {
         productOptions: { ...base.productOptions, ...(saved.productOptions || {}) },
       } as DesignState;
       setState(migrateLegacyText(merged));
+      if (requestedView === 'editor') {
+        setView('editor');
+      }
     }
     setRecentProjects(getRecentProjects());
-    const requestedView = params.get('view') as View | null;
-    if (requestedView === 'editor' && saved && saved.productId) {
-      setView('editor');
-    } else if (requestedProduct && requestedProduct in PRODUCTS) {
-      setState(createInitialState(requestedProduct));
-      setView('setup');
-    }
   }, []);
 
 
@@ -565,10 +582,15 @@ export function CustomizerShell() {
   const handleUploadImage = useCallback(async (file: File) => {
     try {
       const imageState = await processImageUpload(file);
-      if (selectedTarget === 'image') {
+      if (imageSourceContext.mode === 'replace') {
+        const targetId = imageSourceContext.targetElementId;
+        // Record exact base state for atomic undo
+        setPast((prev) => [...prev, state]);
+        setFuture([]);
+
         dispatch({
           type: 'REPLACE_IMAGE_ASSET',
-          id: selectedElementId ?? undefined,
+          id: targetId,
           asset: {
             src: imageState.src,
             name: imageState.name,
@@ -577,8 +599,12 @@ export function CustomizerShell() {
             size: imageState.size,
           },
         });
+        setSelectedTarget('image');
+        setSelectedElementId(targetId);
         showToast('Đã thay ảnh (giữ nguyên khung thiết kế).');
       } else {
+        setPast((prev) => [...prev, state]);
+        setFuture([]);
         if (state.image?.src) revokeImageUrl(state.image.src);
         dispatch({ type: 'SET_IMAGE', value: imageState });
         setSelectedTarget('image');
@@ -588,9 +614,9 @@ export function CustomizerShell() {
         showToast('Tải ảnh lên thành công.');
       }
     } catch (err: unknown) {
-      showToast(err instanceof Error ? err.message : 'Tải ảnh thất bại.');
+      showToast(err instanceof Error ? err.message : 'Không thể sử dụng ảnh này.');
     }
-  }, [dispatch, state.image, state.elements, selectedTarget, selectedElementId, showToast]);
+  }, [dispatch, state, imageSourceContext, showToast]);
 
   const handleFileInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -600,7 +626,10 @@ export function CustomizerShell() {
     }
   };
 
-  const handleOpenImagePicker = (source: ImageSourceType = 'file') => {
+  const handleOpenImagePicker = (source: ImageSourceType = 'file', context?: ImageSourceContext) => {
+    if (context) {
+      setImageSourceContext(context);
+    }
     if (!fileInputRef.current) return;
     if (source === 'camera') {
       fileInputRef.current.setAttribute('capture', 'environment');
@@ -885,9 +914,13 @@ export function CustomizerShell() {
       case 'crop':
         setFocusMode('crop');
         break;
-      case 'replace-image':
-        fileInputRef.current?.click();
+      case 'replace-image': {
+        const elements = state.elements ?? getDefaultElements(state);
+        const targetId = selectedElementId || elements.find((e) => e.type === 'image')?.id || 'image-1';
+        setImageSourceContext({ mode: 'replace', targetElementId: targetId });
+        setActiveSheet('image-source');
         break;
+      }
       case 'remove-bg':
         setFocusMode('remove-bg');
         break;
@@ -1413,8 +1446,8 @@ export function CustomizerShell() {
           setView('template-browser');
         }}
         onAddText={(preset) => handleInsertText(preset)}
-        onUploadImageClick={(source) => handleOpenImagePicker(source)}
-        onAddShape={(shape) => handleInsertShape(shape)}
+        onUploadImageClick={(source, ctx) => handleOpenImagePicker(source, ctx)}
+        imageSourceContext={imageSourceContext}
         onSetColor={handleSetColor}
         onSetFont={handleSetFont}
         onSetFontSize={handleSetFontSize}
