@@ -94,3 +94,44 @@ test('handles invalid entries and deduplicates case-insensitively', () => {
   );
   assert.deepEqual(merged, ['#FFD1DC', '#315F86', '#2E3338']);
 });
+
+import {
+  getColorValue,
+  setColorValue,
+  supportsGradient,
+  extractDesignColors,
+} from '../lib/color/color-target.ts';
+import { createInitialState } from '../lib/product-state.ts';
+
+test('resolves and sets text fill color on element', () => {
+  const initial = createInitialState('card');
+  const target = { kind: 'element' as const, elementId: 'text-1', property: 'fill' as const };
+  assert.equal(supportsGradient(target), true);
+
+  const initialVal = getColorValue(initial, target);
+  assert.ok(initialVal !== null);
+
+  const newColor = createSolidColor('#315F86');
+  const updated = setColorValue(initial, target, newColor);
+  assert.deepEqual(getColorValue(updated, target), newColor);
+});
+
+test('resolves and sets surface background color', () => {
+  const initial = createInitialState('wrapping');
+  const target = { kind: 'surface' as const, surfaceId: 'front', property: 'background' as const };
+  const grad = createDefaultLinearGradient('#FFFDF8', '#ECE6DC', 'bottom');
+
+  const updated = setColorValue(initial, target, grad);
+  assert.deepEqual(getColorValue(updated, target), grad);
+});
+
+test('extracts unique design colors across text, shapes, and background', () => {
+  let state = createInitialState('wrapping');
+  state = setColorValue(state, { kind: 'surface', surfaceId: 'front', property: 'background' }, createSolidColor('#F8F3E8'));
+  state = setColorValue(state, { kind: 'element', elementId: 'text-1', property: 'fill' }, createDefaultLinearGradient('#315F86', '#E8BCC9'));
+
+  const designColors = extractDesignColors(state);
+  assert.ok(designColors.includes('#F8F3E8'));
+  assert.ok(designColors.includes('#315F86'));
+  assert.ok(designColors.includes('#E8BCC9'));
+});
