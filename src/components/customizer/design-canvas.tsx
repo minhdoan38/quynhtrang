@@ -705,9 +705,8 @@ export function DesignCanvas({
       {/* Combined Multi-selection Bounding Box */}
       {selectionMode === 'multi-select' && combinedBounds && (
         <div
-          className="absolute z-30 pointer-events-auto"
+          className="absolute z-30 pointer-events-none"
           style={{
-            left: `${combinedBounds.minX}%`,
             top: `${combinedBounds.minY}%`,
             width: `${combinedBounds.width}%`,
             height: `${combinedBounds.height}%`,

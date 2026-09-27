@@ -42,17 +42,17 @@ export function SelectionOverlay({
   return (
     <div
       onPointerDown={onBoxPointerDown}
-      className={`absolute inset-0 border-2 border-[#315F86] rounded-sm ${mode === 'multi' ? 'pointer-events-auto cursor-move' : 'pointer-events-none'}`}
+      className="absolute inset-0 pointer-events-none border-2 border-[#315F86] rounded-sm"
     >
       {/* Group or Multi Badge */}
       {mode === 'group' && (
-        <div className="absolute -top-7 left-0 bg-[#2E3338]/90 text-white text-[10px] font-medium px-2 py-0.5 rounded-full flex items-center gap-1 shadow-sm whitespace-nowrap pointer-events-none">
+        <div className="absolute -top-7 left-0 bg-[#2E3338]/90 text-white text-xs font-medium px-2 py-0.5 rounded-full flex items-center gap-1 shadow-sm whitespace-nowrap pointer-events-none">
           <Folder className="w-3 h-3 text-[#F2DFA0]" />
           <span>Nhóm</span>
         </div>
       )}
       {mode === 'multi' && typeof selectionCount === 'number' && selectionCount > 0 && (
-        <div className="absolute -top-7 left-0 bg-[#315F86] text-white text-[10px] font-medium px-2 py-0.5 rounded-full flex items-center gap-1 shadow-sm whitespace-nowrap pointer-events-none">
+        <div className="absolute -top-7 left-0 bg-[#315F86] text-white text-xs font-medium px-2 py-0.5 rounded-full flex items-center gap-1 shadow-sm whitespace-nowrap pointer-events-none">
           <span>{selectionCount} mục đã chọn</span>
         </div>
       )}

@@ -458,6 +458,95 @@ test('SET_IMAGE_OPACITY updates element opacity and productOptions in sync', () 
   assert.equal(getImageData(imgEl!)?.opacity, 45);
 });
 
+test('COMMIT_IMAGE_CROP and RESET_IMAGE_CROP update crop state non-destructively', () => {
+  const baseState = createInitialState('wrapping');
+  const imgEl: CanvasElement = {
+    id: 'image-1',
+    type: 'image',
+    x: 50,
+    y: 50,
+    width: 200,
+    height: 200,
+    rotation: 0,
+    data: {
+      src: 'blob:test.jpg',
+      originalSrc: 'blob:test.jpg',
+      crop: { scale: 1, offsetX: 0, offsetY: 0 },
+    },
+  };
+  const stateWithImg: DesignState = { ...baseState, elements: [imgEl] };
+
+  // Commit Crop
+  const cropped = transitionState(stateWithImg, {
+    type: 'COMMIT_IMAGE_CROP',
+    id: 'image-1',
+    crop: { scale: 1.8, offsetX: 25, offsetY: -15 },
+  });
+  const croppedData = getImageData(cropped.elements![0]);
+  assert.equal(croppedData?.crop?.scale, 1.8);
+  assert.equal(croppedData?.crop?.offsetX, 25);
+  assert.equal(croppedData?.crop?.offsetY, -15);
+  // Outer geometry is strictly preserved
+  assert.equal(cropped.elements![0].x, 50);
+  assert.equal(cropped.elements![0].width, 200);
+
+  // Reset Crop
+  const reset = transitionState(cropped, {
+    type: 'RESET_IMAGE_CROP',
+    id: 'image-1',
+  });
+  const resetData = getImageData(reset.elements![0]);
+  assert.equal(resetData?.crop?.scale, 1);
+  assert.equal(resetData?.crop?.offsetX, 0);
+  assert.equal(resetData?.crop?.offsetY, 0);
+});
+
+test('SET_IMAGE_MASK applies mask and preserves mask through REPLACE_IMAGE_ASSET', () => {
+  const baseState = createInitialState('wrapping');
+  const imgEl: CanvasElement = {
+    id: 'image-1',
+    type: 'image',
+    x: 40,
+    y: 40,
+    width: 150,
+    height: 150,
+    rotation: 0,
+    data: {
+      src: 'blob:photoA.jpg',
+      originalSrc: 'blob:photoA.jpg',
+      mask: null,
+    },
+  };
+  const stateWithImg: DesignState = { ...baseState, elements: [imgEl] };
+
+  // Set Mask to heart
+  const masked = transitionState(stateWithImg, {
+    type: 'SET_IMAGE_MASK',
+    id: 'image-1',
+    mask: 'heart',
+  });
+  const maskedData = getImageData(masked.elements![0]);
+  assert.equal(maskedData?.mask, 'heart');
+
+  // Replace image with photoB
+  const replaced = transitionState(masked, {
+    type: 'REPLACE_IMAGE_ASSET',
+    id: 'image-1',
+    asset: {
+      src: 'blob:photoB.jpg',
+      width: 600,
+      height: 600,
+    },
+  });
+  const replacedData = getImageData(replaced.elements![0]);
+  // Mask must be preserved through image replace!
+  assert.equal(replacedData?.mask, 'heart');
+  assert.equal(replacedData?.src, 'blob:photoB.jpg');
+  // Crop is reset to sensible cover + center
+  assert.equal(replacedData?.crop?.scale, 1);
+  assert.equal(replacedData?.crop?.offsetX, 0);
+});
+
 function textElementWithContent(text: string): CanvasElement {
   return createTextElement({ id: 'text-1', preset: 'body', text });
 }
