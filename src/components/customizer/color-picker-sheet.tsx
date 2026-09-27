@@ -436,7 +436,7 @@ export function ColorPickerContent({
                   />
                 </div>
                 {hexError && (
-                  <p className="text-[10px] text-[#B3535D] font-medium">Mã HEX không hợp lệ (ví dụ: #315F86)</p>
+                  <p className="text-xs text-[#B3535D] font-medium">Mã HEX không hợp lệ (ví dụ: #315F86)</p>
                 )}
               </div>
             </div>

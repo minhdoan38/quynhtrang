@@ -15,6 +15,7 @@ import { createSolidColor } from '@/lib/color/color-validation';
 import type { DesignState } from '@/lib/product-state';
 
 export interface UseColorEditorProps {
+  isOpen: boolean;
   target: ColorTarget | null;
   state: DesignState;
   onUpdateState: (newState: DesignState) => void;
@@ -24,6 +25,7 @@ export interface UseColorEditorProps {
 }
 
 export function useColorEditor({
+  isOpen,
   target,
   state,
   onUpdateState,
@@ -62,12 +64,16 @@ export function useColorEditor({
   }, [projectRecents, deviceRecents]);
 
   // Capture session base on target change
+  const prevIsOpenRef = useRef(false);
+
+  // Capture session base strictly when sheet opens
   useEffect(() => {
-    if (target && !sessionBaseStateRef.current) {
+    if (isOpen && !prevIsOpenRef.current && target) {
       sessionBaseStateRef.current = state;
       sessionInitialValueRef.current = getColorValue(state, target);
     }
-  }, [target, state]);
+    prevIsOpenRef.current = isOpen;
+  }, [isOpen, target, state]);
 
   // Live color change without creating undo entry
   const updateColorLive = useCallback(

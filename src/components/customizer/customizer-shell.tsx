@@ -119,6 +119,7 @@ export function CustomizerShell() {
     recentColors,
     isGradientSupported,
   } = useColorEditor({
+    isOpen: activeSheet === 'color',
     target: activeColorTarget,
     state,
     onUpdateState: (newState) => setState(newState),
