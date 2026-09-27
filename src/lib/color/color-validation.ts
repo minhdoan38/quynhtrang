@@ -6,7 +6,7 @@ import type {
   GradientColor,
   ColorValue,
   GradientDirection,
-} from './color-types';
+} from './color-types.ts';
 
 const HEX_REGEX = /^#?([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/;
 

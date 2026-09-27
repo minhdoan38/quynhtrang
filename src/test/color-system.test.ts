@@ -66,3 +66,31 @@ test('renders color values to valid CSS strings', () => {
   const radial = createDefaultRadialGradient('#FFFDF8', '#2E3338');
   assert.equal(colorValueToCss(radial), 'radial-gradient(circle at center, #FFFDF8, #2E3338)');
 });
+
+import {
+  mergeRecentColors,
+  MAX_RECENT_COLORS,
+} from '../lib/color/color-recents.ts';
+
+test('merges project and device recents without duplicates and limits to MAX_RECENT_COLORS', () => {
+  const project = ['#FFD1DC', '#FFF2CC'];
+  const device = ['#FFD1DC', '#91C4F2', '#FFFFFF', '#315F86'];
+  const merged = mergeRecentColors(project, device);
+
+  assert.deepEqual(merged, [
+    '#FFD1DC',
+    '#FFF2CC',
+    '#91C4F2',
+    '#FFFFFF',
+    '#315F86',
+  ]);
+  assert.ok(merged.length <= MAX_RECENT_COLORS);
+});
+
+test('handles invalid entries and deduplicates case-insensitively', () => {
+  const merged = mergeRecentColors(
+    ['#ffd1dc', 'invalid', '#315f86'],
+    ['#FFD1DC', '#2E3338']
+  );
+  assert.deepEqual(merged, ['#FFD1DC', '#315F86', '#2E3338']);
+});

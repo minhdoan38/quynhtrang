@@ -1,5 +1,5 @@
 import React from 'react';
-import type { ColorValue, GradientDirection } from './color-types';
+import type { ColorValue, GradientDirection } from './color-types.ts';
 
 export function gradientDirectionToCssAngle(direction: GradientDirection): string {
   switch (direction) {
