@@ -1,3 +1,10 @@
+import {
+  groupElements,
+  ungroupElement,
+  duplicateSelectedElements,
+  deleteSelectedElements,
+} from './grouping.ts';
+import { moveElements } from './multi-selection.ts';
 export type ProductId = 'wrapping' | 'card' | 'sticker' | 'notebook';
 
 export interface ProductVariant {
@@ -94,10 +101,14 @@ export interface ImageAsset {
 }
 
 export interface ImageCropData {
-  x: number;
-  y: number;
-  width: number;
-  height: number;
+  scale?: number;
+  offsetX?: number;
+  offsetY?: number;
+  rotation?: number;
+  x?: number;
+  y?: number;
+  width?: number;
+  height?: number;
 }
 
 export interface ImageObjectData {
@@ -177,7 +188,15 @@ export type DesignAction =
   | { type: 'SET_IMAGE_OPACITY'; id?: string; opacity: number }
   | { type: 'APPLY_REMOVE_BACKGROUND'; id?: string; derivedSrc: string }
   | { type: 'RESTORE_ORIGINAL_IMAGE'; id?: string }
-  | { type: 'COMMIT_REFINE_MASK'; id?: string; refinedSrc: string; maskData?: string };
+  | { type: 'COMMIT_REFINE_MASK'; id?: string; refinedSrc: string; maskData?: string }
+  | { type: 'COMMIT_IMAGE_CROP'; id?: string; crop: ImageCropData }
+  | { type: 'RESET_IMAGE_CROP'; id?: string }
+  | { type: 'SET_IMAGE_MASK'; id?: string; mask: string | null }
+  | { type: 'GROUP_ELEMENTS'; ids: string[] }
+  | { type: 'UNGROUP_ELEMENT'; groupId: string }
+  | { type: 'MOVE_ELEMENTS'; ids: string[]; dx: number; dy: number }
+  | { type: 'DUPLICATE_ELEMENTS'; ids: string[] }
+  | { type: 'DELETE_ELEMENTS'; ids: string[] };
 export interface DesignSummary {
   product: string;
   variant: string;
@@ -932,6 +951,31 @@ export function transitionState(state: DesignState, action: DesignAction): Desig
         elements: nextList,
       };
     }
+    case 'GROUP_ELEMENTS': {
+      const result = groupElements(state, action.ids);
+      return result.state;
+    }
+
+    case 'UNGROUP_ELEMENT': {
+      return ungroupElement(state, action.groupId);
+    }
+
+    case 'MOVE_ELEMENTS': {
+      const currentList = state.elements ?? getDefaultElements(state);
+      return {
+        ...state,
+        elements: moveElements(currentList, action.ids, action.dx, action.dy),
+      };
+    }
+
+    case 'DUPLICATE_ELEMENTS': {
+      const result = duplicateSelectedElements(state, action.ids);
+      return result.state;
+    }
+
+    case 'DELETE_ELEMENTS': {
+      return deleteSelectedElements(state, action.ids);
+    }
 
     case 'ADD_TEXT_ELEMENT': {
       const currentList = state.elements ?? getDefaultElements(state);
@@ -1149,10 +1193,18 @@ export function transitionState(state: DesignState, action: DesignAction): Desig
         name: action.asset.name ?? (existingData.name as string | undefined) ?? 'Ảnh đã thay thế',
         originalSrc: action.asset.originalSrc ?? action.asset.src,
         removedBackgroundSrc: undefined, // Strictly reset background removal on replace
-        assetId: action.asset.id ?? (existingData.assetId as string | undefined),
         sourceWidth: action.asset.width ?? (existingData.sourceWidth as number | undefined),
         sourceHeight: action.asset.height ?? (existingData.sourceHeight as number | undefined),
-        crop: { x: cropX, y: cropY, width: cropW, height: cropH },
+        crop: {
+          scale: 1,
+          offsetX: 0,
+          offsetY: 0,
+          rotation: 0,
+          x: cropX,
+          y: cropY,
+          width: cropW,
+          height: cropH,
+        },
         placeholder: false,
       };
 
@@ -1259,6 +1311,96 @@ export function transitionState(state: DesignState, action: DesignAction): Desig
       return {
         ...state,
         image: state.image ? { ...state.image, src: action.refinedSrc } : null,
+        elements: nextList,
+      };
+    }
+    case 'COMMIT_IMAGE_CROP': {
+      const currentList = state.elements ?? getDefaultElements(state);
+      const target = action.id
+        ? currentList.find((el) => el.id === action.id && el.type === 'image')
+        : currentList.find((el) => el.type === 'image');
+
+      if (!target) return state;
+
+      const existingData = (target.data ?? {}) as Record<string, unknown>;
+      const nextList = currentList.map((el) =>
+        el.id === target.id
+          ? {
+            ...el,
+            data: {
+              ...existingData,
+              crop: {
+                ...((existingData.crop as Record<string, unknown> | undefined) ?? {}),
+                ...action.crop,
+              },
+            },
+          }
+          : el
+      );
+
+      return {
+        ...state,
+        elements: nextList,
+      };
+    }
+
+    case 'RESET_IMAGE_CROP': {
+      const currentList = state.elements ?? getDefaultElements(state);
+      const target = action.id
+        ? currentList.find((el) => el.id === action.id && el.type === 'image')
+        : currentList.find((el) => el.type === 'image');
+
+      if (!target) return state;
+
+      const existingData = (target.data ?? {}) as Record<string, unknown>;
+      const nextList = currentList.map((el) =>
+        el.id === target.id
+          ? {
+            ...el,
+            data: {
+              ...existingData,
+              crop: {
+                scale: 1,
+                offsetX: 0,
+                offsetY: 0,
+                rotation: 0,
+              },
+            },
+          }
+          : el
+      );
+
+      return {
+        ...state,
+        elements: nextList,
+      };
+    }
+
+    case 'SET_IMAGE_MASK': {
+      const currentList = state.elements ?? getDefaultElements(state);
+      const target = action.id
+        ? currentList.find((el) => el.id === action.id && el.type === 'image')
+        : currentList.find((el) => el.type === 'image');
+
+      if (!target) return state;
+
+      const existingData = (target.data ?? {}) as Record<string, unknown>;
+      const normalizedMask = action.mask === 'none' ? null : action.mask;
+
+      const nextList = currentList.map((el) =>
+        el.id === target.id
+          ? {
+            ...el,
+            data: {
+              ...existingData,
+              mask: normalizedMask,
+            },
+          }
+          : el
+      );
+
+      return {
+        ...state,
         elements: nextList,
       };
     }

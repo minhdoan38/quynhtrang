@@ -1,4 +1,4 @@
-import type { CanvasElement } from './product-state.js';
+import type { CanvasElement } from './product-state.ts';
 
 export interface CombinedBounds {
   minX: number;
