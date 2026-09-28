@@ -26,7 +26,10 @@ import {
   type ProductId,
   type CanvasElement,
   type TextPreset,
+  type PatternWorkspaceView,
+  type PatternConfig,
 } from '@/lib/product-state';
+import { PatternWorkspaceToggle } from './pattern-workspace-toggle';
 import { getBackgroundRemovalProvider } from '@/lib/background-removal/provider';
 import { BackgroundRefineOverlay } from './background-refine-overlay';
 import { CropFocusMode } from './crop-focus-mode';
@@ -103,6 +106,7 @@ export function CustomizerShell() {
 
   const [templateReturnView, setTemplateReturnView] = useState<'setup' | 'editor'>('setup');
   const [recentProjects, setRecentProjects] = useState<RecentProject[]>([]);
+  const [patternWorkspaceView, setPatternWorkspaceView] = useState<PatternWorkspaceView>('edit-pattern');
 
   // Redesigned Shell State Model
   const [selectedTarget, setSelectedTarget] = useState<SelectedTarget>(null);
@@ -1206,9 +1210,10 @@ export function CustomizerShell() {
       case 'add':
         setActiveSheet('add');
         break;
-      case 'templates':
-        setActiveSheet('templates');
+      case 'pattern':
+        setActiveSheet('pattern');
         break;
+      case 'templates':
       case 'layers':
         setActiveSheet('layers');
         break;
@@ -1443,8 +1448,11 @@ export function CustomizerShell() {
           setTemplateReturnView('setup');
           setView('template-browser');
         }}
-        onStartBlank={() => {
+        onStartBlank={(mode) => {
           dispatch({ type: 'SET_TEMPLATE', value: 'blank' });
+          if (state.productId === 'wrapping' && mode) {
+            dispatch({ type: 'SET_PRODUCT_OPTION', key: 'mode', value: mode });
+          }
           setView('editor');
           showToast('Bắt đầu thiết kế với trang trắng.');
         }}
@@ -1645,11 +1653,25 @@ export function CustomizerShell() {
         </div>
       </header>
 
+      {/* Workspace toggle for Pattern Wrapping mode */}
+      {state.productId === 'wrapping' && (state.productOptions.mode === 'pattern' || !state.productOptions.mode) && (
+        <div className="w-full flex justify-center pt-2 pb-1 z-20 shrink-0">
+          <PatternWorkspaceToggle
+            value={patternWorkspaceView}
+            onChange={(newView) => {
+              setPatternWorkspaceView(newView);
+              setSelectedTarget(null);
+              setSelectedElementId(null);
+              setSelectedTextId(null);
+            }}
+          />
+        </div>
+      )}
+
       {/* ZONE 2: Large Canvas Workspace (~80% height, visually dominant) */}
       <main
         ref={workspaceRef}
         id="app"
-        className="flex-1 flex items-center justify-center p-3 sm:p-6 overflow-hidden relative select-none touch-none pb-[calc(env(safe-area-inset-bottom)+70px)]"
         onTouchStart={handleWorkspaceTouchStart}
         onTouchMove={handleWorkspaceTouchMove}
         onTouchEnd={handleWorkspaceTouchEnd}
@@ -1682,6 +1704,14 @@ export function CustomizerShell() {
             backgroundColor={state.backgroundColor}
             image={state.image}
             productOptions={state.productOptions}
+            patternWorkspaceView={patternWorkspaceView}
+            patternConfig={state.productOptions.patternConfig as PatternConfig | undefined}
+            onSwitchPatternView={(newView) => {
+              setPatternWorkspaceView(newView);
+              setSelectedTarget(null);
+              setSelectedElementId(null);
+              setSelectedTextId(null);
+            }}
             selectedTarget={selectedTarget}
             selectedElementId={selectedElementId}
             selectedTextId={selectedTextId}
@@ -1774,14 +1804,40 @@ export function CustomizerShell() {
             !state.image?.src &&
             !state.text &&
             (!state.elements || state.elements.length === 0) && (
-              <EmptyEditorState
-                onAddImage={() => handleOpenImagePicker('file')}
-                onAddText={() => handleInsertText('heading')}
-                onChooseTemplate={() => {
-                  setTemplateReturnView('editor');
-                  setView('template-browser');
-                }}
-              />
+              state.productId === 'wrapping' && (state.productOptions.mode === 'pattern' || !state.productOptions.mode) ? (
+                <div className="absolute inset-0 flex flex-col items-center justify-center p-6 text-center pointer-events-none z-10">
+                  <div className="max-w-[280px] w-full p-4 rounded-2xl bg-[#FFFDF8]/90 backdrop-blur-xs border border-[#ECE6DC] shadow-xs pointer-events-auto space-y-3">
+                    <p className="text-xs text-[#666A6D] font-medium leading-relaxed">
+                      Thêm ảnh, chữ hoặc sticker để tạo họa tiết.
+                    </p>
+                    <div className="flex flex-col gap-2 pt-1">
+                      <button
+                        type="button"
+                        onClick={() => handleOpenImagePicker('file')}
+                        className="w-full flex items-center justify-center gap-2 p-2 rounded-xl bg-[#315F86] text-white hover:bg-[#244A69] active:scale-98 transition-all text-xs font-semibold shadow-xs"
+                      >
+                        Thêm ảnh
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setActiveSheet('add')}
+                        className="w-full flex items-center justify-center gap-2 p-2 rounded-xl border border-[#ECE6DC] bg-white hover:bg-[#F8F3E8] active:scale-98 transition-all text-xs font-semibold text-[#2E3338]"
+                      >
+                        Thêm sticker
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <EmptyEditorState
+                  onAddImage={() => handleOpenImagePicker('file')}
+                  onAddText={() => handleInsertText('heading')}
+                  onChooseTemplate={() => {
+                    setTemplateReturnView('editor');
+                    setView('template-browser');
+                  }}
+                />
+              )
             )}
         </div>
       </main>
@@ -1797,6 +1853,10 @@ export function CustomizerShell() {
         isProcessingBg={bgRemovalState === 'processing'}
         bgRemovalState={bgRemovalState}
         hasRemovedBackground={hasRemovedBackground}
+        isWrappingPatternMode={
+          state.productId === 'wrapping' &&
+          (state.productOptions.mode === 'pattern' || !state.productOptions.mode)
+        }
         onDeselect={() => {
           if (selectionMode === 'multi-select') {
             handleExitMultiSelect();
@@ -1910,6 +1970,65 @@ export function CustomizerShell() {
         onSelectLayer={handleSelectLayer}
         onReorderElements={handleReorderElements}
         onOpenAddSheet={() => setActiveSheet('add')}
+        patternConfig={
+          state.productId === 'wrapping'
+            ? (state.productOptions.patternConfig as PatternConfig | undefined)
+            : undefined
+        }
+        onLiveUpdatePatternConfig={(patch) => {
+          const current = (state.productOptions.patternConfig as PatternConfig | undefined) || {
+            enabled: true,
+            repeatMode: 'basic',
+            scale: 100,
+            spacingX: 0,
+            spacingY: 0,
+            rotation: 0,
+            backgroundColor: '#ffffff',
+          };
+          dispatchDirect({
+            type: 'SET_PRODUCT_OPTION',
+            key: 'patternConfig',
+            value: { ...current, ...patch },
+          });
+        }}
+        onCommitPatternChange={(actionType, label, patch) => {
+          const current = (state.productOptions.patternConfig as PatternConfig | undefined) || {
+            enabled: true,
+            repeatMode: 'basic',
+            scale: 100,
+            spacingX: 0,
+            spacingY: 0,
+            rotation: 0,
+            backgroundColor: '#ffffff',
+          };
+          executeAction(
+            {
+              type: 'SET_PRODUCT_OPTION',
+              key: 'patternConfig',
+              value: { ...current, ...patch },
+            },
+            { type: actionType, label }
+          );
+        }}
+        onOpenColorSheet={() => setActiveSheet('color')}
+        onResetPatternDefault={() => {
+          executeAction(
+            {
+              type: 'SET_PRODUCT_OPTION',
+              key: 'patternConfig',
+              value: {
+                enabled: true,
+                repeatMode: 'basic',
+                scale: 100,
+                spacingX: 0,
+                spacingY: 0,
+                rotation: 0,
+                backgroundColor: '#ffffff',
+              },
+            },
+            { type: 'change-pattern-repeat', label: 'Khôi phục mặc định' }
+          );
+        }}
       />
 
       {/* Editor Overlay: Dedicated full-screen preview */}

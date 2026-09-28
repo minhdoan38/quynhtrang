@@ -13,13 +13,28 @@ export interface ProductVariant {
   readonly price: number;
 }
 
-export interface WrappingOptions {
-  mode: 'repeat' | 'single';
-  repeatStyle: 'regular' | 'scattered' | 'brick';
-  patternScale: number;
+export type WrappingPaperMode = 'pattern' | 'full-sheet';
+export type PatternRepeatMode = 'basic' | 'half-drop' | 'half-brick' | 'mirror';
+export type PatternWorkspaceView = 'edit-pattern' | 'full-sheet-preview';
+
+export interface PatternConfig {
+  enabled: boolean;
+  repeatMode: PatternRepeatMode;
+  scale: number;
   spacingX: number;
   spacingY: number;
   rotation: number;
+  backgroundColor: string;
+}
+
+export interface WrappingOptions {
+  mode: WrappingPaperMode;
+  patternConfig: PatternConfig;
+  repeatStyle?: 'regular' | 'scattered' | 'brick' | 'half-drop';
+  patternScale?: number;
+  spacingX?: number;
+  spacingY?: number;
+  rotation?: number;
   [key: string]: unknown;
 }
 
@@ -227,8 +242,17 @@ export const PRODUCTS: Readonly<Record<ProductId, ProductConfig>> = Object.freez
       Object.freeze({ id: 'a2', name: 'Khổ A2', price: 49000 }),
     ]),
     defaultOptions: Object.freeze({
-      mode: 'repeat',
-      repeatStyle: 'regular',
+      mode: 'pattern' as WrappingPaperMode,
+      patternConfig: Object.freeze({
+        enabled: true,
+        repeatMode: 'basic' as PatternRepeatMode,
+        scale: 100,
+        spacingX: 0,
+        spacingY: 0,
+        rotation: 0,
+        backgroundColor: '#ffffff',
+      }),
+      repeatStyle: 'regular' as const,
       patternScale: 100,
       spacingX: 0,
       spacingY: 0,
@@ -281,6 +305,7 @@ export interface TemplateConfig {
   category: TemplateCategory;
   productIds?: readonly ProductId[];
   variantIds?: readonly string[];
+  mode?: WrappingPaperMode;
   text: string;
   color: string;
   backgroundColor: string;
@@ -306,7 +331,20 @@ export const TEMPLATES: Readonly<Record<string, TemplateConfig>> = Object.freeze
     backgroundColor: '#f5f1e8',
     previewHint: 'Đường nét thanh lịch, gam màu trung tính',
     productOptions: Object.freeze({
-      wrapping: Object.freeze({ mode: 'single', repeatStyle: 'regular', patternScale: 90 }),
+      wrapping: Object.freeze({
+        mode: 'full-sheet' as WrappingPaperMode,
+        patternConfig: Object.freeze({
+          enabled: false,
+          repeatMode: 'basic' as PatternRepeatMode,
+          scale: 90,
+          spacingX: 0,
+          spacingY: 0,
+          rotation: 0,
+          backgroundColor: '#f5f1e8',
+        }),
+        repeatStyle: 'regular',
+        patternScale: 90,
+      }),
       card: Object.freeze({ surface: 'front', fold: 'half' }),
       sticker: Object.freeze({ hasWhiteBorder: true, borderWidth: 6 }),
       notebook: Object.freeze({ finish: 'matte' }),
@@ -320,7 +358,20 @@ export const TEMPLATES: Readonly<Record<string, TemplateConfig>> = Object.freeze
     backgroundColor: '#fef3c7',
     previewHint: 'Rực rỡ cho các dịp sinh nhật và kỷ niệm',
     productOptions: Object.freeze({
-      wrapping: Object.freeze({ mode: 'repeat', repeatStyle: 'brick', patternScale: 125 }),
+      wrapping: Object.freeze({
+        mode: 'pattern' as WrappingPaperMode,
+        patternConfig: Object.freeze({
+          enabled: true,
+          repeatMode: 'half-brick' as PatternRepeatMode,
+          scale: 125,
+          spacingX: 0,
+          spacingY: 0,
+          rotation: 0,
+          backgroundColor: '#ffffff',
+        }),
+        repeatStyle: 'brick',
+        patternScale: 125,
+      }),
       card: Object.freeze({ surface: 'inside', fold: 'half' }),
       sticker: Object.freeze({ hasWhiteBorder: true, borderWidth: 10 }),
       notebook: Object.freeze({ finish: 'glossy' }),
@@ -401,7 +452,20 @@ export const TEMPLATES: Readonly<Record<string, TemplateConfig>> = Object.freeze
     backgroundColor: '#F4EAE1',
     previewHint: 'Lưới hoa văn nhỏ xinh vừa khổ A1',
     productOptions: Object.freeze({
-      wrapping: Object.freeze({ mode: 'repeat', repeatStyle: 'half-drop', patternScale: 110 }),
+      wrapping: Object.freeze({
+        mode: 'pattern' as WrappingPaperMode,
+        patternConfig: Object.freeze({
+          enabled: true,
+          repeatMode: 'half-drop' as PatternRepeatMode,
+          scale: 110,
+          spacingX: 0,
+          spacingY: 0,
+          rotation: 0,
+          backgroundColor: '#ffffff',
+        }),
+        repeatStyle: 'half-drop',
+        patternScale: 110,
+      }),
     }),
   }),
   'wrapping-a1-floral': Object.freeze({
@@ -414,7 +478,20 @@ export const TEMPLATES: Readonly<Record<string, TemplateConfig>> = Object.freeze
     backgroundColor: '#F9F4EE',
     previewHint: 'Họa tiết hoa rải đều khổ A1',
     productOptions: Object.freeze({
-      wrapping: Object.freeze({ mode: 'repeat', repeatStyle: 'brick', patternScale: 130 }),
+      wrapping: Object.freeze({
+        mode: 'pattern' as WrappingPaperMode,
+        patternConfig: Object.freeze({
+          enabled: true,
+          repeatMode: 'half-brick' as PatternRepeatMode,
+          scale: 130,
+          spacingX: 0,
+          spacingY: 0,
+          rotation: 0,
+          backgroundColor: '#ffffff',
+        }),
+        repeatStyle: 'brick',
+        patternScale: 130,
+      }),
     }),
   }),
   'wrapping-a2-minimal': Object.freeze({
@@ -427,7 +504,20 @@ export const TEMPLATES: Readonly<Record<string, TemplateConfig>> = Object.freeze
     backgroundColor: '#EFECE6',
     previewHint: 'Họa tiết kẻ sọc tối giản vừa vặn khổ A2',
     productOptions: Object.freeze({
-      wrapping: Object.freeze({ mode: 'repeat', repeatStyle: 'regular', patternScale: 85 }),
+      wrapping: Object.freeze({
+        mode: 'pattern' as WrappingPaperMode,
+        patternConfig: Object.freeze({
+          enabled: true,
+          repeatMode: 'basic' as PatternRepeatMode,
+          scale: 85,
+          spacingX: 0,
+          spacingY: 0,
+          rotation: 0,
+          backgroundColor: '#ffffff',
+        }),
+        repeatStyle: 'regular',
+        patternScale: 85,
+      }),
     }),
   }),
   'sticker-diecut-love': Object.freeze({
@@ -488,7 +578,20 @@ export const TEMPLATES: Readonly<Record<string, TemplateConfig>> = Object.freeze
     backgroundColor: '#FFF2EB',
     previewHint: 'Họa tiết bóng bay rực rỡ vui tươi',
     productOptions: Object.freeze({
-      wrapping: Object.freeze({ mode: 'repeat', repeatStyle: 'brick', patternScale: 110 }),
+      wrapping: Object.freeze({
+        mode: 'pattern' as WrappingPaperMode,
+        patternConfig: Object.freeze({
+          enabled: true,
+          repeatMode: 'half-brick' as PatternRepeatMode,
+          scale: 110,
+          spacingX: 0,
+          spacingY: 0,
+          rotation: 0,
+          backgroundColor: '#ffffff',
+        }),
+        repeatStyle: 'brick',
+        patternScale: 110,
+      }),
     }),
   }),
   'sticker-coffee-cozy': Object.freeze({
@@ -555,8 +658,98 @@ export function normalizeQuantity(value: unknown, fallback = 1): number {
   return Number.isFinite(quantity) ? Math.min(999, Math.max(1, quantity)) : safeFallback;
 }
 
+export function normalizeWrappingOptions(
+  raw: Partial<WrappingOptions> | Record<string, unknown> | null | undefined
+): WrappingOptions {
+  const source = (raw && typeof raw === 'object' ? raw : {}) as Record<string, unknown>;
+  const rawPattern =
+    source.patternConfig && typeof source.patternConfig === 'object'
+      ? (source.patternConfig as Record<string, unknown>)
+      : {};
+
+  const rawMode = source.mode;
+  const mode: WrappingPaperMode =
+    rawMode === 'full-sheet' || rawMode === 'single'
+      ? 'full-sheet'
+      : 'pattern';
+
+  const rawRepeat =
+    rawPattern.repeatMode !== undefined
+      ? rawPattern.repeatMode
+      : source.repeatStyle;
+  const repeatMode: PatternRepeatMode =
+    rawRepeat === 'mirror'
+      ? 'mirror'
+      : rawRepeat === 'half-drop' || rawRepeat === 'scattered'
+        ? 'half-drop'
+        : rawRepeat === 'half-brick' || rawRepeat === 'brick'
+          ? 'half-brick'
+          : 'basic';
+
+  const scaleNum = Number(
+    rawPattern.scale !== undefined ? rawPattern.scale : source.patternScale
+  );
+  const scale = Number.isFinite(scaleNum) && scaleNum > 0 ? scaleNum : 100;
+
+  const spacingXNum = Number(
+    rawPattern.spacingX !== undefined ? rawPattern.spacingX : source.spacingX
+  );
+  const spacingX = Number.isFinite(spacingXNum) ? spacingXNum : 0;
+
+  const spacingYNum = Number(
+    rawPattern.spacingY !== undefined ? rawPattern.spacingY : source.spacingY
+  );
+  const spacingY = Number.isFinite(spacingYNum) ? spacingYNum : 0;
+
+  const rotationNum = Number(
+    rawPattern.rotation !== undefined ? rawPattern.rotation : source.rotation
+  );
+  const rotation = Number.isFinite(rotationNum) ? ((rotationNum % 360) + 360) % 360 : 0;
+
+  const bg = typeof rawPattern.backgroundColor === 'string' && rawPattern.backgroundColor.trim()
+    ? rawPattern.backgroundColor.trim()
+    : '#ffffff';
+
+  const enabled =
+    typeof rawPattern.enabled === 'boolean'
+      ? rawPattern.enabled
+      : mode === 'pattern';
+
+  const repeatStyle: 'regular' | 'scattered' | 'brick' | 'half-drop' =
+    source.repeatStyle === 'scattered'
+      ? 'scattered'
+      : repeatMode === 'half-brick'
+        ? 'brick'
+        : repeatMode === 'half-drop'
+          ? 'half-drop'
+          : 'regular';
+  const normalized: WrappingOptions = {
+    ...source,
+    mode,
+    patternConfig: {
+      enabled,
+      repeatMode,
+      scale,
+      spacingX,
+      spacingY,
+      rotation,
+      backgroundColor: bg,
+    },
+    repeatStyle,
+    patternScale: scale,
+    spacingX,
+    spacingY,
+    rotation,
+  };
+
+  return normalized;
+}
+
 function cloneOptions(productId: ProductId): Record<string, unknown> {
   const prod = PRODUCTS[productId] ?? PRODUCTS.wrapping;
+  if (productId === 'wrapping') {
+    return normalizeWrappingOptions(prod.defaultOptions);
+  }
   return { ...prod.defaultOptions };
 }
 
@@ -726,10 +919,17 @@ export function transitionState(state: DesignState, action: DesignAction): Desig
         color: template.color,
         backgroundColor: template.backgroundColor,
         image: null,
-        productOptions: {
-          ...cloneOptions(state.productId),
-          ...(template.productOptions[state.productId] || {}),
-        },
+        productOptions:
+          state.productId === 'wrapping'
+            ? normalizeWrappingOptions({
+              ...cloneOptions(state.productId),
+              ...(template.mode ? { mode: template.mode } : {}),
+              ...(template.productOptions[state.productId] || {}),
+            })
+            : {
+              ...cloneOptions(state.productId),
+              ...(template.productOptions[state.productId] || {}),
+            },
       };
     }
 
@@ -766,6 +966,78 @@ export function transitionState(state: DesignState, action: DesignAction): Desig
     case 'SET_PRODUCT_OPTION': {
       if (!action.key) {
         return state;
+      }
+      if (state.productId === 'wrapping') {
+        const currentWrapping = normalizeWrappingOptions(state.productOptions);
+        let nextWrappingOptions: Record<string, unknown>;
+        if (action.key === 'patternConfig' && action.value && typeof action.value === 'object') {
+          const patchedPatternConfig = {
+            ...currentWrapping.patternConfig,
+            ...(action.value as Record<string, unknown>),
+          };
+          nextWrappingOptions = normalizeWrappingOptions({
+            ...currentWrapping,
+            patternConfig: patchedPatternConfig,
+            repeatStyle: undefined,
+            patternScale: undefined,
+            spacingX: undefined,
+            spacingY: undefined,
+            rotation: undefined,
+          });
+        } else if (action.key === 'mode') {
+          const nextMode = action.value === 'full-sheet' ? 'full-sheet' : 'pattern';
+          nextWrappingOptions = normalizeWrappingOptions({
+            ...currentWrapping,
+            mode: nextMode,
+          });
+        } else if (action.key === 'repeatStyle') {
+          const repeatVal = action.value;
+          const nextRepeatMode: PatternRepeatMode =
+            repeatVal === 'half-brick' || repeatVal === 'brick'
+              ? 'half-brick'
+              : repeatVal === 'half-drop' || repeatVal === 'scattered'
+                ? 'half-drop'
+                : repeatVal === 'mirror'
+                  ? 'mirror'
+                  : 'basic';
+          nextWrappingOptions = normalizeWrappingOptions({
+            ...currentWrapping,
+            repeatStyle: action.value as 'regular' | 'scattered' | 'brick' | 'half-drop',
+            patternConfig: {
+              ...currentWrapping.patternConfig,
+              repeatMode: nextRepeatMode,
+            },
+          });
+        } else if (action.key === 'patternScale') {
+          const scaleVal = Number(action.value);
+          nextWrappingOptions = normalizeWrappingOptions({
+            ...currentWrapping,
+            patternScale: scaleVal,
+            patternConfig: {
+              ...currentWrapping.patternConfig,
+              scale: Number.isFinite(scaleVal) && scaleVal > 0 ? scaleVal : currentWrapping.patternConfig.scale,
+            },
+          });
+        } else if (action.key === 'spacingX' || action.key === 'spacingY' || action.key === 'rotation') {
+          const numVal = Number(action.value);
+          nextWrappingOptions = normalizeWrappingOptions({
+            ...currentWrapping,
+            [action.key]: action.value,
+            patternConfig: {
+              ...currentWrapping.patternConfig,
+              [action.key]: Number.isFinite(numVal) ? numVal : currentWrapping.patternConfig[action.key],
+            },
+          });
+        } else {
+          nextWrappingOptions = normalizeWrappingOptions({
+            ...state.productOptions,
+            [action.key]: action.value,
+          });
+        }
+        return {
+          ...state,
+          productOptions: nextWrappingOptions,
+        };
       }
       return {
         ...state,
@@ -1456,9 +1728,33 @@ export function getDesignSummary(state: DesignState): DesignSummary {
 export function getPreflight(state: DesignState): PreflightResult {
   const checks: PreflightCheck[] = [];
 
-  if (state.image) {
-    const isSmall = (state.image.width !== undefined && state.image.width < 1200) ||
-      (state.image.height !== undefined && state.image.height < 1200);
+  const imageElement = (state.elements ?? getDefaultElements(state)).find((element) => element.type === 'image');
+  const imageData = imageElement ? getImageData(imageElement) : null;
+  const image = state.image ?? (imageData?.src ? {
+    name: imageData.name ?? 'Ảnh',
+    src: imageData.src,
+    width: imageData.sourceWidth,
+    height: imageData.sourceHeight,
+  } : null);
+
+  if (image) {
+    const options = state.productOptions as Record<string, unknown>;
+    const patternConfig = options.patternConfig as { enabled?: unknown; scale?: unknown } | undefined;
+    const isPatternWrapping = state.productId === 'wrapping' &&
+      (options.mode === 'pattern' || patternConfig?.enabled === true);
+    const configuredPatternScale = Number(options.patternScale);
+    const patternScale = Number.isFinite(configuredPatternScale) && configuredPatternScale > 0
+      ? configuredPatternScale
+      : Number(patternConfig?.scale);
+    const scaleFactor = isPatternWrapping && Number.isFinite(patternScale) && patternScale > 0
+      ? patternScale / 100
+      : 1;
+    const sourceWidth = imageData?.sourceWidth ?? image.width;
+    const sourceHeight = imageData?.sourceHeight ?? image.height;
+    const effectiveWidth = sourceWidth !== undefined ? sourceWidth / scaleFactor : undefined;
+    const effectiveHeight = sourceHeight !== undefined ? sourceHeight / scaleFactor : undefined;
+    const isSmall = (effectiveWidth !== undefined && effectiveWidth < 1200) ||
+      (effectiveHeight !== undefined && effectiveHeight < 1200);
 
     if (isSmall) {
       checks.push({

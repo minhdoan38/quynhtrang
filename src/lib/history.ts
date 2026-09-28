@@ -25,7 +25,12 @@ export type HistoryActionType =
   | 'lock'
   | 'unlock'
   | 'apply-template'
-  | 'change-product-option';
+  | 'change-product-option'
+  | 'change-pattern-repeat'
+  | 'change-pattern-scale'
+  | 'change-pattern-spacing'
+  | 'change-pattern-background'
+  | 'rotate-pattern';
 
 export interface SelectionSnapshot {
   selectedTarget: 'image' | 'text' | 'group' | null;

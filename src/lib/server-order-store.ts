@@ -11,9 +11,16 @@ class ServerOrderStore {
     const snapshotId = `SNAP-${Date.now()}`;
     const summary = getDesignSummary(design);
 
-    // Deep clone to ensure immutability
+    // Deep clone to ensure immutability and exclude generated repeat elements
     const immutableDesign: DesignState = JSON.parse(JSON.stringify(design));
-
+    if (Array.isArray(immutableDesign.elements)) {
+      immutableDesign.elements = immutableDesign.elements.filter((element) => {
+        const candidate = element as { generated?: unknown; data?: Record<string, unknown> };
+        if (candidate.generated === true) return false;
+        if (candidate.data?.generated === true || candidate.data?.patternGenerated === true) return false;
+        return true;
+      });
+    }
     const snapshot: ApprovedDesignSnapshot = {
       id: snapshotId,
       design: immutableDesign,

@@ -9,7 +9,10 @@ import {
   createTextElement,
   getTextData,
   getImageData,
+  type PatternConfig,
+  type PatternWorkspaceView,
 } from '@/lib/product-state';
+import { computePatternGrid, getWrappingPaperDimensions } from '@/lib/pattern-renderer';
 import { evaluateImageQuality, type ImageQualityReport } from '@/lib/image-quality';
 import {
   TAP_THRESHOLD_PX,
@@ -50,6 +53,9 @@ export interface DesignCanvasProps {
   selectionMode?: 'default' | 'multi-select' | 'group-edit';
   selectedElementIds?: string[];
   activeGroupId?: string | null;
+  patternWorkspaceView?: PatternWorkspaceView;
+  patternConfig?: PatternConfig;
+  onSwitchPatternView?: (view: PatternWorkspaceView) => void;
   textElements?: CanvasElement[];
   elements?: CanvasElement[];
   onSelectTarget?: (target: 'image' | 'text' | 'group' | null) => void;
@@ -94,6 +100,9 @@ export function DesignCanvas({
   selectionMode = 'default',
   selectedElementIds = [],
   activeGroupId = null,
+  patternWorkspaceView = 'edit-pattern',
+  patternConfig: explicitPatternConfig,
+  onSwitchPatternView,
   textElements,
   elements,
   onSelectTarget,
@@ -113,9 +122,31 @@ export function DesignCanvas({
   onCommitTransform,
   onCommitMultiTransform,
 }: DesignCanvasProps) {
-  const backgroundCss = productOptions.backgroundColorValue
-    ? colorValueToCss(productOptions.backgroundColorValue as ColorValue)
-    : backgroundColor;
+  const isWrapping = productId === 'wrapping';
+  const wrappingMode = productOptions.mode === 'full-sheet' ? 'full-sheet' : 'pattern';
+  const effectivePatternConfig: PatternConfig = explicitPatternConfig || (productOptions.patternConfig as PatternConfig) || {
+    enabled: wrappingMode === 'pattern',
+    repeatMode: 'basic',
+    scale: 100,
+    spacingX: 0,
+    spacingY: 0,
+    rotation: 0,
+    backgroundColor: '#ffffff',
+  };
+
+  const isFullSheetPreview =
+    isWrapping &&
+    wrappingMode === 'pattern' &&
+    patternWorkspaceView === 'full-sheet-preview' &&
+    !isMockup;
+
+  const backgroundCss =
+    isWrapping && wrappingMode === 'pattern' && effectivePatternConfig.backgroundColor
+      ? effectivePatternConfig.backgroundColor
+      : productOptions.backgroundColorValue
+        ? colorValueToCss(productOptions.backgroundColorValue as ColorValue)
+        : backgroundColor;
+
   const styles: React.CSSProperties & Record<string, string | number | undefined> = {
     background: backgroundCss,
   };
@@ -124,6 +155,9 @@ export function DesignCanvas({
     isMockup ? `mockup mockup--${productId}` : `design-canvas design-canvas--${productId}`,
   ];
 
+  if (isFullSheetPreview) {
+    classes.push('is-full-sheet-preview');
+  }
   if (productId === 'wrapping') {
     const scale = Number(productOptions.patternScale) || 100;
     const size = Math.round((68 * scale) / 100);
@@ -471,8 +505,22 @@ export function DesignCanvas({
       scale: effectiveImageTransform.scale,
       cropFraction: Math.max(0.05, Math.min(1, cropFraction)),
       productId,
+      patternScale:
+        isWrapping && wrappingMode === 'pattern'
+          ? effectivePatternConfig.scale
+          : undefined,
     });
-  }, [image?.src, image?.width, image?.height, imgData, effectiveImageTransform.scale, productId]);
+  }, [
+    image?.src,
+    image?.width,
+    image?.height,
+    imgData,
+    effectiveImageTransform.scale,
+    productId,
+    isWrapping,
+    wrappingMode,
+    effectivePatternConfig.scale,
+  ]);
   const imageOpacity = typeof productOptions.imageOpacity === 'number'
     ? productOptions.imageOpacity / 100
     : 1;
@@ -497,6 +545,88 @@ export function DesignCanvas({
     }
     return [];
   }, [textElements, text, color, productOptions.fontFamily]);
+  if (isFullSheetPreview) {
+    const variantKey = String(productOptions.variant || 'a1');
+    const dims = getWrappingPaperDimensions(variantKey);
+    const grid = computePatternGrid({
+      sheetWidth: dims.width,
+      sheetHeight: dims.height,
+      config: effectivePatternConfig,
+      baseMotifSize: { width: 100, height: 100 },
+    });
+
+    return (
+      <div
+        id="design-canvas-full-sheet-preview"
+        data-testid="wrapping-full-sheet-preview"
+        className="relative overflow-hidden shadow-2xl rounded-sm border border-[#DDD6CC] cursor-pointer select-none"
+        style={{
+          width: 'min(85vw, 360px)',
+          aspectRatio: `${dims.width} / ${dims.height}`,
+          backgroundColor: backgroundCss,
+        }}
+        onClick={() => onSwitchPatternView?.('edit-pattern')}
+        title="Nhấn để quay về Chỉnh họa tiết"
+      >
+        <svg
+          viewBox={`0 0 ${dims.width} ${dims.height}`}
+          className="w-full h-full block pointer-events-none"
+          preserveAspectRatio="xMidYMid meet"
+        >
+          {grid.cells.map((cell) => {
+            const flipX = cell.mirrorX ? -1 : 1;
+            const flipY = cell.mirrorY ? -1 : 1;
+            const transform = `translate(${cell.x}, ${cell.y}) rotate(${cell.rotation}, ${cell.width / 2}, ${cell.height / 2}) scale(${flipX}, ${flipY})`;
+            return (
+              <g
+                key={`cell-${cell.col}-${cell.row}`}
+                transform={transform}
+                data-col={cell.col}
+                data-row={cell.row}
+              >
+                {image?.src && (
+                  <image
+                    href={image.src}
+                    x={((100 - 70 * effectiveImageTransform.scale) / 2) + effectiveImageTransform.x}
+                    y={((100 - 70 * effectiveImageTransform.scale) / 2) + effectiveImageTransform.y}
+                    width={70 * effectiveImageTransform.scale}
+                    height={70 * effectiveImageTransform.scale}
+                    transform={`rotate(${effectiveImageTransform.rotation} ${((100 - 70 * effectiveImageTransform.scale) / 2) + effectiveImageTransform.x + (70 * effectiveImageTransform.scale) / 2} ${((100 - 70 * effectiveImageTransform.scale) / 2) + effectiveImageTransform.y + (70 * effectiveImageTransform.scale) / 2})`}
+                    preserveAspectRatio="xMidYMid slice"
+                    opacity={imageOpacity}
+                  />
+                )}
+                {resolvedTextElements.map((el) => {
+                  const data = getTextData(el);
+                  if (!data?.text) return null;
+                  const tf = getEffectiveTextTransform(el.id);
+                  const tx = 50 + tf.x;
+                  const ty = 50 + tf.y;
+                  return (
+                    <text
+                      key={el.id}
+                      x={tx}
+                      y={ty}
+                      textAnchor="middle"
+                      dominantBaseline="middle"
+                      fill={data.color || color}
+                      fontFamily={data.fontFamily || (typeof productOptions.fontFamily === 'string' ? productOptions.fontFamily : 'sans-serif')}
+                      fontSize={(data.fontSize || 20) * 0.5 * tf.scale}
+                      fontWeight={data.fontWeight === 'bold' ? 700 : data.fontWeight === 'medium' ? 500 : 400}
+                      transform={`rotate(${tf.rotation} ${tx} ${ty})`}
+                    >
+                      {data.text}
+                    </text>
+                  );
+                })}
+              </g>
+            );
+          })}
+        </svg>
+      </div>
+    );
+  }
+
   return (
     <div
       id={isMockup ? 'mockup-canvas' : 'design-canvas'}
@@ -526,15 +656,13 @@ export function DesignCanvas({
           tabIndex={0}
           data-element-id={imgElement?.id || 'image-1'}
           aria-label="Đối tượng ảnh"
-          className={`relative max-h-[70%] max-w-[70%] inline-flex items-center justify-center select-none touch-none ${
-            selectionMode === 'multi-select' && selectedElementIds.includes(imgElement?.id || 'image-1')
-              ? 'ring-2 ring-[#315F86]/80 ring-offset-2 rounded-xs'
-              : ''
-          } ${
-            selectionMode === 'group-edit' && activeGroupId && imgElement?.parentGroupId !== activeGroupId
+          className={`relative max-h-[70%] max-w-[70%] inline-flex items-center justify-center select-none touch-none ${selectionMode === 'multi-select' && selectedElementIds.includes(imgElement?.id || 'image-1')
+            ? 'ring-2 ring-[#315F86]/80 ring-offset-2 rounded-xs'
+            : ''
+            } ${selectionMode === 'group-edit' && activeGroupId && imgElement?.parentGroupId !== activeGroupId
               ? 'opacity-40 pointer-events-none'
               : ''
-          }`}
+            }`}
           style={{
             transform: `translate3d(${effectiveImageTransform.x}px, ${effectiveImageTransform.y}px, 0) rotate(${effectiveImageTransform.rotation}deg) scale(${effectiveImageTransform.scale})`,
             transformOrigin: 'center center',
@@ -663,9 +791,8 @@ export function DesignCanvas({
             role="button"
             tabIndex={0}
             aria-label={`Nhóm: ${grp.name || 'Nhóm'}`}
-            className={`absolute select-none touch-none ${
-              isMultiSelected ? 'ring-2 ring-[#315F86]/80 ring-offset-2 rounded-xs' : ''
-            }`}
+            className={`absolute select-none touch-none ${isMultiSelected ? 'ring-2 ring-[#315F86]/80 ring-offset-2 rounded-xs' : ''
+              }`}
             style={{
               left: `${grp.x - (grp.width || 20) / 2}%`,
               top: `${grp.y - (grp.height || 20) / 2}%`,
@@ -695,7 +822,7 @@ export function DesignCanvas({
               <SelectionOverlay
                 mode="group"
                 isLocked={Boolean(grp.locked)}
-                onHandlePointerDown={() => {}}
+                onHandlePointerDown={() => { }}
               />
             )}
           </div>
@@ -811,9 +938,8 @@ function TextElementItem({
       tabIndex={0}
       data-element-id={element.id}
       aria-label={`Đối tượng chữ: ${data.text}`}
-      className={`relative select-none touch-none inline-block max-w-[85%] ${
-        isMultiSelected ? 'ring-2 ring-[#315F86]/80 ring-offset-2 rounded-xs' : ''
-      } ${isDimmed ? 'opacity-40 pointer-events-none' : ''}`}
+      className={`relative select-none touch-none inline-block max-w-[85%] ${isMultiSelected ? 'ring-2 ring-[#315F86]/80 ring-offset-2 rounded-xs' : ''
+        } ${isDimmed ? 'opacity-40 pointer-events-none' : ''}`}
       style={{
         width: `${element.width || 70}%`,
         transform: `translate3d(${transform.x}px, ${transform.y}px, 0) rotate(${transform.rotation}deg) scale(${transform.scale})`,

@@ -14,6 +14,7 @@ export interface EvaluateQualityParams {
  scale?: number;
  cropFraction?: number;
  productId?: string;
+ patternScale?: number;
 }
 
 /**
@@ -25,15 +26,20 @@ export function evaluateImageQuality({
  sourceHeight = 1200,
  scale = 1,
  cropFraction = 1,
+ productId,
+ patternScale,
 }: EvaluateQualityParams = {}): ImageQualityReport {
  // Normalize parameters
  const safeWidth = Math.max(1, sourceWidth);
  const safeHeight = Math.max(1, sourceHeight);
  const safeScale = Math.max(0.1, scale);
+ const effectiveScale = productId === 'wrapping' && typeof patternScale === 'number'
+  ? safeScale * (Math.max(10, patternScale) / 100)
+  : safeScale;
  const safeCrop = Math.max(0.05, Math.min(1, cropFraction));
 
  const minSourceDim = Math.min(safeWidth, safeHeight);
- const effectivePixels = Math.round((minSourceDim * safeCrop) / safeScale);
+ const effectivePixels = Math.round((minSourceDim * safeCrop) / effectiveScale);
 
  if (effectivePixels >= 600) {
   return {

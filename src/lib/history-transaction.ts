@@ -1,42 +1,42 @@
 import type { DesignState } from './product-state.ts';
 import {
-  commitHistoryEntry,
-  type HistoryActionType,
-  type HistoryEntry,
-  type HistoryState,
-  type SelectionSnapshot,
+ commitHistoryEntry,
+ type HistoryActionType,
+ type HistoryEntry,
+ type HistoryState,
+ type SelectionSnapshot,
 } from './history.ts';
 
 export interface TransactionSession {
-  id: string;
-  type: HistoryActionType;
-  label: string;
-  baselineState: DesignState;
-  baselineSelection: SelectionSnapshot;
-  affectedIds: string[];
-  startTime: number;
+ id: string;
+ type: HistoryActionType;
+ label: string;
+ baselineState: DesignState;
+ baselineSelection: SelectionSnapshot;
+ affectedIds: string[];
+ startTime: number;
 }
 
 export function hasActiveTransaction(session: TransactionSession | null): boolean {
-  return session !== null;
+ return session !== null;
 }
 
 export function beginTransaction(
-  currentState: DesignState,
-  currentSelection: SelectionSnapshot,
-  type: HistoryActionType,
-  label: string,
-  affectedIds: string[] = []
+ currentState: DesignState,
+ currentSelection: SelectionSnapshot,
+ type: HistoryActionType,
+ label: string,
+ affectedIds: string[] = []
 ): TransactionSession {
-  return {
-    id: `tx-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
-    type,
-    label,
-    baselineState: currentState,
-    baselineSelection: currentSelection,
-    affectedIds,
-    startTime: Date.now(),
-  };
+ return {
+  id: `tx-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+  type,
+  label,
+  baselineState: currentState,
+  baselineSelection: currentSelection,
+  affectedIds,
+  startTime: Date.now(),
+ };
 }
 
 /**
@@ -44,70 +44,87 @@ export function beginTransaction(
  * Avoids false positive commits if the object references differ but data is identical.
  */
 export function areDesignStatesEqual(a: DesignState, b: DesignState): boolean {
-  if (a === b) return true;
-  if (!a || !b) return false;
+ if (a === b) return true;
+ if (!a || !b) return false;
 
+ if (
+  a.productId !== b.productId ||
+  a.variantId !== b.variantId ||
+  a.templateId !== b.templateId ||
+  a.text !== b.text ||
+  a.color !== b.color ||
+  a.backgroundColor !== b.backgroundColor ||
+  a.quantity !== b.quantity
+ ) {
+  return false;
+ }
+
+ const patternA = (a.productOptions?.patternConfig ?? null) as Record<string, unknown> | null;
+ const patternB = (b.productOptions?.patternConfig ?? null) as Record<string, unknown> | null;
+ if (Boolean(patternA) !== Boolean(patternB)) return false;
+ if (patternA && patternB) {
   if (
-    a.productId !== b.productId ||
-    a.variantId !== b.variantId ||
-    a.templateId !== b.templateId ||
-    a.text !== b.text ||
-    a.color !== b.color ||
-    a.backgroundColor !== b.backgroundColor ||
-    a.quantity !== b.quantity
+   patternA.enabled !== patternB.enabled ||
+   patternA.repeatMode !== patternB.repeatMode ||
+   patternA.scale !== patternB.scale ||
+   patternA.spacingX !== patternB.spacingX ||
+   patternA.spacingY !== patternB.spacingY ||
+   patternA.rotation !== patternB.rotation ||
+   patternA.backgroundColor !== patternB.backgroundColor
   ) {
-    return false;
+   return false;
   }
+ }
 
-  // Fast stringify check for options and image/elements
-  try {
-    return JSON.stringify(a) === JSON.stringify(b);
-  } catch {
-    return false;
-  }
+ // Fast stringify check for remaining options and image/elements
+ try {
+  return JSON.stringify(a) === JSON.stringify(b);
+ } catch {
+  return false;
+ }
 }
 
 export function commitTransaction(
-  history: HistoryState,
-  session: TransactionSession,
-  currentState: DesignState,
-  currentSelection: SelectionSnapshot
+ history: HistoryState,
+ session: TransactionSession,
+ currentState: DesignState,
+ currentSelection: SelectionSnapshot
 ): {
-  nextHistory: HistoryState;
-  committedEntry: HistoryEntry | null;
+ nextHistory: HistoryState;
+ committedEntry: HistoryEntry | null;
 } {
-  // If no change occurred between baseline and current state, commit nothing
-  if (areDesignStatesEqual(session.baselineState, currentState)) {
-    return {
-      nextHistory: history,
-      committedEntry: null,
-    };
-  }
-
-  const nextHistory = commitHistoryEntry(history, {
-    type: session.type,
-    label: session.label,
-    before: session.baselineState,
-    after: currentState,
-    selectionBefore: session.baselineSelection,
-    selectionAfter: currentSelection,
-    affectedIds: session.affectedIds,
-  });
-
-  const committedEntry = nextHistory.past[nextHistory.past.length - 1] ?? null;
-
+ // If no change occurred between baseline and current state, commit nothing
+ if (areDesignStatesEqual(session.baselineState, currentState)) {
   return {
-    nextHistory,
-    committedEntry,
+   nextHistory: history,
+   committedEntry: null,
   };
+ }
+
+ const nextHistory = commitHistoryEntry(history, {
+  type: session.type,
+  label: session.label,
+  before: session.baselineState,
+  after: currentState,
+  selectionBefore: session.baselineSelection,
+  selectionAfter: currentSelection,
+  affectedIds: session.affectedIds,
+ });
+
+ const committedEntry = nextHistory.past[nextHistory.past.length - 1] ?? null;
+
+ return {
+  nextHistory,
+  committedEntry,
+ };
 }
 
 export function cancelTransaction(session: TransactionSession): {
-  restoredState: DesignState;
-  restoredSelection: SelectionSnapshot;
+ restoredState: DesignState;
+ restoredSelection: SelectionSnapshot;
 } {
-  return {
-    restoredState: session.baselineState,
-    restoredSelection: session.baselineSelection,
-  };
+ return {
+  restoredState: session.baselineState,
+  restoredSelection: session.baselineSelection,
+ };
 }

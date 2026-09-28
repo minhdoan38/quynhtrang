@@ -27,7 +27,16 @@ test('creates the default wrapping-paper design', () => {
   assert.equal(state.variantId, 'a1');
   assert.equal(state.templateId, null);
   assert.deepEqual(state.productOptions, {
-    mode: 'repeat',
+    mode: 'pattern',
+    patternConfig: {
+      enabled: true,
+      repeatMode: 'basic',
+      scale: 100,
+      spacingX: 0,
+      spacingY: 0,
+      rotation: 0,
+      backgroundColor: '#ffffff',
+    },
     repeatStyle: 'regular',
     patternScale: 100,
     spacingX: 0,

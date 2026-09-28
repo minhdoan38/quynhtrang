@@ -19,10 +19,25 @@ export interface RecentProject {
   updatedAt: number;
 }
 
+function sanitizeElementsForStorage(elements?: CanvasElement[]): CanvasElement[] | undefined {
+  if (!elements) return undefined;
+  return elements.filter((element) => {
+    const candidate = element as { generated?: unknown; data?: Record<string, unknown> };
+    if (candidate.generated === true) return false;
+    if (candidate.data?.generated === true || candidate.data?.patternGenerated === true) return false;
+    return true;
+  });
+}
+
 export function saveState(state: DesignState): boolean {
   if (typeof window === 'undefined') return true;
   try {
-    sessionStorage.setItem(STATE_KEY, JSON.stringify(state));
+    const sanitizedState: DesignState = {
+      ...state,
+      productOptions: { ...state.productOptions },
+      elements: sanitizeElementsForStorage(state.elements),
+    };
+    sessionStorage.setItem(STATE_KEY, JSON.stringify(sanitizedState));
     return true;
   } catch (err) {
     console.error('Failed to save state to sessionStorage:', err);
@@ -95,7 +110,7 @@ export function saveRecentProject(state: DesignState): boolean {
       backgroundColor: state.backgroundColor,
       image: state.image ? { ...state.image } : null,
       productOptions: { ...state.productOptions },
-      elements: state.elements ? [...state.elements] : undefined,
+      elements: sanitizeElementsForStorage(state.elements),
       updatedAt: Date.now(),
     };
 

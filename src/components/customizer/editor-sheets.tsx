@@ -35,6 +35,8 @@ import { MaskSheetContent } from './mask-sheet-content';
 import type { MaskType } from '@/lib/image-mask';
 import type { ColorValue, HexColor } from '@/lib/color/color-types';
 import { createSolidColor } from '@/lib/color/color-validation';
+import type { PatternConfig } from '@/lib/product-state';
+import { PatternControlsSheet } from './pattern-controls-sheet';
 export type ActiveSheetType =
   | 'add'
   | 'image-source'
@@ -47,8 +49,8 @@ export type ActiveSheetType =
   | 'font-size'
   | 'align'
   | 'more'
+  | 'pattern'
   | null;
-
 interface EditorSheetsProps {
   activeSheet: ActiveSheetType;
   onClose: () => void;
@@ -103,6 +105,20 @@ interface EditorSheetsProps {
   onSelectLayer: (layer: 'text' | 'image' | string) => void;
   onReorderElements?: (orderedIds: string[]) => void;
   onOpenAddSheet?: () => void;
+  patternConfig?: PatternConfig;
+  onLiveUpdatePatternConfig?: (patch: Partial<PatternConfig>) => void;
+  onCommitPatternChange?: (
+    actionType:
+      | 'change-pattern-repeat'
+      | 'change-pattern-scale'
+      | 'change-pattern-spacing'
+      | 'change-pattern-background'
+      | 'rotate-pattern',
+    label: string,
+    patch: Partial<PatternConfig>
+  ) => void;
+  onOpenColorSheet?: () => void;
+  onResetPatternDefault?: () => void;
 }
 
 const PALETTE = [
@@ -171,6 +187,11 @@ export function EditorSheets({
   onToggleSelectElement,
   onSelectChildInGroup,
   onUngroup,
+  patternConfig,
+  onLiveUpdatePatternConfig,
+  onCommitPatternChange,
+  onOpenColorSheet,
+  onResetPatternDefault,
 }: EditorSheetsProps) {
   const isOpen = activeSheet !== null;
 
@@ -184,9 +205,11 @@ export function EditorSheets({
             ? ['460px', '85vh']
             : activeSheet === 'color'
               ? ['440px', '80vh']
-              : undefined
+              : activeSheet === 'pattern'
+                ? ['480px', '85vh']
+                : undefined
       }
-      showSwipeHandle={activeSheet === 'layers' || activeSheet === 'font' || activeSheet === 'color'}
+      showSwipeHandle={activeSheet === 'layers' || activeSheet === 'font' || activeSheet === 'color' || activeSheet === 'pattern'}
       onOpenChange={(open) => {
         if (!open) onClose();
       }}
@@ -205,6 +228,19 @@ export function EditorSheets({
             onSelectShape={(shape) => {
               if (onAddShape) onAddShape(shape);
             }}
+          />
+        )}
+        {/* PATTERN CONTROLS SHEET */}
+        {activeSheet === 'pattern' && patternConfig && (
+          <PatternControlsSheet
+            config={patternConfig}
+            onLiveUpdate={(patch) => onLiveUpdatePatternConfig?.(patch)}
+            onCommitChange={(actionType, label, patch) =>
+              onCommitPatternChange?.(actionType, label, patch)
+            }
+            onOpenColorSheet={() => onOpenColorSheet?.()}
+            onResetDefault={() => onResetPatternDefault?.()}
+            onClose={onClose}
           />
         )}
         {/* IMAGE SOURCE SHEET (REPLACE IMAGE) */}

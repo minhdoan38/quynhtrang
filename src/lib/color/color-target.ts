@@ -58,7 +58,21 @@ export function getColorValue(state: DesignState, target: ColorTarget): ColorVal
 
   if (target.kind === 'surface' && target.property === 'background') {
     const optBg = (state.productOptions as Record<string, unknown> | undefined)?.backgroundColorValue;
-    return ensureColorValue(optBg ?? state.backgroundColor, '#FFFFFF');
+    if (optBg) {
+      return ensureColorValue(optBg, '#FFFFFF');
+    }
+    const patternConf = (state.productOptions as Record<string, unknown> | undefined)?.patternConfig as
+      | Record<string, unknown>
+      | undefined;
+    if (
+      state.productId === 'wrapping' &&
+      ((state.productOptions as Record<string, unknown> | undefined)?.mode === 'pattern' ||
+        !(state.productOptions as Record<string, unknown> | undefined)?.mode) &&
+      patternConf?.backgroundColor
+    ) {
+      return ensureColorValue(patternConf.backgroundColor, '#FFFFFF');
+    }
+    return ensureColorValue(state.backgroundColor, '#FFFFFF');
   }
 
   return null;
@@ -155,6 +169,28 @@ export function setColorValue(
 
   if (target.kind === 'surface' && target.property === 'background') {
     const hexRep = value.kind === 'solid' ? value.color : value.colors[0];
+    const isWrappingPattern =
+      state.productId === 'wrapping' &&
+      ((state.productOptions as Record<string, unknown> | undefined)?.mode === 'pattern' ||
+        !(state.productOptions as Record<string, unknown> | undefined)?.mode);
+
+    if (isWrappingPattern) {
+      const currentPattern = ((state.productOptions as Record<string, unknown> | undefined)?.patternConfig ||
+      {}) as Record<string, unknown>;
+      return {
+        ...state,
+        backgroundColor: hexRep,
+        productOptions: {
+          ...state.productOptions,
+          backgroundColorValue: value,
+          patternConfig: {
+            ...currentPattern,
+            backgroundColor: hexRep,
+          },
+        },
+      };
+    }
+
     return {
       ...state,
       backgroundColor: hexRep,
