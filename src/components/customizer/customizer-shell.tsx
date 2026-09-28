@@ -30,6 +30,9 @@ import {
 import { getBackgroundRemovalProvider } from '@/lib/background-removal/provider';
 import { BackgroundRefineOverlay } from './background-refine-overlay';
 import { CropFocusMode } from './crop-focus-mode';
+import { useDesignHistory } from '@/lib/use-design-history';
+import { useEditorShortcuts } from '@/lib/use-editor-shortcuts';
+import type { SelectionSnapshot } from '@/lib/history';
 import {
   getRecentProjects,
   loadState,
@@ -99,9 +102,6 @@ export function CustomizerShell() {
   const [viewport, setViewport] = useState<ViewportState>(resetToFit);
 
   const [templateReturnView, setTemplateReturnView] = useState<'setup' | 'editor'>('setup');
-  const [state, setState] = useState<DesignState>(() => createInitialState('wrapping'));
-  const [past, setPast] = useState<DesignState[]>([]);
-  const [future, setFuture] = useState<DesignState[]>([]);
   const [recentProjects, setRecentProjects] = useState<RecentProject[]>([]);
 
   // Redesigned Shell State Model
@@ -110,6 +110,45 @@ export function CustomizerShell() {
   const [selectionMode, setSelectionMode] = useState<SelectionMode>('default');
   const [selectedElementIds, setSelectedElementIds] = useState<string[]>([]);
   const [activeGroupId, setActiveGroupId] = useState<string | null>(null);
+
+  const getSelectionSnapshot = useCallback((): SelectionSnapshot => ({
+    selectedTarget,
+    selectedElementId,
+    selectedElementIds,
+    selectionMode,
+    activeGroupId,
+  }), [selectedTarget, selectedElementId, selectedElementIds, selectionMode, activeGroupId]);
+
+  const handleRestoreSelection = useCallback((sel: SelectionSnapshot) => {
+    setSelectedTarget(sel.selectedTarget);
+    setSelectedElementId(sel.selectedElementId);
+    setSelectedElementIds(sel.selectedElementIds);
+    setSelectionMode(sel.selectionMode);
+    setActiveGroupId(sel.activeGroupId);
+  }, []);
+
+  const {
+    state,
+    setState,
+    history,
+    activeTransaction,
+    canUndo,
+    canRedo,
+    dispatchDirect,
+    executeAction,
+    commitManualEntry,
+    startTransaction,
+    commitActiveTransaction,
+    cancelActiveTransaction,
+    undo,
+    redo,
+    resetHistory,
+  } = useDesignHistory({
+    initialState: createInitialState('wrapping'),
+    getSelection: getSelectionSnapshot,
+    onRestoreSelection: handleRestoreSelection,
+  });
+
   const imageSourceContextRef = useRef<ImageSourceContext>({ mode: 'add' });
   const [imageSourceContext, setImageSourceContextState] = useState<ImageSourceContext>({ mode: 'add' });
   const setImageSourceContext = useCallback((ctx: ImageSourceContext) => {
@@ -128,8 +167,6 @@ export function CustomizerShell() {
   const [saveStatus, setSaveStatus] = useState<SaveStatus>('saved');
   const [hasUnsavedWarning, setHasUnsavedWarning] = useState(false);
   const saveTimerRef = useRef<NodeJS.Timeout | null>(null);
-  const fontSessionBaseStateRef = useRef<DesignState | null>(null);
-  const opacitySessionBaseStateRef = useRef<DesignState | null>(null);
   const [projectRecents, setProjectRecents] = useState<string[]>([]);
 
   const activeColorTarget = React.useMemo<ColorTarget | null>(() => {
@@ -163,8 +200,13 @@ export function CustomizerShell() {
     state,
     onUpdateState: (newState) => setState(newState),
     onCommitUndo: (baseState) => {
-      setPast((prev) => [...prev, baseState]);
-      setFuture([]);
+      commitManualEntry({
+        type: 'change-color',
+        label: 'Đổi màu',
+        before: baseState,
+        after: state,
+        affectedIds: activeColorTarget?.kind === 'element' ? [activeColorTarget.elementId] : [],
+      });
     },
     projectRecents,
     onAddProjectRecent: (hex) => {
@@ -175,24 +217,10 @@ export function CustomizerShell() {
     if (activeSheet === 'color') {
       closeColorSession();
     }
-    if (activeSheet === 'font' && fontSessionBaseStateRef.current) {
-      const base = fontSessionBaseStateRef.current;
-      fontSessionBaseStateRef.current = null;
-      if (state.productOptions.fontFamily !== base.productOptions.fontFamily) {
-        setPast((prev) => [...prev, base]);
-        setFuture([]);
-      }
-    }
-    if (activeSheet === 'opacity' && opacitySessionBaseStateRef.current) {
-      const base = opacitySessionBaseStateRef.current;
-      opacitySessionBaseStateRef.current = null;
-      if (state.productOptions.imageOpacity !== base.productOptions.imageOpacity) {
-        setPast((prev) => [...prev, base]);
-        setFuture([]);
-      }
-    }
+    // Commit any active sheet transaction (font, opacity, font-size, mask, etc.)
+    commitActiveTransaction();
     setActiveSheet(null);
-  }, [activeSheet, state, closeColorSession]);
+  }, [activeSheet, closeColorSession, commitActiveTransaction]);
 
   const executeAutosave = useCallback((currentState: DesignState) => {
     setSaveStatus('saving');
@@ -204,9 +232,9 @@ export function CustomizerShell() {
     return ok;
   }, []);
 
-  // Continuous debounced autosave (400ms)
+  // Continuous debounced autosave (400ms) - paused during active transaction
   useEffect(() => {
-    if (!mounted) return;
+    if (!mounted || activeTransaction !== null) return;
     setSaveStatus('saving');
     if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
     saveTimerRef.current = setTimeout(() => {
@@ -215,7 +243,7 @@ export function CustomizerShell() {
     return () => {
       if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
     };
-  }, [state, mounted, executeAutosave]);
+  }, [state, mounted, executeAutosave, activeTransaction]);
 
   // Mobile lifecycle: save on visibility change / backgrounding
   useEffect(() => {
@@ -258,7 +286,7 @@ export function CustomizerShell() {
       if (requestedTemplate && TEMPLATES[requestedTemplate]) {
         initial = transitionState(initial, { type: 'SET_TEMPLATE', value: requestedTemplate });
       }
-      setState(migrateLegacyText(initial));
+      resetHistory(migrateLegacyText(initial));
       if (requestedView === 'editor' || requestedTemplate) {
         setView('editor');
       } else if (requestedView === 'template-browser') {
@@ -274,7 +302,7 @@ export function CustomizerShell() {
         productId: saved.productId,
         productOptions: { ...base.productOptions, ...(saved.productOptions || {}) },
       } as DesignState;
-      setState(migrateLegacyText(merged));
+      resetHistory(migrateLegacyText(merged));
       if (requestedView === 'editor') {
         setView('editor');
       }
@@ -289,77 +317,67 @@ export function CustomizerShell() {
   }, [state.productId, state.productOptions.surface]);
 
   const dispatch = useCallback((action: DesignAction) => {
-    setState((curr) => {
-      const next = transitionState(curr, action);
-      if (next === curr) return curr;
-      setPast((prev) => [...prev, curr]);
-      setFuture([]);
-      return next;
-    });
-  }, []);
+    dispatchDirect(action);
+  }, [dispatchDirect]);
 
   const handleSetFont = useCallback((fontFamily: string) => {
     if (selectedTarget === 'text' && selectedTextId) {
-      dispatch({
+      dispatchDirect({
         type: 'UPDATE_TEXT_STYLE',
         id: selectedTextId,
         patch: { fontFamily },
       });
     }
-    setState((curr) => ({
-      ...curr,
-      productOptions: {
-        ...curr.productOptions,
-        fontFamily,
-      },
-    }));
-  }, [selectedTarget, selectedTextId, dispatch]);
+    dispatchDirect({
+      type: 'SET_PRODUCT_OPTION',
+      key: 'fontFamily',
+      value: fontFamily,
+    });
+  }, [selectedTarget, selectedTextId, dispatchDirect]);
 
   const handleSetColor = useCallback((color: string) => {
     if (selectedTarget === 'text' && selectedTextId) {
-      dispatch({
+      dispatchDirect({
         type: 'UPDATE_TEXT_STYLE',
         id: selectedTextId,
         patch: { color },
       });
     } else {
-      dispatch({ type: 'SET_COLOR', value: color });
+      dispatchDirect({ type: 'SET_COLOR', value: color });
     }
-  }, [selectedTarget, selectedTextId, dispatch]);
+  }, [selectedTarget, selectedTextId, dispatchDirect]);
 
   const handleSetFontSize = useCallback((fontSize: number) => {
     if (selectedTarget === 'text' && selectedTextId) {
-      dispatch({
+      dispatchDirect({
         type: 'UPDATE_TEXT_STYLE',
         id: selectedTextId,
         patch: { fontSize },
       });
     }
-    setState((curr) => ({
-      ...curr,
-      productOptions: {
-        ...curr.productOptions,
-        fontSize,
-      },
-    }));
-  }, [selectedTarget, selectedTextId, dispatch]);
+    dispatchDirect({
+      type: 'SET_PRODUCT_OPTION',
+      key: 'fontSize',
+      value: fontSize,
+    });
+  }, [selectedTarget, selectedTextId, dispatchDirect]);
 
   const handleSetTextAlign = useCallback((align: 'left' | 'center' | 'right') => {
     if (selectedTarget === 'text' && selectedTextId) {
-      dispatch({
-        type: 'UPDATE_TEXT_STYLE',
-        id: selectedTextId,
-        patch: { align },
-      });
+      executeAction(
+        {
+          type: 'UPDATE_TEXT_STYLE',
+          id: selectedTextId,
+          patch: { align },
+        },
+        { type: 'change-text-align', label: 'Căn lề chữ', affectedIds: [selectedTextId] }
+      );
     }
-  }, [selectedTarget, selectedTextId, dispatch]);
+  }, [selectedTarget, selectedTextId, executeAction]);
 
 
   const handleSelectProduct = useCallback((productId: ProductId) => {
-    setState(createInitialState(productId));
-    setPast([]);
-    setFuture([]);
-    setSelectedTarget(null);
+    resetHistory(createInitialState(productId));
     setSelectedElementId(null);
     setSelectedTextId(null);
     setTextEditState(null);
@@ -378,9 +396,7 @@ export function CustomizerShell() {
       quantity: 1,
       productOptions: { ...base.productOptions, ...project.productOptions },
     };
-    setState(migrateLegacyText(merged));
-    setPast([]);
-    setFuture([]);
+    resetHistory(migrateLegacyText(merged));
     setSelectedTarget(null);
     setSelectedElementId(null);
     setSelectedTextId(null);
@@ -389,7 +405,7 @@ export function CustomizerShell() {
     setFocusMode(null);
     setViewport(resetToFit());
     setView('editor');
-  }, []);
+  }, [resetHistory]);
 
   const handleBackToLauncher = useCallback(() => {
     saveRecentProject(state);
@@ -418,12 +434,14 @@ export function CustomizerShell() {
     setSelectedElementId(elementId);
     setSelectedTextId(elementId);
     setActiveSheet(null);
+    startTransaction('edit-text', 'Sửa chữ', [elementId]);
     setTextEditState(startTextEdit(elementId, data.text, selectAll));
-  }, [state, viewport]);
+  }, [state, viewport, startTransaction]);
 
   const commitTextEdit = useCallback((edit: Exclude<TextEditState, null>): void => {
-    dispatch({ type: 'COMMIT_TEXT_EDIT', id: edit.elementId, text: edit.draft });
-  }, [dispatch]);
+    dispatchDirect({ type: 'COMMIT_TEXT_EDIT', id: edit.elementId, text: edit.draft });
+    commitActiveTransaction();
+  }, [dispatchDirect, commitActiveTransaction]);
 
   const exitTextEdit = useCallback((): void => {
     if (!textEditState) return;
@@ -433,7 +451,11 @@ export function CustomizerShell() {
     }
     pendingExitOnCompositionEndRef.current = false;
     const trimmed = textEditState.draft.trim();
-    commitTextEdit(textEditState);
+    if (trimmed) {
+      commitTextEdit(textEditState);
+    } else {
+      cancelActiveTransaction();
+    }
     setTextEditState(null);
     if (!trimmed) {
       setSelectedTarget(null);
@@ -444,7 +466,7 @@ export function CustomizerShell() {
       setViewport(preEditViewportRef.current);
       preEditViewportRef.current = null;
     }
-  }, [textEditState, commitTextEdit]);
+  }, [textEditState, commitTextEdit, cancelActiveTransaction]);
 
   // Keyboard-safe visualViewport adjustment during text editing
   useEffect(() => {
@@ -533,16 +555,17 @@ export function CustomizerShell() {
 
   const handleGroupSelected = useCallback(() => {
     if (selectedElementIds.length < 2) return;
-    setPast((prev) => [...prev, state]);
-    setFuture([]);
     const result = groupElements(state, selectedElementIds);
-    setState(result.state);
+    executeAction(
+      { type: 'SET_ELEMENTS', value: result.state.elements ?? [] },
+      { type: 'group', label: 'Nhóm', affectedIds: [result.groupId, ...selectedElementIds] }
+    );
     setSelectionMode('default');
     setSelectedElementIds([]);
     setSelectedElementId(result.groupId);
     setSelectedTarget('group');
     showToast('Đã tạo nhóm đối tượng.');
-  }, [state, selectedElementIds, showToast]);
+  }, [state, selectedElementIds, executeAction, showToast]);
 
   const handleUngroupSelected = useCallback(() => {
     const currentList = state.elements ?? getDefaultElements(state);
@@ -552,18 +575,19 @@ export function CustomizerShell() {
 
     if (!targetGroupId) return;
 
-    setPast((prev) => [...prev, state]);
-    setFuture([]);
     const childIds = currentList.filter((e) => e.parentGroupId === targetGroupId).map((e) => e.id);
     const nextState = ungroupElement(state, targetGroupId);
-    setState(nextState);
+    executeAction(
+      { type: 'SET_ELEMENTS', value: nextState.elements ?? [] },
+      { type: 'ungroup', label: 'Bỏ nhóm', affectedIds: [targetGroupId, ...childIds] }
+    );
     setSelectionMode('multi-select');
     setSelectedElementIds(childIds);
     setSelectedElementId(null);
     setSelectedTarget(null);
     setActiveGroupId(null);
     showToast('Đã bỏ nhóm đối tượng.');
-  }, [state, selectedElementId, activeGroupId, showToast]);
+  }, [state, selectedElementId, activeGroupId, executeAction, showToast]);
 
   const handleEnterGroupEdit = useCallback((groupId: string, childId?: string) => {
     setSelectionMode('group-edit');
@@ -586,39 +610,46 @@ export function CustomizerShell() {
 
   const handleDuplicateMultiSelected = useCallback(() => {
     if (selectedElementIds.length === 0) return;
-    setPast((prev) => [...prev, state]);
-    setFuture([]);
     const { state: nextState, newIds } = duplicateSelectedElements(state, selectedElementIds);
-    setState(nextState);
+    executeAction(
+      { type: 'SET_ELEMENTS', value: nextState.elements ?? [] },
+      { type: 'duplicate', label: 'Nhân bản', affectedIds: newIds }
+    );
     setSelectedElementIds(newIds);
     showToast('Đã nhân bản các mục đã chọn.');
-  }, [state, selectedElementIds, showToast]);
+  }, [state, selectedElementIds, executeAction, showToast]);
 
   const handleDeleteMultiSelected = useCallback(() => {
     if (selectedElementIds.length === 0) return;
-    setPast((prev) => [...prev, state]);
-    setFuture([]);
     const nextState = deleteSelectedElements(state, selectedElementIds);
-    setState(nextState);
+    executeAction(
+      { type: 'SET_ELEMENTS', value: nextState.elements ?? [] },
+      { type: 'delete', label: 'Xóa', affectedIds: selectedElementIds }
+    );
     setSelectedElementIds([]);
     setSelectionMode('default');
     showToast('Đã xóa các mục đã chọn.');
-  }, [state, selectedElementIds, showToast]);
+  }, [state, selectedElementIds, executeAction, showToast]);
+
   const handleCommitMultiTransform = useCallback(
     (action: 'move' | 'resize' | 'rotate', dx: number, dy: number, scaleRatio: number, deltaDeg: number) => {
       if (selectedElementIds.length === 0) return;
-      setPast((prev) => [...prev, state]);
-      setFuture([]);
       const currentList = state.elements ?? getDefaultElements(state);
       if (action === 'move') {
         const nextElements = moveElements(currentList, selectedElementIds, dx, dy);
-        setState((curr) => ({ ...curr, elements: nextElements }));
+        executeAction(
+          { type: 'SET_ELEMENTS', value: nextElements },
+          { type: 'move', label: 'Di chuyển', affectedIds: selectedElementIds }
+        );
       } else if (action === 'resize') {
         const selectedEls = currentList.filter((el) => selectedElementIds.includes(el.id));
         const bounds = computeCombinedBounds(selectedEls);
         if (bounds) {
           const nextElements = scaleElementsUniform(currentList, selectedElementIds, bounds, scaleRatio);
-          setState((curr) => ({ ...curr, elements: nextElements }));
+          executeAction(
+            { type: 'SET_ELEMENTS', value: nextElements },
+            { type: 'resize', label: 'Phóng to/Thu nhỏ', affectedIds: selectedElementIds }
+          );
         }
       } else if (action === 'rotate') {
         const selectedEls = currentList.filter((el) => selectedElementIds.includes(el.id));
@@ -630,11 +661,14 @@ export function CustomizerShell() {
             { x: bounds.centerX, y: bounds.centerY },
             deltaDeg
           );
-          setState((curr) => ({ ...curr, elements: nextElements }));
+          executeAction(
+            { type: 'SET_ELEMENTS', value: nextElements },
+            { type: 'rotate', label: 'Xoay', affectedIds: selectedElementIds }
+          );
         }
       }
     },
-    [state, selectedElementIds]
+    [state, selectedElementIds, executeAction]
   );
   // Strict local-first Back navigation hierarchy:
   // Strict unified Back navigation resolver across Editor transient states
@@ -767,24 +801,50 @@ export function CustomizerShell() {
   }, [view, handleUnifiedBack]);
 
   const handleUndo = useCallback(() => {
-    setPast((prevPast) => {
-      if (prevPast.length === 0) return prevPast;
-      const previous = prevPast[prevPast.length - 1];
-      setFuture((prevFuture) => [state, ...prevFuture]);
-      setState(previous);
-      return prevPast.slice(0, -1);
-    });
-  }, [state]);
+    const entry = undo();
+    if (entry) {
+      const structural = [
+        'delete',
+        'group',
+        'ungroup',
+        'replace-image',
+        'change-font',
+        'crop',
+        'remove-background',
+        'refine-background',
+        'apply-template',
+      ];
+      if (structural.includes(entry.type)) {
+        showToast(`Đã hoàn tác: ${entry.label}`);
+      }
+    }
+  }, [undo, showToast]);
 
   const handleRedo = useCallback(() => {
-    setFuture((prevFuture) => {
-      if (prevFuture.length === 0) return prevFuture;
-      const next = prevFuture[0];
-      setPast((prevPast) => [...prevPast, state]);
-      setState(next);
-      return prevFuture.slice(1);
-    });
-  }, [state]);
+    const entry = redo();
+    if (entry) {
+      const structural = [
+        'delete',
+        'group',
+        'ungroup',
+        'replace-image',
+        'change-font',
+        'crop',
+        'remove-background',
+        'refine-background',
+        'apply-template',
+      ];
+      if (structural.includes(entry.type)) {
+        showToast(`Đã làm lại: ${entry.label}`);
+      }
+    }
+  }, [redo, showToast]);
+
+  useEditorShortcuts({
+    enabled: view === 'editor',
+    onUndo: handleUndo,
+    onRedo: handleRedo,
+  });
 
   const handleUploadImage = useCallback(async (file: File) => {
     try {
@@ -792,26 +852,29 @@ export function CustomizerShell() {
       const currentCtx = imageSourceContextRef.current;
       const targetId = currentCtx.mode === 'replace' ? currentCtx.targetElementId : (selectedElementId || 'image-1');
       if (currentCtx.mode === 'replace') {
-
-        dispatch({
-          type: 'REPLACE_IMAGE_ASSET',
-          id: targetId,
-          asset: {
-            src: imageState.src,
-            name: imageState.name,
-            width: imageState.width,
-            height: imageState.height,
-            size: imageState.size,
+        executeAction(
+          {
+            type: 'REPLACE_IMAGE_ASSET',
+            id: targetId,
+            asset: {
+              src: imageState.src,
+              name: imageState.name,
+              width: imageState.width,
+              height: imageState.height,
+              size: imageState.size,
+            },
           },
-        });
+          { type: 'replace-image', label: 'Thay ảnh', affectedIds: [targetId] }
+        );
         setSelectedTarget('image');
         setSelectedElementId(targetId);
         showToast('Đã thay ảnh (giữ nguyên khung thiết kế).');
       } else {
-        setPast((prev) => [...prev, state]);
-        setFuture([]);
         if (state.image?.src) revokeImageUrl(state.image.src);
-        dispatch({ type: 'SET_IMAGE', value: imageState });
+        executeAction(
+          { type: 'SET_IMAGE', value: imageState },
+          { type: 'add', label: 'Thêm ảnh', affectedIds: ['image-1'] }
+        );
         setSelectedTarget('image');
         const elements = state.elements ?? getDefaultElements(state);
         const imgEl = elements.find((e) => e.type === 'image');
@@ -821,7 +884,7 @@ export function CustomizerShell() {
     } catch (err: unknown) {
       showToast(err instanceof Error ? err.message : 'Không thể sử dụng ảnh này.');
     }
-  }, [dispatch, state, showToast]);
+  }, [executeAction, state, showToast]);
 
   const handleFileInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -848,25 +911,30 @@ export function CustomizerShell() {
     (preset: TextStylePreset = 'heading') => {
       const textPreset: TextPreset = preset === 'heading' ? 'heading' : 'body';
       const newId = `text-${Date.now()}`;
-      dispatch({
-        type: 'ADD_TEXT_ELEMENT',
-        preset: textPreset,
-        id: newId,
-      });
+      executeAction(
+        {
+          type: 'ADD_TEXT_ELEMENT',
+          preset: textPreset,
+          id: newId,
+        },
+        { type: 'add', label: 'Thêm chữ', affectedIds: [newId] }
+      );
       setSelectedTarget('text');
       setSelectedElementId(newId);
       setSelectedTextId(newId);
       setActiveSheet(null);
       preEditViewportRef.current = viewport;
       const initialText = textPreset === 'heading' ? 'Nhập tiêu đề' : 'Nhập nội dung';
+      startTransaction('edit-text', 'Sửa chữ', [newId]);
       setTextEditState(startTextEdit(newId, initialText, true));
     },
-    [dispatch, viewport]
+    [executeAction, startTransaction, viewport]
   );
 
   const handleInsertShape = (shapeType: ShapePrimitiveType) => {
+    const newId = `shape-${Date.now()}`;
     const newElement = {
-      id: `shape-${Date.now()}`,
+      id: newId,
       type: 'shape' as const,
       x: 50,
       y: 50,
@@ -876,7 +944,10 @@ export function CustomizerShell() {
       zIndex: (state.elements?.length || 0) + 1,
       data: { shapeType, fill: '#DCEBF4' },
     };
-    dispatch({ type: 'ADD_CANVAS_ELEMENT', element: newElement });
+    executeAction(
+      { type: 'ADD_CANVAS_ELEMENT', element: newElement },
+      { type: 'add', label: 'Thêm hình khối', affectedIds: [newId] }
+    );
     showToast('Đã thêm hình khối.');
   };
   // Workspace touch / pan / pinch gesture tracking
@@ -1039,64 +1110,95 @@ export function CustomizerShell() {
 
   const handleReorderElements = useCallback(
     (orderedIds: string[]) => {
-      dispatch({
-        type: 'REORDER_ELEMENTS',
-        orderedIds,
-      });
+      executeAction(
+        {
+          type: 'REORDER_ELEMENTS',
+          orderedIds,
+        },
+        { type: 'reorder-layer', label: 'Đổi thứ tự lớp', affectedIds: orderedIds }
+      );
     },
-    [dispatch]
+    [executeAction]
   );
 
   const handleDuplicateSelected = useCallback(() => {
     if (selectedElementId) {
-      dispatch({ type: 'DUPLICATE_ELEMENT', id: selectedElementId });
+      executeAction(
+        { type: 'DUPLICATE_ELEMENT', id: selectedElementId },
+        { type: 'duplicate', label: 'Nhân bản', affectedIds: [selectedElementId] }
+      );
       showToast('Đã nhân bản đối tượng.');
     } else if (selectedTarget === 'image') {
       const elements = state.elements ?? getDefaultElements(state);
       const imgEl = elements.find((e) => e.type === 'image');
-      if (imgEl) dispatch({ type: 'DUPLICATE_ELEMENT', id: imgEl.id });
+      if (imgEl) {
+        executeAction(
+          { type: 'DUPLICATE_ELEMENT', id: imgEl.id },
+          { type: 'duplicate', label: 'Nhân bản ảnh', affectedIds: [imgEl.id] }
+        );
+      }
       showToast('Đã nhân bản ảnh.');
     } else if (selectedTarget === 'text') {
       const elements = state.elements ?? getDefaultElements(state);
       const txtEl = elements.find((e) => e.type === 'text');
-      if (txtEl) dispatch({ type: 'DUPLICATE_ELEMENT', id: txtEl.id });
+      if (txtEl) {
+        executeAction(
+          { type: 'DUPLICATE_ELEMENT', id: txtEl.id },
+          { type: 'duplicate', label: 'Nhân bản dòng chữ', affectedIds: [txtEl.id] }
+        );
+      }
       showToast('Đã nhân bản dòng chữ.');
     }
-  }, [selectedElementId, selectedTarget, state, dispatch, showToast]);
+  }, [selectedElementId, selectedTarget, state, executeAction, showToast]);
 
   const handleBringForwardSelected = useCallback(() => {
     if (selectedElementId) {
-      dispatch({ type: 'BRING_FORWARD', id: selectedElementId });
+      executeAction(
+        { type: 'BRING_FORWARD', id: selectedElementId },
+        { type: 'reorder-layer', label: 'Đưa lên trên', affectedIds: [selectedElementId] }
+      );
       showToast('Đã đưa đối tượng lên trên.');
     }
-  }, [selectedElementId, dispatch, showToast]);
+  }, [selectedElementId, executeAction, showToast]);
 
   const handleSendBackwardSelected = useCallback(() => {
     if (selectedElementId) {
-      dispatch({ type: 'SEND_BACKWARD', id: selectedElementId });
+      executeAction(
+        { type: 'SEND_BACKWARD', id: selectedElementId },
+        { type: 'reorder-layer', label: 'Đưa xuống dưới', affectedIds: [selectedElementId] }
+      );
       showToast('Đã đưa đối tượng xuống dưới.');
     }
-  }, [selectedElementId, dispatch, showToast]);
+  }, [selectedElementId, executeAction, showToast]);
 
   const handleDeleteSelected = useCallback(() => {
     if (selectedElementId) {
-      dispatch({ type: 'DELETE_ELEMENT', id: selectedElementId });
+      executeAction(
+        { type: 'DELETE_ELEMENT', id: selectedElementId },
+        { type: 'delete', label: 'Xóa đối tượng', affectedIds: [selectedElementId] }
+      );
       setSelectedElementId(null);
       setSelectedTarget(null);
       showToast('Đã xóa đối tượng.');
     } else if (selectedTarget === 'image') {
       if (state.image?.src) revokeImageUrl(state.image.src);
-      dispatch({ type: 'SET_IMAGE', value: null });
+      executeAction(
+        { type: 'SET_IMAGE', value: null },
+        { type: 'delete', label: 'Xóa ảnh', affectedIds: ['image-1'] }
+      );
       setSelectedTarget(null);
       setSelectedElementId(null);
       showToast('Đã xóa ảnh.');
     } else if (selectedTarget === 'text') {
-      dispatch({ type: 'SET_TEXT', value: '' });
+      executeAction(
+        { type: 'SET_TEXT', value: '' },
+        { type: 'delete', label: 'Xóa chữ', affectedIds: ['text-1'] }
+      );
       setSelectedTarget(null);
       setSelectedElementId(null);
       showToast('Đã xóa dòng chữ.');
     }
-  }, [selectedElementId, selectedTarget, state.image?.src, dispatch, showToast]);
+  }, [selectedElementId, selectedTarget, state.image?.src, executeAction, showToast]);
 
   // Contextual actions dispatcher
   const handleToolbarAction = useCallback((actionKey: string) => {
@@ -1117,6 +1219,7 @@ export function CustomizerShell() {
         setOverlayMode('preflight');
         break;
       case 'crop':
+        startTransaction('crop', 'Cắt ảnh', [selectedElementId || 'image-1']);
         setFocusMode('crop');
         break;
       case 'replace-image': {
@@ -1144,11 +1247,14 @@ export function CustomizerShell() {
         getBackgroundRemovalProvider()
           .removeBackground(sourceSrc)
           .then((result) => {
-            dispatch({
-              type: 'APPLY_REMOVE_BACKGROUND',
-              id: selectedElementId ?? undefined,
-              derivedSrc: result.derivedSrc,
-            });
+            executeAction(
+              {
+                type: 'APPLY_REMOVE_BACKGROUND',
+                id: selectedElementId ?? undefined,
+                derivedSrc: result.derivedSrc,
+              },
+              { type: 'remove-background', label: 'Xóa nền', affectedIds: [selectedElementId || 'image-1'] }
+            );
             setBgRemovalState('result');
             showToast('Đã xóa nền ảnh thành công.');
           })
@@ -1159,15 +1265,19 @@ export function CustomizerShell() {
         break;
       }
       case 'restore-bg': {
-        dispatch({
-          type: 'RESTORE_ORIGINAL_IMAGE',
-          id: selectedElementId ?? undefined,
-        });
+        executeAction(
+          {
+            type: 'RESTORE_ORIGINAL_IMAGE',
+            id: selectedElementId ?? undefined,
+          },
+          { type: 'remove-background', label: 'Khôi phục ảnh gốc', affectedIds: [selectedElementId || 'image-1'] }
+        );
         setBgRemovalState('idle');
         showToast('Đã khôi phục ảnh gốc ban đầu.');
         break;
       }
       case 'refine-bg': {
+        startTransaction('refine-background', 'Chỉnh vùng cắt', [selectedElementId || 'image-1']);
         setFocusMode('remove-bg');
         break;
       }
@@ -1176,10 +1286,11 @@ export function CustomizerShell() {
         break;
       }
       case 'opacity':
-        opacitySessionBaseStateRef.current = state;
+        startTransaction('change-opacity', 'Đổi độ mờ', [selectedElementId || 'image-1']);
         setActiveSheet('opacity');
         break;
       case 'mask':
+        startTransaction('change-mask', 'Đổi khung hình', [selectedElementId || 'image-1']);
         setActiveSheet('mask');
         break;
       case 'edit-text': {
@@ -1193,13 +1304,15 @@ export function CustomizerShell() {
         break;
       }
       case 'font':
-        fontSessionBaseStateRef.current = state;
+        startTransaction('change-font', 'Đổi font', [selectedTextId || 'text-1']);
         setActiveSheet('font');
         break;
       case 'color':
+        startTransaction('change-color', 'Đổi màu', activeColorTarget?.kind === 'element' ? [activeColorTarget.elementId] : []);
         setActiveSheet('color');
         break;
       case 'font-size':
+        startTransaction('change-font-size', 'Đổi cỡ chữ', [selectedTextId || 'text-1']);
         setActiveSheet('font-size');
         break;
       case 'align':
@@ -1349,7 +1462,10 @@ export function CustomizerShell() {
         variantId={state.variantId}
         onBack={() => setView(templateReturnView)}
         onApplyTemplate={(tplId) => {
-          dispatch({ type: 'SET_TEMPLATE', value: tplId });
+          executeAction(
+            { type: 'SET_TEMPLATE', value: tplId },
+            { type: 'apply-template', label: 'Áp dụng mẫu', affectedIds: [] }
+          );
           setView('editor');
           showToast('Đã áp dụng mẫu thiết kế.');
         }}
@@ -1414,37 +1530,40 @@ export function CustomizerShell() {
           initialCrop={currentImageData?.crop}
           mask={currentImageData?.mask}
           onDone={(newCrop) => {
-            dispatch({
+            dispatchDirect({
               type: 'COMMIT_IMAGE_CROP',
               id: selectedElementId ?? undefined,
               crop: newCrop,
             });
+            commitActiveTransaction();
             setFocusMode(null);
             showToast('Đã áp dụng cắt ảnh.');
           }}
           onCancel={() => {
+            cancelActiveTransaction();
             setFocusMode(null);
           }}
         />
       )}
-
       {/* FOCUS MODE: Remove Background Refine */}
       {focusMode === 'remove-bg' && (
         <BackgroundRefineOverlay
           originalSrc={currentImageData?.originalSrc || currentImageData?.src || state.image?.src || ''}
           currentSrc={currentImageData?.removedBackgroundSrc || currentImageData?.src || state.image?.src || ''}
           onDone={(refinedSrc, maskData) => {
-            dispatch({
+            dispatchDirect({
               type: 'COMMIT_REFINE_MASK',
               id: selectedElementId ?? undefined,
               refinedSrc,
               maskData,
             });
+            commitActiveTransaction();
             setFocusMode(null);
             setBgRemovalState('result');
             showToast('Đã lưu chỉnh sửa vùng cắt.');
           }}
           onCancel={() => {
+            cancelActiveTransaction();
             setFocusMode(null);
             setBgRemovalState('result');
           }}
@@ -1503,21 +1622,23 @@ export function CustomizerShell() {
         <div className="flex items-center gap-1">
           <button
             type="button"
-            disabled={past.length === 0}
+            disabled={!canUndo}
+            aria-disabled={!canUndo}
             onClick={handleUndo}
             aria-label="Hoàn tác"
             title="Hoàn tác"
-            className="flex items-center justify-center w-8 h-8 rounded-lg text-[#2E3338] disabled:opacity-30 disabled:pointer-events-none hover:bg-[#F8F3E8] active:scale-95 transition-all"
+            className="flex items-center justify-center w-9 h-9 rounded-lg text-[#2E3338] disabled:opacity-30 disabled:cursor-not-allowed hover:bg-[#F8F3E8] active:scale-95 transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#315F86]"
           >
             <Undo2 className="w-4 h-4" />
           </button>
           <button
             type="button"
-            disabled={future.length === 0}
+            disabled={!canRedo}
+            aria-disabled={!canRedo}
             onClick={handleRedo}
             aria-label="Làm lại"
             title="Làm lại"
-            className="flex items-center justify-center w-8 h-8 rounded-lg text-[#2E3338] disabled:opacity-30 disabled:pointer-events-none hover:bg-[#F8F3E8] active:scale-95 transition-all"
+            className="flex items-center justify-center w-9 h-9 rounded-lg text-[#2E3338] disabled:opacity-30 disabled:cursor-not-allowed hover:bg-[#F8F3E8] active:scale-95 transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#315F86]"
           >
             <Redo2 className="w-4 h-4" />
           </button>
@@ -1623,17 +1744,28 @@ export function CustomizerShell() {
             textTransform={textTransform}
             onCommitTransform={(target, transform, elementId) => {
               if (target === 'text' && elementId) {
-                dispatch({
-                  type: 'UPDATE_ELEMENT',
-                  id: elementId,
-                  patch: {
-                    x: transform.x,
-                    y: transform.y,
-                    rotation: transform.rotation,
+                executeAction(
+                  {
+                    type: 'UPDATE_ELEMENT',
+                    id: elementId,
+                    patch: {
+                      x: transform.x,
+                      y: transform.y,
+                      rotation: transform.rotation,
+                    },
                   },
-                });
+                  { type: 'move', label: 'Di chuyển chữ', affectedIds: [elementId] }
+                );
+              } else if (target === 'image') {
+                executeAction(
+                  {
+                    type: 'SET_PRODUCT_OPTION',
+                    key: 'imageTransform',
+                    value: transform,
+                  },
+                  { type: 'move', label: 'Di chuyển ảnh', affectedIds: [elementId || 'image-1'] }
+                );
               }
-              handleCommitTransform(target, transform);
             }}
           />
 
@@ -1714,7 +1846,12 @@ export function CustomizerShell() {
         fontSize={currentFontSize}
         fontFamily={currentFontFamily}
         textAlign={currentTextAlign}
-        onSelectTemplate={(key) => dispatch({ type: 'SET_TEMPLATE', value: key })}
+        onSelectTemplate={(key) => {
+          executeAction(
+            { type: 'SET_TEMPLATE', value: key },
+            { type: 'apply-template', label: 'Áp dụng mẫu', affectedIds: [] }
+          );
+        }}
         onOpenTemplateBrowser={() => {
           setTemplateReturnView('editor');
           setView('template-browser');
@@ -1727,27 +1864,18 @@ export function CustomizerShell() {
         onSetFontSize={handleSetFontSize}
         onSetTextAlign={handleSetTextAlign}
         onSetOpacity={(val) => {
-          setState((curr) =>
-            transitionState(curr, {
-              type: 'SET_IMAGE_OPACITY',
-              id: selectedElementId ?? undefined,
-              opacity: val,
-            })
-          );
+          dispatchDirect({
+            type: 'SET_IMAGE_OPACITY',
+            id: selectedElementId ?? undefined,
+            opacity: val,
+          });
         }}
-        onCommitOpacity={(val) => {
-          if (opacitySessionBaseStateRef.current) {
-            const base = opacitySessionBaseStateRef.current;
-            if (base.productOptions.imageOpacity !== val) {
-              setPast((prev) => [...prev, base]);
-              setFuture([]);
-              opacitySessionBaseStateRef.current = state;
-            }
-          }
+        onCommitOpacity={() => {
+          commitActiveTransaction();
         }}
         currentMask={currentImageData?.mask}
         onSelectMask={(maskId) => {
-          dispatch({
+          dispatchDirect({
             type: 'SET_IMAGE_MASK',
             id: selectedElementId ?? undefined,
             mask: maskId,
@@ -1755,22 +1883,25 @@ export function CustomizerShell() {
           showToast('Đã áp dụng khung hình ảnh.');
         }}
         onMaskClick={() => {
+          startTransaction('change-mask', 'Đổi khung hình', [selectedElementId || 'image-1']);
           setActiveSheet('mask');
         }}
         onToggleLock={() => {
           if (selectedElementId) {
-            dispatch({
-              type: 'LOCK_ELEMENT',
-              id: selectedElementId,
-              locked: !isCurrentTargetLocked,
-            });
+            executeAction(
+              {
+                type: 'LOCK_ELEMENT',
+                id: selectedElementId,
+                locked: !isCurrentTargetLocked,
+              },
+              {
+                type: isCurrentTargetLocked ? 'unlock' : 'lock',
+                label: isCurrentTargetLocked ? 'Mở khóa' : 'Khóa đối tượng',
+                affectedIds: [selectedElementId],
+              }
+            );
+            showToast(isCurrentTargetLocked ? 'Đã mở khóa đối tượng.' : 'Đã khóa đối tượng.');
           }
-          dispatch({
-            type: 'SET_PRODUCT_OPTION',
-            key: 'isLocked',
-            value: !isCurrentTargetLocked,
-          });
-          showToast(isCurrentTargetLocked ? 'Đã mở khóa đối tượng.' : 'Đã khóa đối tượng.');
         }}
         onDuplicate={handleDuplicateSelected}
         onBringForward={handleBringForwardSelected}

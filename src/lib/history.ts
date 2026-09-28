@@ -28,7 +28,7 @@ export type HistoryActionType =
   | 'change-product-option';
 
 export interface SelectionSnapshot {
-  selectedTarget: 'image' | 'text' | 'shape' | 'sticker' | 'group' | null;
+  selectedTarget: 'image' | 'text' | 'group' | null;
   selectedElementId: string | null;
   selectedElementIds: string[];
   selectionMode: 'default' | 'multi-select' | 'group-edit';
