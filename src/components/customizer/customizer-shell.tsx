@@ -1493,7 +1493,7 @@ export function CustomizerShell() {
         <div
           role="status"
           aria-live="polite"
-          className="fixed top-3 right-3 z-50 rounded-lg bg-[#2E3338] px-3.5 py-1.5 text-xs font-medium text-white shadow-lg flex items-center gap-1.5"
+          className="fixed top-14 left-1/2 -translate-x-1/2 z-50 pointer-events-none rounded-lg bg-[#2E3338] px-3.5 py-1.5 text-xs font-medium text-white shadow-lg flex items-center gap-1.5 whitespace-nowrap"
         >
           <Check className="w-3.5 h-3.5 text-[#C8D8C4]" />
           <span>{toastMessage}</span>

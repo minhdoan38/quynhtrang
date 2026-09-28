@@ -35,6 +35,13 @@ export interface DesignHistoryManager {
     action: DesignAction,
     metadata: { type: HistoryActionType; label: string; affectedIds?: string[] }
   ) => HistoryEntry | null;
+  commitManualEntry: (params: {
+    type: HistoryActionType;
+    label: string;
+    before: DesignState;
+    after: DesignState;
+    affectedIds?: string[];
+  }) => HistoryEntry | null;
   startTransaction: (
     type: HistoryActionType,
     label: string,
@@ -100,6 +107,20 @@ export function createDesignHistoryManager(
         selectionBefore: beforeSelection,
         selectionAfter: afterSelection,
         affectedIds: metadata.affectedIds ?? [],
+      });
+
+      return history.past[history.past.length - 1] ?? null;
+    },
+
+    commitManualEntry: ({ type, label, before, after, affectedIds = [] }) => {
+      history = commitHistoryEntry(history, {
+        type,
+        label,
+        before,
+        after,
+        selectionBefore: getSelection(),
+        selectionAfter: getSelection(),
+        affectedIds,
       });
 
       return history.past[history.past.length - 1] ?? null;
@@ -204,6 +225,13 @@ export interface UseDesignHistoryReturn {
     action: DesignAction,
     metadata: { type: HistoryActionType; label: string; affectedIds?: string[] }
   ) => HistoryEntry | null;
+  commitManualEntry: (params: {
+    type: HistoryActionType;
+    label: string;
+    before: DesignState;
+    after: DesignState;
+    affectedIds?: string[];
+  }) => HistoryEntry | null;
   startTransaction: (
     type: HistoryActionType,
     label: string,
@@ -278,6 +306,38 @@ export function useDesignHistory({
       setHistory(nextHistory);
       setState(nextState);
 
+      return nextHistory.past[nextHistory.past.length - 1] ?? null;
+    },
+    [getSelection]
+  );
+  const commitManualEntry = useCallback(
+    ({
+      type,
+      label,
+      before,
+      after,
+      affectedIds = [],
+    }: {
+      type: HistoryActionType;
+      label: string;
+      before: DesignState;
+      after: DesignState;
+      affectedIds?: string[];
+    }): HistoryEntry | null => {
+      const beforeSel = getSelection();
+      const afterSel = getSelection();
+
+      const nextHistory = commitHistoryEntry(historyRef.current, {
+        type,
+        label,
+        before,
+        after,
+        selectionBefore: beforeSel,
+        selectionAfter: afterSel,
+        affectedIds,
+      });
+
+      setHistory(nextHistory);
       return nextHistory.past[nextHistory.past.length - 1] ?? null;
     },
     [getSelection]
@@ -386,6 +446,7 @@ export function useDesignHistory({
     canRedo: activeTransaction === null && canRedoStack(history),
     dispatchDirect,
     executeAction,
+    commitManualEntry,
     startTransaction,
     commitActiveTransaction,
     cancelActiveTransaction,
