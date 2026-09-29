@@ -13,13 +13,24 @@ if (!globalAssetRegistry[assetRegistryKey]) globalAssetRegistry[assetRegistryKey
 const assetRegistry = globalAssetRegistry[assetRegistryKey];
 
 export function storeAsset(asset: PromotedAsset): PromotedAsset {
-  assetRegistry.set(asset.id, JSON.parse(JSON.stringify(asset)) as PromotedAsset);
-  return JSON.parse(JSON.stringify(asset)) as PromotedAsset;
+  const copy = JSON.parse(JSON.stringify(asset)) as PromotedAsset;
+  const idWithoutPrefix = asset.id.replace(/^\/api\/assets\//, '');
+  const idWithPrefix = asset.id.startsWith('/api/assets/') ? asset.id : `/api/assets/${asset.id}`;
+
+  assetRegistry.set(asset.id, copy);
+  assetRegistry.set(idWithoutPrefix, copy);
+  assetRegistry.set(idWithPrefix, copy);
+  return copy;
 }
 
 export function getAsset(id: string): PromotedAsset | null {
-  const asset = assetRegistry.get(id);
-  return asset ? JSON.parse(JSON.stringify(asset)) as PromotedAsset : null;
+  const idWithoutPrefix = id.replace(/^\/api\/assets\//, '');
+  const idWithPrefix = id.startsWith('/api/assets/') ? id : `/api/assets/${id}`;
+  const asset =
+    assetRegistry.get(id) ??
+    assetRegistry.get(idWithoutPrefix) ??
+    assetRegistry.get(idWithPrefix);
+  return asset ? (JSON.parse(JSON.stringify(asset)) as PromotedAsset) : null;
 }
 
 export function clearAssetStore(): void {
@@ -44,6 +55,7 @@ interface ScannedAssetMeta {
   width?: number;
   height?: number;
   name?: string;
+  data?: string;
 }
 
 function inferMimeType(urlOrName: string): string {
@@ -116,6 +128,7 @@ function collectBlobUrlsAndMeta(design: DesignState): Map<string, ScannedAssetMe
         byteSize: typeof data.size === 'number' ? data.size : typeof data.byteSize === 'number' ? data.byteSize : undefined,
         width: typeof data.sourceWidth === 'number' ? data.sourceWidth : typeof data.width === 'number' ? data.width : undefined,
         height: typeof data.sourceHeight === 'number' ? data.sourceHeight : typeof data.height === 'number' ? data.height : undefined,
+        data: typeof data.data === 'string' ? data.data : undefined,
       };
 
       if (typeof data.src === 'string') record(data.src, elementMeta);
@@ -197,6 +210,7 @@ export async function promoteDesignAssets(
         ...(meta.height !== undefined ? { height: meta.height } : {}),
         originalUrl: assetId,
         checksum,
+        ...(meta.data ? { data: meta.data } : {}),
       };
       if (!seenAssetIds.has(newAsset.id)) {
         seenAssetIds.add(newAsset.id);

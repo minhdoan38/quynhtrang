@@ -2,9 +2,10 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import { createInitialState, type DesignState } from '../lib/product-state.ts';
-import { getAsset, promoteDesignAssets } from '../lib/asset-store.ts';
+import { getAsset, promoteDesignAssets, storeAsset } from '../lib/asset-store.ts';
 import { calculatePriceQuote } from '../lib/pricing.ts';
 import { serverOrderStore } from '../lib/server-order-store.ts';
+import { GET as getAssetRoute } from '../app/api/assets/[id]/route.ts';
 import type { CustomerInfo } from '../lib/order-types.ts';
 
 test('promotes blob image URLs with metadata and rewrites every design reference', async () => {
@@ -145,4 +146,48 @@ test('server order store stores normalized quantity from price quote', () => {
   const quote = calculatePriceQuote({ productId: design.productId, quantity: design.quantity });
   assert.equal(quote.quantity, 1);
   assert.equal(order.product.quantity, 1);
+});
+
+test('asset route serves promoted asset with proper content-type and returns 404 for unknown asset', async () => {
+  const design = {
+    ...createInitialState('card'),
+    image: {
+      src: 'blob:serve-test',
+      name: 'banner.png',
+      type: 'image/png',
+      size: 512,
+    },
+  };
+  const { promotedAssets } = await promoteDesignAssets(design);
+  const asset = promotedAssets[0];
+  const assetId = asset.id.replace(/^\/api\/assets\//, '');
+
+  // 1. Fetch valid asset
+  const req = new Request(`http://localhost:3000/api/assets/${assetId}`);
+  const res = await getAssetRoute(req, { params: Promise.resolve({ id: assetId }) });
+  assert.equal(res.status, 200);
+  assert.equal(res.headers.get('Content-Type'), 'image/png');
+  const buffer = await res.arrayBuffer();
+  assert.ok(buffer.byteLength > 0);
+
+  // 2. Fetch custom payload data
+  storeAsset({
+    id: '/api/assets/asset-custom-data',
+    sourceKey: 'blob:custom',
+    mimeType: 'image/webp',
+    byteSize: 12,
+    originalUrl: '/api/assets/asset-custom-data',
+    data: 'data:image/webp;base64,UklGRhoAAABXRUJQVlA4TA0AAAAvAAAAEAcQERGIiP4HAA==',
+  });
+  const customRes = await getAssetRoute(
+    new Request('http://localhost:3000/api/assets/asset-custom-data'),
+    { params: Promise.resolve({ id: 'asset-custom-data' }) },
+  );
+  assert.equal(customRes.status, 200);
+  assert.equal(customRes.headers.get('Content-Type'), 'image/webp');
+
+  // 3. Fetch non-existent asset returns 404
+  const unknownReq = new Request('http://localhost:3000/api/assets/non-existent-id');
+  const unknownRes = await getAssetRoute(unknownReq, { params: Promise.resolve({ id: 'non-existent-id' }) });
+  assert.equal(unknownRes.status, 404);
 });

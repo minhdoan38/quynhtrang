@@ -50,6 +50,7 @@ export interface PromotedAsset {
   originalUrl: string;
   derivedUrls?: Record<string, string>;
   checksum?: string;
+  data?: string;
 }
 
 export interface ApprovedDesignVersion {
