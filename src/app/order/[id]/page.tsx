@@ -132,7 +132,7 @@ export default function OrderConfirmationPage(props: {
           </div>
         </div>
 
-        {/* Customer Shipping Info */}
+        {/* Customer Shipping Info (State 35 customer fields: fullName, phone, shippingAddress) */}
         <div className="rounded-2xl border border-[#DDD6CC] bg-white p-4 space-y-2.5 text-xs">
           <div className="flex items-center gap-2 font-semibold text-[#2E3338]">
             <MapPin size={16} className="text-[#315F86]" />
