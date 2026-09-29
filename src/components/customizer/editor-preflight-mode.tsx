@@ -3,14 +3,26 @@
 import { useRef } from 'react';
 import gsap from 'gsap';
 import { useGSAP } from '@gsap/react';
-import { ArrowLeft, CheckCircle2, AlertTriangle, ArrowRight } from 'lucide-react';
-import type { DesignState, DesignSummary, PreflightResult } from '@/lib/product-state';
+import {
+  AlertTriangle,
+  ArrowLeft,
+  ArrowRight,
+  CheckCircle2,
+  Pencil,
+} from 'lucide-react';
+import type {
+  DesignState,
+  DesignSummary,
+  PreflightCheck,
+  PreflightResult,
+} from '@/lib/product-state';
 
-interface EditorPreflightModeProps {
+export interface EditorPreflightModeProps {
   state: DesignState;
   summary: DesignSummary;
   preflight: PreflightResult;
   onBackToEdit: (focusTarget?: 'image' | 'text') => void;
+  onFix?: (check: PreflightCheck) => void;
   onContinueToCheckout: () => void;
 }
 
@@ -19,6 +31,7 @@ export function EditorPreflightMode({
   summary,
   preflight,
   onBackToEdit,
+  onFix,
   onContinueToCheckout,
 }: EditorPreflightModeProps) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -47,21 +60,46 @@ export function EditorPreflightMode({
               stagger: 0.06,
               ease: 'power2.out',
               clearProps: 'transform',
-            }
+            },
           );
-        }
+        },
       );
       return () => mm.revert();
     },
-    { scope: containerRef }
+    { scope: containerRef },
   );
+
+  const issues = preflight.checks
+    .filter((check) => check.level === 'warning' || check.level === 'error')
+    .sort((a, b) => (a.level === 'error' && b.level !== 'error' ? -1 : a.level !== 'error' && b.level === 'error' ? 1 : 0));
+  const hasErrors = preflight.level === 'error' || preflight.hasErrors;
+  const hasWarnings = !hasErrors && (preflight.level === 'warning' || preflight.hasWarnings);
+
+  const status = hasErrors
+    ? {
+      title: 'Cần sửa trước khi tiếp tục',
+      description: 'Vui lòng sửa các điểm dưới đây để đảm bảo chất lượng thành phẩm.',
+      className: 'border-red-200 bg-red-50 text-red-700',
+    }
+    : hasWarnings
+      ? {
+        title: 'Có một vài chỗ cần kiểm tra',
+        description: 'Bạn có thể sửa các chi tiết dưới đây hoặc vẫn tiếp tục nếu thấy ổn.',
+        className: 'border-amber-200 bg-amber-50 text-amber-700',
+      }
+      : {
+        title: 'Thiết kế đã sẵn sàng',
+        description: 'Mọi thứ trông ổn để tiếp tục đặt hàng.',
+        className: 'border-[#C8DCCB] bg-[#EEF6EF] text-[#5F7E67]',
+      };
+
+  void state;
 
   return (
     <div
       ref={containerRef}
       className="fixed inset-0 z-50 flex flex-col bg-[#FFFDF8] text-[#2E3338]"
     >
-      {/* Top Header */}
       <header className="h-[52px] border-b border-[#DDD6CC] bg-[#FFFDF8] px-4 flex items-center justify-between">
         <button
           type="button"
@@ -74,7 +112,7 @@ export function EditorPreflightMode({
 
         <div className="text-center">
           <h1 className="font-serif text-sm sm:text-base font-bold text-[#2E3338]">
-            Kiểm tra in ấn
+            Kiểm tra thiết kế
           </h1>
           <p className="text-[11px] text-[#666A6D]">
             {summary.product} · {summary.variant}
@@ -84,81 +122,64 @@ export function EditorPreflightMode({
         <div className="w-16" aria-hidden="true" />
       </header>
 
-      {/* Main Checklist */}
       <main className="flex-1 max-w-lg mx-auto w-full p-4 sm:p-6 overflow-y-auto">
-        <div className="text-center mb-6">
-          <h2 className="font-serif text-xl font-bold text-[#2E3338]">
-            Thiết kế gần xong rồi!
-          </h2>
-          <p className="mt-1 text-xs text-[#666A6D]">
-            Hệ thống đã tự động rà soát các yếu tố kỹ thuật trước khi chuyển sang đặt in.
-          </p>
-        </div>
+        <section className={`preflight-card rounded-2xl border p-4 ${status.className}`}>
+          <div className="flex items-start gap-3">
+            {hasErrors || hasWarnings ? (
+              <AlertTriangle className="w-5 h-5 shrink-0 mt-0.5" aria-hidden="true" />
+            ) : (
+              <CheckCircle2 className="w-5 h-5 shrink-0 mt-0.5" aria-hidden="true" />
+            )}
+            <div>
+              <h2 className="text-sm font-bold">{status.title}</h2>
+              <p className="mt-1 text-xs">{status.description}</p>
+            </div>
+          </div>
+        </section>
 
-        <div className="space-y-3">
-          {/* Check items */}
-          {preflight.checks.map((check) => {
-            const isWarning = check.level === 'warning';
-            const isError = check.level === 'error';
-
-            return (
-              <div
-                key={check.id}
-                className={`preflight-card rounded-2xl border p-4 transition-all ${isWarning || isError
-                    ? 'border-[#F2DFA0] bg-[#FFFDF8] shadow-xs'
-                    : 'border-[#DDD6CC] bg-[#F8F3E8]/50'
-                  }`}
-              >
-                <div className="flex items-start gap-3">
-                  {isWarning || isError ? (
-                    <AlertTriangle className="w-5 h-5 text-[#A86E22] shrink-0 mt-0.5" />
-                  ) : (
-                    <CheckCircle2 className="w-5 h-5 text-[#5F7E67] shrink-0 mt-0.5" />
-                  )}
-
-                  <div className="flex-1 min-w-0">
-                    <p className="text-xs sm:text-sm font-semibold text-[#2E3338]">
-                      {check.label}
-                    </p>
-                    {isWarning && (
-                      <p className="mt-1 text-[11px] text-[#A86E22]">
-                        Ảnh độ phân giải nhỏ hơn tiêu chuẩn có thể hiển thị hạt mờ nhẹ trên thành phẩm in.
-                      </p>
-                    )}
-                  </div>
-
-                  {isWarning && state.image && (
-                    <button
-                      type="button"
-                      onClick={() => onBackToEdit('image')}
-                      className="shrink-0 text-xs font-semibold text-[#315F86] hover:underline px-2 py-1 rounded bg-[#DCEBF4]/60"
-                    >
-                      Sửa ảnh
-                    </button>
+        <div className="mt-4 space-y-3">
+          {issues.map((check) => (
+            <article
+              key={check.id}
+              className="preflight-card rounded-2xl border border-[#F2DFA0] bg-[#FFFDF8] p-4 shadow-xs"
+            >
+              <div className="flex items-start gap-3">
+                <AlertTriangle className="w-5 h-5 shrink-0 mt-0.5 text-[#A86E22]" aria-hidden="true" />
+                <div className="min-w-0 flex-1">
+                  <h3 className="text-xs sm:text-sm font-semibold text-[#2E3338]">{check.label}</h3>
+                  {check.description && (
+                    <p className="mt-1 text-[11px] text-[#666A6D]">{check.description}</p>
                   )}
                 </div>
+                <button
+                  type="button"
+                  onClick={() =>
+                    onFix
+                      ? onFix(check)
+                      : onBackToEdit(check.category === 'image' ? 'image' : undefined)
+                  }
+                  className="shrink-0 inline-flex items-center gap-1 rounded-lg bg-[#DCEBF4]/60 px-2 py-1 text-xs font-semibold text-[#315F86] hover:bg-[#DCEBF4]"
+                >
+                  <Pencil className="h-3.5 w-3.5" aria-hidden="true" />
+                  <span>Sửa</span>
+                </button>
               </div>
-            );
-          })}
+            </article>
+          ))}
 
-          {/* Standard Safe Area Check */}
-          <div className="preflight-card rounded-2xl border border-[#DDD6CC] bg-[#F8F3E8]/50 p-4">
-            <div className="flex items-start gap-3">
-              <CheckCircle2 className="w-5 h-5 text-[#5F7E67] shrink-0 mt-0.5" />
-              <div className="flex-1 min-w-0">
-                <p className="text-xs sm:text-sm font-semibold text-[#2E3338]">
-                  Nội dung nằm trong vùng an toàn
-                </p>
-                <p className="mt-1 text-[11px] text-[#666A6D]">
-                  Chữ và các chi tiết quan trọng không bị cắt xén sát mép giấy.
-                </p>
-              </div>
+          {preflight.passCount > 0 && (
+            <div className="rounded-xl border border-[#DDD6CC] bg-[#F8F3E8]/40 p-3 flex items-center gap-2.5 text-xs text-[#5F7E67] font-medium">
+              <CheckCircle2 className="w-4 h-4 shrink-0" />
+              <span>{preflight.passCount} kiểm tra đã đạt tiêu chuẩn</span>
             </div>
+          )}
+
+          <div className="text-[11px] text-[#666A6D] text-center p-2 rounded-lg bg-[#F8F3E8]/30 border border-dashed border-[#DDD6CC]">
+            Kiểm tra lại chữ, tên, ngày tháng và thông tin quan trọng trước khi đặt in.
           </div>
         </div>
       </main>
 
-      {/* Bottom Sticky CTA */}
       <footer className="p-4 border-t border-[#DDD6CC] bg-[#FFFDF8] max-w-lg mx-auto w-full flex items-center gap-3">
         <button
           type="button"
@@ -170,10 +191,11 @@ export function EditorPreflightMode({
         <button
           type="button"
           onClick={onContinueToCheckout}
-          className="flex-1 h-11 inline-flex items-center justify-center gap-2 rounded-xl bg-[#315F86] text-xs sm:text-sm font-semibold text-white shadow-xs hover:bg-[#244A69] transition-all active:scale-[0.98]"
+          disabled={hasErrors}
+          className="flex-1 h-11 inline-flex items-center justify-center gap-2 rounded-xl bg-[#315F86] text-xs sm:text-sm font-semibold text-white shadow-xs hover:bg-[#244A69] transition-all active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50"
         >
           <span>Tiếp tục đặt in</span>
-          <ArrowRight size={16} />
+          <ArrowRight size={16} aria-hidden="true" />
         </button>
       </footer>
     </div>
