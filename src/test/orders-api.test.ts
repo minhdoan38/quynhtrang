@@ -169,3 +169,106 @@ test('GET returns the stored order with normalized customer and sanitized snapsh
   assert.match(body.order.snapshot.design.image?.src ?? '', /^\/api\/assets\/asset-/);
   assert.doesNotMatch(JSON.stringify(body.order.snapshot), /blob:/);
 });
+
+test('POST rejects submission when preflight is unacknowledged (preflightAcknowledged === false)', async () => {
+  const design = createInitialState('card');
+  const response = await postOrder({
+    idempotencyKey: 'orders-api-preflight-false',
+    design,
+    customer: validCustomer,
+    preflightRevision: 'rev-unacked',
+    preflightAcknowledged: false,
+  });
+
+  assert.equal(response.status, 400);
+  assert.deepEqual(await response.json(), {
+    error: 'Thiết kế chưa được xác nhận kiểm tra in.',
+  });
+  assert.equal(serverOrderStore.getAllOrders().length, 0);
+});
+
+test('POST creates order successfully when preflight is acknowledged', async () => {
+  const design = createInitialState('card');
+  const response = await postOrder({
+    idempotencyKey: 'orders-api-preflight-ack',
+    design,
+    customer: validCustomer,
+    preflightRevision: 'rev-acked',
+    preflightAcknowledged: true,
+  });
+
+  assert.equal(response.status, 201);
+  const body = (await response.json()) as OrderResponse;
+  assert.equal(body.order.preflightRevision, 'rev-acked');
+  const version = serverOrderStore.getApprovedDesignVersion(body.order.approvedDesignVersionId);
+  assert.ok(version);
+  assert.equal(version.preflightAcknowledged, true);
+  assert.equal(version.preflightRevision, 'rev-acked');
+});
+
+test('POST generates collision-free UUID idempotency keys when idempotencyKey is omitted', async () => {
+  const design = createInitialState('notebook');
+
+  const res1 = await postOrder({ design, customer: validCustomer });
+  const res2 = await postOrder({ design, customer: validCustomer });
+
+  assert.equal(res1.status, 201);
+  assert.equal(res2.status, 201);
+
+  const body1 = (await res1.json()) as OrderResponse;
+  const body2 = (await res2.json()) as OrderResponse;
+
+  assert.notEqual(body1.order.id, body2.order.id);
+  assert.notEqual(body1.order.idempotencyKey, body2.order.idempotencyKey);
+  assert.match(body1.order.idempotencyKey, /^order-key-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i);
+  assert.match(body2.order.idempotencyKey, /^order-key-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i);
+  assert.equal(serverOrderStore.getAllOrders().length, 2);
+});
+
+test('POST rejects incomplete asset promotion or unresolved blob without server backing with 400', async () => {
+  const unresolvedDesign = {
+    ...createInitialState('card'),
+    image: {
+      src: 'blob:unresolved-client-image',
+      name: 'unresolved.png',
+    },
+  };
+
+  const response = await postOrder({
+    idempotencyKey: 'orders-api-unresolved-blob',
+    design: unresolvedDesign,
+    customer: validCustomer,
+  });
+
+  assert.equal(response.status, 400);
+  assert.deepEqual(await response.json(), {
+    error: 'Chưa thể chuẩn bị tệp in từ thiết kế. Vui lòng tải lại ảnh và thử lại.',
+  });
+  assert.equal(serverOrderStore.getAllOrders().length, 0);
+});
+
+test('POST rejects blob image with invalid or unsupported metadata with 400', async () => {
+  const invalidMetaDesign = {
+    ...createInitialState('card'),
+    image: {
+      src: 'blob:invalid-exe-file',
+      name: 'malicious.exe',
+      type: 'application/x-msdownload',
+      size: 1024,
+      width: 100,
+      height: 100,
+    },
+  };
+
+  const response = await postOrder({
+    idempotencyKey: 'orders-api-invalid-meta',
+    design: invalidMetaDesign,
+    customer: validCustomer,
+  });
+
+  assert.equal(response.status, 400);
+  assert.deepEqual(await response.json(), {
+    error: 'Chưa thể chuẩn bị tệp in từ thiết kế. Vui lòng tải lại ảnh và thử lại.',
+  });
+  assert.equal(serverOrderStore.getAllOrders().length, 0);
+});
