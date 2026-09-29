@@ -24,11 +24,13 @@ import {
   type DesignState,
   type DesignAction,
   type ProductId,
+  type CardSurface,
   type CanvasElement,
   type TextPreset,
   type PatternWorkspaceView,
   type PatternConfig,
 } from '@/lib/product-state';
+import { CardSurfaceSwitcher } from './card-surface-switcher';
 import { PatternWorkspaceToggle } from './pattern-workspace-toggle';
 import { getBackgroundRemovalProvider } from '@/lib/background-removal/provider';
 import { BackgroundRefineOverlay } from './background-refine-overlay';
@@ -107,7 +109,7 @@ export function CustomizerShell() {
   const [templateReturnView, setTemplateReturnView] = useState<'setup' | 'editor'>('setup');
   const [recentProjects, setRecentProjects] = useState<RecentProject[]>([]);
   const [patternWorkspaceView, setPatternWorkspaceView] = useState<PatternWorkspaceView>('edit-pattern');
-
+  const [activeCardSurface, setActiveCardSurface] = useState<CardSurface>('front');
   // Redesigned Shell State Model
   const [selectedTarget, setSelectedTarget] = useState<SelectedTarget>(null);
   const [selectedElementId, setSelectedElementId] = useState<string | null>(null);
@@ -1668,6 +1670,21 @@ export function CustomizerShell() {
         </div>
       )}
 
+      {/* Surface switcher for Greeting Card */}
+      {state.productId === 'card' && (
+        <div className="w-full flex justify-center pt-2 pb-1 z-20 shrink-0">
+          <CardSurfaceSwitcher
+            value={activeCardSurface}
+            onChange={(newSurface) => {
+              setActiveCardSurface(newSurface);
+              setSelectedTarget(null);
+              setSelectedElementId(null);
+              setSelectedTextId(null);
+              setSelectedElementIds([]);
+            }}
+          />
+        </div>
+      )}
       {/* ZONE 2: Large Canvas Workspace (~80% height, visually dominant) */}
       <main
         ref={workspaceRef}
@@ -1699,12 +1716,12 @@ export function CustomizerShell() {
         >
           <DesignCanvas
             productId={state.productId}
+            cardSurface={activeCardSurface}
             text={state.text}
             color={state.color}
             backgroundColor={state.backgroundColor}
             image={state.image}
             productOptions={state.productOptions}
-            patternWorkspaceView={patternWorkspaceView}
             patternConfig={state.productOptions.patternConfig as PatternConfig | undefined}
             onSwitchPatternView={(newView) => {
               setPatternWorkspaceView(newView);

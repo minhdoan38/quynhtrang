@@ -3,6 +3,8 @@
 import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import {
   type ProductId,
+  type CardSurface,
+  getCardSpreadDimensions,
   type ImageState,
   type CanvasElement,
   type TextElementData,
@@ -41,6 +43,7 @@ const DEFAULT_TEXT_TRANSFORMS: Record<string, TransformState> = Object.freeze({}
 
 export interface DesignCanvasProps {
   productId: ProductId;
+  cardSurface?: CardSurface;
   text?: string;
   color?: string;
   backgroundColor: string;
@@ -88,6 +91,7 @@ export interface DesignCanvasProps {
 
 export function DesignCanvas({
   productId,
+  cardSurface,
   text = '',
   color = '#111827',
   backgroundColor,
@@ -147,8 +151,26 @@ export function DesignCanvas({
         ? colorValueToCss(productOptions.backgroundColorValue as ColorValue)
         : backgroundColor;
 
+  const currentSurface: CardSurface =
+    productId === 'card'
+      ? (cardSurface ?? (productOptions.surface as CardSurface) ?? 'front')
+      : 'front';
+
+  const cardOrientation =
+    String(productOptions.variant || 'horizontal') === 'vertical' ? 'vertical' : 'horizontal';
+  const cardSpreadDims =
+    productId === 'card' && currentSurface === 'inside'
+      ? getCardSpreadDimensions(cardOrientation, 'inside')
+      : null;
+
   const styles: React.CSSProperties & Record<string, string | number | undefined> = {
     background: backgroundCss,
+    ...(cardSpreadDims
+      ? {
+        width: 'min(92vw, 560px)',
+        aspectRatio: `${cardSpreadDims.width} / ${cardSpreadDims.height}`,
+      }
+      : {}),
   };
 
   const classes: string[] = [
@@ -164,7 +186,7 @@ export function DesignCanvas({
     (styles as Record<string, string | number>)['--pattern-size'] = `${size}px`;
     if (productOptions.mode === 'repeat') classes.push('is-mode-repeat');
   } else if (productId === 'card') {
-    if (productOptions.surface === 'inside') classes.push('is-surface-inside');
+    if (currentSurface === 'inside') classes.push('is-surface-inside');
     if (productOptions.fold === 'flat') classes.push('is-fold-flat');
   } else if (productId === 'sticker') {
     const border = productOptions.hasWhiteBorder
@@ -358,9 +380,13 @@ export function DesignCanvas({
   };
   const selectedElements = useMemo(() => {
     if (selectionMode !== 'multi-select' || selectedElementIds.length === 0) return [];
-    const list = elements && elements.length > 0 ? elements : (textElements ?? []);
+    const rawList = elements && elements.length > 0 ? elements : (textElements ?? []);
+    const list =
+      productId === 'card'
+        ? rawList.filter((el) => (el.surface ?? 'front') === currentSurface)
+        : rawList;
     return list.filter((el) => selectedElementIds.includes(el.id));
-  }, [selectionMode, selectedElementIds, elements, textElements]);
+  }, [selectionMode, selectedElementIds, elements, textElements, productId, currentSurface]);
 
   const combinedBounds = useMemo(() => {
     return computeCombinedBounds(selectedElements);
@@ -481,8 +507,14 @@ export function DesignCanvas({
 
   const imgElement = useMemo(() => {
     const list = elements && elements.length > 0 ? elements : (textElements ?? []);
-    return list.find((e) => e.type === 'image');
-  }, [elements, textElements]);
+    return list.find((e) => {
+      if (e.type !== 'image') return false;
+      if (productId === 'card') {
+        return (e.surface ?? 'front') === currentSurface;
+      }
+      return true;
+    });
+  }, [elements, textElements, productId, currentSurface]);
 
   const imgData = useMemo(() => {
     return imgElement ? getImageData(imgElement) : null;
@@ -529,11 +561,15 @@ export function DesignCanvas({
     if (textElements && textElements.length > 0) {
       return textElements.filter((el) => {
         if (el.type !== 'text') return false;
+        if (productId === 'card' && (el.surface ?? 'front') !== currentSurface) return false;
         const data = getTextData(el);
         return Boolean(data?.text && data.text.trim().length > 0);
       });
     }
     if (text && text.trim().length > 0) {
+      if (productId === 'card' && currentSurface !== 'front') {
+        return [];
+      }
       const previewEl = createTextElement({
         id: 'text-1',
         preset: 'body',
@@ -544,7 +580,7 @@ export function DesignCanvas({
       return [previewEl];
     }
     return [];
-  }, [textElements, text, color, productOptions.fontFamily]);
+  }, [textElements, text, color, productOptions.fontFamily, productId, currentSurface]);
   if (isFullSheetPreview) {
     const variantKey = String(productOptions.variant || 'a1');
     const dims = getWrappingPaperDimensions(variantKey);
@@ -649,6 +685,20 @@ export function DesignCanvas({
         </defs>
       </svg>
 
+      {productId === 'card' && currentSurface === 'inside' && (
+        <div
+          data-ui-guide="card-fold"
+          className="absolute inset-y-0 left-1/2 -translate-x-1/2 pointer-events-none z-10 flex flex-col items-center justify-between border-l border-dashed border-muted-foreground/35 select-none"
+          aria-hidden="true"
+        >
+          <span className="text-[10px] text-muted-foreground/60 px-1 py-0.5 bg-background/80 rounded mt-1">
+            Nếp gấp
+          </span>
+          <span className="text-[10px] text-muted-foreground/60 px-1 py-0.5 bg-background/80 rounded mb-1">
+            Nếp gấp
+          </span>
+        </div>
+      )}
       {/* Uploaded Image element */}
       {image?.src && (
         <div
@@ -781,7 +831,13 @@ export function DesignCanvas({
         );
       })}
       {/* Group Elements */}
-      {elements?.filter((el) => el.type === 'group').map((grp) => {
+      {elements?.filter((el) => {
+        if (el.type !== 'group') return false;
+        if (productId === 'card') {
+          return (el.surface ?? 'front') === currentSurface;
+        }
+        return true;
+      }).map((grp) => {
         const isSelected = !isMockup && selectedElementId === grp.id;
         const isMultiSelected = selectionMode === 'multi-select' && selectedElementIds.includes(grp.id);
         return (
