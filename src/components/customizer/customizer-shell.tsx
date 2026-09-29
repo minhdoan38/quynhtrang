@@ -31,9 +31,11 @@ import {
   type PatternWorkspaceView,
   type PatternConfig,
   type StickerOptions,
+  type CardOptions,
 } from '@/lib/product-state';
 import type { ImageQualityReport } from '@/lib/image-quality';
 import { computeStickerContour } from '@/lib/sticker-contour';
+import { evaluateElementSafety, type SafetyReport } from '@/lib/safe-area';
 import { CardSurfaceSwitcher } from './card-surface-switcher';
 import { PatternWorkspaceToggle } from './pattern-workspace-toggle';
 import { getBackgroundRemovalProvider } from '@/lib/background-removal/provider';
@@ -120,6 +122,7 @@ export function CustomizerShell() {
   const [selectionMode, setSelectionMode] = useState<SelectionMode>('default');
   const [selectedElementIds, setSelectedElementIds] = useState<string[]>([]);
   const [activeGroupId, setActiveGroupId] = useState<string | null>(null);
+  const [showSafeAreaGuide, setShowSafeAreaGuide] = useState(false);
 
   const getSelectionSnapshot = useCallback((): SelectionSnapshot => ({
     selectedTarget,
@@ -1493,6 +1496,33 @@ export function CustomizerShell() {
   const selectedElement = (state.elements ?? getDefaultElements(state)).find(
     (el) => el.id === (selectedTextId || selectedElementId)
   );
+  const activeElement = selectedElement ?? (
+    selectedTarget === 'image'
+      ? (state.elements ?? getDefaultElements(state)).find((el) => el.type === 'image')
+      : selectedTarget === 'text'
+        ? (state.elements ?? getDefaultElements(state)).find((el) => el.type === 'text')
+        : undefined
+  );
+  const activeSafetyReport = React.useMemo<SafetyReport | null>(() => {
+    if (!activeElement) return null;
+    const effectiveTransform = activeElement.type === 'image' ? imageTransform : textTransform;
+    return evaluateElementSafety({
+      element: {
+        id: activeElement.id,
+        type: activeElement.type,
+        x: effectiveTransform.x ?? activeElement.x,
+        y: effectiveTransform.y ?? activeElement.y,
+        width: activeElement.width,
+        height: activeElement.height,
+        surface: activeElement.surface ?? activeCardSurface,
+        rotation: effectiveTransform.rotation,
+      },
+      productId: state.productId,
+      variantId: state.variantId,
+      surface: activeCardSurface,
+      cardOrientation: (state.productOptions as CardOptions)?.orientation,
+    });
+  }, [activeElement, imageTransform, textTransform, state.productId, state.variantId, activeCardSurface, state.productOptions]);
   const selectedTextData =
     selectedElement && selectedElement.type === 'text' ? getTextData(selectedElement) : null;
   const isCurrentTargetLocked = Boolean(selectedElement?.locked ?? state.productOptions.isLocked);
@@ -1802,6 +1832,8 @@ export function CustomizerShell() {
           }}
         >
           <DesignCanvas
+            showSafeAreaGuide={showSafeAreaGuide}
+            activeSafetyReport={activeSafetyReport}
             productId={state.productId}
             variantId={state.variantId}
             cardSurface={activeCardSurface}
@@ -2050,6 +2082,8 @@ export function CustomizerShell() {
       {/* Unified Bottom Sheet system */}
       <EditorSheets
         activeSheet={activeSheet}
+        showSafeAreaGuide={showSafeAreaGuide}
+        onToggleSafeAreaGuide={() => setShowSafeAreaGuide((prev) => !prev)}
         onClose={handleCloseSheet}
         selectedTarget={selectedTarget}
         selectedElementId={selectedElementId}

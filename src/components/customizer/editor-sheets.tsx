@@ -23,6 +23,7 @@ import {
   AlignRight,
   FolderMinus,
   CheckSquare,
+  Shield,
 } from 'lucide-react';
 import { TEMPLATES, type ProductId, type CanvasElement, type CardSurface } from '@/lib/product-state';
 import { AddContentSheet } from './add-content-sheet';
@@ -134,6 +135,8 @@ interface EditorSheetsProps {
   imageQualityReport?: ImageQualityReport | null;
   onQualityScaleDown?: (recommendedScale: number) => void;
   onQualityReplaceImage?: () => void;
+  showSafeAreaGuide?: boolean;
+  onToggleSafeAreaGuide?: () => void;
 }
 
 const PALETTE = [
@@ -216,6 +219,8 @@ export function EditorSheets({
   imageQualityReport = null,
   onQualityScaleDown,
   onQualityReplaceImage,
+  showSafeAreaGuide = false,
+  onToggleSafeAreaGuide,
 }: EditorSheetsProps) {
   const isOpen = activeSheet !== null;
 
@@ -636,6 +641,19 @@ export function EditorSheets({
                 <Copy className="w-4 h-4 text-[#315F86]" />
                 <span>Nhân bản</span>
               </button>
+              {onToggleSafeAreaGuide && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    onToggleSafeAreaGuide();
+                    onClose();
+                  }}
+                  className="w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-left hover:bg-[#F8F3E8] active:scale-98 transition-all text-xs font-medium"
+                >
+                  <Shield className="w-4 h-4 text-[#315F86]" />
+                  <span>{showSafeAreaGuide ? 'Ẩn vùng an toàn' : 'Hiện vùng an toàn'}</span>
+                </button>
+              )}
 
               <button
                 type="button"
