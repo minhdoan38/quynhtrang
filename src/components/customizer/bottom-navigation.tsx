@@ -423,6 +423,17 @@ export function BottomNavigation({
           )
         )}
 
+        {productId === 'notebook' && !selectedId && (
+          <button
+            type="button"
+            onClick={() => onAction('background-color')}
+            className="flex-1 flex flex-col items-center justify-center min-w-[44px] h-[48px] rounded-lg text-[#2E3338] hover:bg-[#F8F3E8] active:scale-95 transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#315F86]"
+          >
+            <Palette className="w-4 h-4 text-[#315F86]" />
+            <span className="text-[11px] font-medium mt-0.5">Màu nền</span>
+          </button>
+        )}
+
         <button
           type="button"
           onClick={() => onAction('preview')}
