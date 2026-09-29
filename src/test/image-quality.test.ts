@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { evaluateImageQuality } from '../lib/image-quality.ts';
 
-test('evaluateImageQuality returns "Ảnh đẹp" for high-resolution images', () => {
+test('evaluateImageQuality returns "Tốt" for high-resolution images', () => {
   const report = evaluateImageQuality({
     sourceWidth: 2000,
     sourceHeight: 1500,
@@ -10,7 +10,7 @@ test('evaluateImageQuality returns "Ảnh đẹp" for high-resolution images', (
     cropFraction: 1,
   });
   assert.equal(report.level, 'good');
-  assert.equal(report.badgeLabel, 'Ảnh đẹp');
+  assert.equal(report.badgeLabel, 'Tốt');
   assert.equal(report.effectivePixels, 1500);
 });
 

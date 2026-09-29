@@ -74,7 +74,7 @@ test('image quality degrades appropriately when pattern scale increases', () => 
 
   const normalReport = evaluateImageQuality(baseParams);
   assert.equal(normalReport.level, 'good');
-  assert.equal(normalReport.badgeLabel, 'Ảnh đẹp');
+  assert.equal(normalReport.badgeLabel, 'Tốt');
   assert.equal(normalReport.effectivePixels, 1000);
 
   // Scaled up pattern motif to 250%
