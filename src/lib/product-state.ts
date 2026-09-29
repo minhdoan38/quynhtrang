@@ -730,7 +730,7 @@ export const TEMPLATES: Readonly<Record<string, TemplateConfig>> = Object.freeze
     backgroundColor: '#FFFFFF',
     previewHint: 'Họa tiết nhí nhảnh dán điện thoại & vở',
     productOptions: Object.freeze({
-      sticker: Object.freeze({ hasWhiteBorder: true, borderWidth: 6 }),
+      sticker: Object.freeze({ shape: 'circle' as FixedStickerShape, hasWhiteBorder: true, borderWidth: 6 }),
     }),
   }),
   'notebook-floral': Object.freeze({
@@ -792,7 +792,20 @@ export const TEMPLATES: Readonly<Record<string, TemplateConfig>> = Object.freeze
     backgroundColor: '#FDF7EE',
     previewHint: 'Sticker góc chill cà phê cho sổ và laptop',
     productOptions: Object.freeze({
-      sticker: Object.freeze({ hasWhiteBorder: true, borderWidth: 5 }),
+      sticker: Object.freeze({ shape: 'rounded-rectangle' as FixedStickerShape, hasWhiteBorder: true, borderWidth: 5 }),
+    }),
+  }),
+  'sticker-cozy-coffee': Object.freeze({
+    name: 'Tách cà phê Ấm',
+    category: 'minimal',
+    productIds: ['sticker'] as const,
+    variantIds: ['fixed-shape', 'die-cut'] as const,
+    text: 'Warm Coffee & Book',
+    color: '#5C381E',
+    backgroundColor: '#FDF7EE',
+    previewHint: 'Sticker góc chill cà phê cho sổ và laptop',
+    productOptions: Object.freeze({
+      sticker: Object.freeze({ shape: 'rounded-rectangle' as FixedStickerShape, hasWhiteBorder: true, borderWidth: 5 }),
     }),
   }),
 });

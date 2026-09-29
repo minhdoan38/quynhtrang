@@ -4,14 +4,14 @@ import { useRef, useState } from 'react';
 import gsap from 'gsap';
 import { useGSAP } from '@gsap/react';
 import { ArrowLeft, Check, Sparkles, PenTool, Layout, FileText, Smartphone, Scissors } from 'lucide-react';
-import { PRODUCTS, type ProductId, type WrappingPaperMode } from '@/lib/product-state';
+import { PRODUCTS, type ProductId, type WrappingPaperMode, type FixedStickerShape } from '@/lib/product-state';
 
 interface ProductSetupProps {
  productId: ProductId;
  variantId: string;
  onSelectVariant: (variantId: string) => void;
  onStartWithTemplate: () => void;
- onStartBlank: (mode?: WrappingPaperMode) => void;
+ onStartBlank: (modeOrShape?: WrappingPaperMode | FixedStickerShape) => void;
  onBack: () => void;
 }
 
@@ -59,6 +59,7 @@ export function ProductSetup({
 }: ProductSetupProps) {
  const containerRef = useRef<HTMLDivElement>(null);
  const [showModePicker, setShowModePicker] = useState(false);
+ const [showStickerShapePicker, setShowStickerShapePicker] = useState(false);
  const product = PRODUCTS[productId] ?? PRODUCTS.wrapping;
  const hasMultipleVariants = product.variants.length > 1;
 
@@ -221,6 +222,10 @@ export function ProductSetup({
          setShowModePicker(true);
          return;
         }
+        if (productId === 'sticker' && variantId === 'fixed-shape') {
+         setShowStickerShapePicker(true);
+         return;
+        }
         onStartBlank();
        }}
        role="button"
@@ -230,6 +235,10 @@ export function ProductSetup({
          e.preventDefault();
          if (productId === 'wrapping') {
           setShowModePicker(true);
+          return;
+         }
+         if (productId === 'sticker' && variantId === 'fixed-shape') {
+          setShowStickerShapePicker(true);
           return;
          }
          onStartBlank();
@@ -314,6 +323,79 @@ export function ProductSetup({
         >
          <span className="block text-sm font-bold text-[#2E3338]">{choice.title}</span>
          <span className="mt-1 block text-xs leading-5 text-[#666A6D]">{choice.description}</span>
+        </button>
+       ))}
+      </div>
+     </div>
+    </div>
+   )}
+
+   {showStickerShapePicker && productId === 'sticker' && (
+    <div
+     className="fixed inset-0 z-40 flex items-end justify-center bg-[#2E3338]/35 p-4 sm:items-center"
+     role="dialog"
+     aria-modal="true"
+     aria-labelledby="sticker-shape-picker-title"
+    >
+     <div className="w-full max-w-xl rounded-2xl border border-[#DDD6CC] bg-[#FFFDF8] p-5 shadow-xl">
+      <div className="mb-4 flex items-start justify-between gap-4">
+       <div>
+        <h2 id="sticker-shape-picker-title" className="text-lg font-bold text-[#2E3338]">
+         Bạn muốn sticker hình gì?
+        </h2>
+        <p className="mt-1 text-xs text-[#666A6D]">Chọn hình dạng phù hợp cho nhãn dán của bạn.</p>
+       </div>
+       <button
+        type="button"
+        onClick={() => setShowStickerShapePicker(false)}
+        className="rounded-lg px-2 py-1 text-sm font-semibold text-[#666A6D] hover:bg-[#F8F3E8]"
+        aria-label="Đóng"
+       >
+        ×
+       </button>
+      </div>
+      <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+       {([
+        {
+         shape: 'circle' as const,
+         label: 'Tròn',
+         previewClass: 'w-8 h-8 border-2 border-current rounded-full',
+        },
+        {
+         shape: 'square' as const,
+         label: 'Vuông',
+         previewClass: 'w-8 h-8 border-2 border-current rounded-none',
+        },
+        {
+         shape: 'rectangle' as const,
+         label: 'Chữ nhật',
+         previewClass: 'w-10 h-7 border-2 border-current rounded-none',
+        },
+        {
+         shape: 'oval' as const,
+         label: 'Oval',
+         previewClass: 'w-10 h-7 border-2 border-current rounded-[50%]',
+        },
+        {
+         shape: 'rounded-rectangle' as const,
+         label: 'Bo góc',
+         previewClass: 'w-10 h-7 border-2 border-current rounded-lg',
+        },
+       ]).map((choice) => (
+        <button
+         key={choice.shape}
+         type="button"
+         data-shape={choice.shape}
+         onClick={() => {
+          setShowStickerShapePicker(false);
+          onStartBlank(choice.shape);
+         }}
+         className="rounded-xl border-2 border-[#DDD6CC] bg-white p-3.5 text-center transition-colors hover:border-[#315F86] hover:bg-[#DCEBF4]/20 flex flex-col items-center justify-center gap-2 text-[#315F86] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#315F86]"
+        >
+         <div className="flex h-10 items-center justify-center text-[#315F86]">
+          <span className={choice.previewClass} />
+         </div>
+         <span className="text-sm font-bold text-[#2E3338]">{choice.label}</span>
         </button>
        ))}
       </div>

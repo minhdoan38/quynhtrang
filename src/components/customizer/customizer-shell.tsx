@@ -1478,10 +1478,13 @@ export function CustomizerShell() {
           setTemplateReturnView('setup');
           setView('template-browser');
         }}
-        onStartBlank={(mode) => {
+        onStartBlank={(modeOrShape) => {
           dispatch({ type: 'SET_TEMPLATE', value: 'blank' });
-          if (state.productId === 'wrapping' && mode) {
-            dispatch({ type: 'SET_PRODUCT_OPTION', key: 'mode', value: mode });
+          if (state.productId === 'wrapping' && modeOrShape) {
+            dispatch({ type: 'SET_PRODUCT_OPTION', key: 'mode', value: modeOrShape });
+          }
+          if (state.productId === 'sticker' && modeOrShape) {
+            dispatch({ type: 'SET_PRODUCT_OPTION', key: 'shape', value: modeOrShape });
           }
           setView('editor');
           showToast('Bắt đầu thiết kế với trang trắng.');
