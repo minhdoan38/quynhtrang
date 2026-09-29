@@ -129,7 +129,7 @@ export async function POST(request: Request) {
       }
 
       const hasMissingPayload = promotedAssets.some(
-        (asset) => !(asset.payload || getAsset(asset.id)?.payload)
+        (asset) => !(asset.payload || asset.data || getAsset(asset.id)?.payload || getAsset(asset.id)?.data)
       );
       if (hasMissingPayload) {
         return Response.json(

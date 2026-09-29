@@ -5,6 +5,7 @@ import { POST } from '../app/api/orders/route.ts';
 import { GET } from '../app/api/orders/[id]/route.ts';
 import { createInitialState } from '../lib/product-state.ts';
 import { serverOrderStore } from '../lib/server-order-store.ts';
+import { storeAsset } from '../lib/asset-store.ts';
 import type { PendingOrder } from '../lib/order-types.ts';
 
 interface OrderResponse {
@@ -347,4 +348,34 @@ test('POST rejects unresolved blob references in element asset URL fields', asyn
     error: 'Chưa thể chuẩn bị tệp in từ thiết kế. Vui lòng tải lại ảnh và thử lại.',
   });
   assert.equal(serverOrderStore.getAllOrders().length, 0);
+});
+
+test('POST accepts valid stored data-only assets with content in data field', async () => {
+  storeAsset({
+    id: '/api/assets/asset-data-only',
+    sourceKey: 'blob:data-only-source',
+    originalUrl: '/api/assets/asset-data-only',
+    mimeType: 'image/png',
+    byteSize: 4,
+    data: 'dGVzdA==',
+  });
+
+  const response = await postOrder({
+    idempotencyKey: 'orders-api-data-only-asset',
+    design: {
+      ...createInitialState('card'),
+      image: {
+        src: '/api/assets/asset-data-only',
+        name: 'photo.png',
+        type: 'image/png',
+        size: 4,
+      },
+    },
+    customer: validCustomer,
+  });
+
+  assert.equal(response.status, 201);
+  const body = await response.json() as OrderResponse;
+  assert.equal(body.order.snapshot.design.image?.src, '/api/assets/asset-data-only');
+  assert.equal(serverOrderStore.getAllOrders().length, 1);
 });
