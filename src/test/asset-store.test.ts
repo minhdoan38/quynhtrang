@@ -2,10 +2,10 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import { createInitialState, type DesignState } from '../lib/product-state.ts';
-import { promoteDesignAssets } from '../lib/asset-store.ts';
+import { getAsset, promoteDesignAssets } from '../lib/asset-store.ts';
 import { calculatePriceQuote } from '../lib/pricing.ts';
 import { serverOrderStore } from '../lib/server-order-store.ts';
-import type { CustomerInfo, PromotedAsset } from '../lib/order-types.ts';
+import type { CustomerInfo } from '../lib/order-types.ts';
 
 test('promotes blob image URLs with metadata and rewrites every design reference', async () => {
   const design: DesignState = {
@@ -44,24 +44,69 @@ test('promotes blob image URLs with metadata and rewrites every design reference
   assert.equal(result.rewrittenDesign.elements?.[0].data?.src, portrait.id);
   assert.equal(result.rewrittenDesign.elements?.[0].data?.originalSrc, portrait.id);
   assert.notEqual(result.rewrittenDesign, design);
+  // Server-side registry retrieval
+  const registered = getAsset(portrait.id);
+  assert.ok(registered);
+  assert.equal(registered.sourceKey, 'blob:portrait');
+  assert.equal(registered.mimeType, 'image/png');
   assert.equal(design.image?.src, 'blob:portrait');
 });
 
-test('reuses matching assets by source key and checksum without duplicates', async () => {
-  const design = {
-    ...createInitialState('sticker'), image: {
-      src: 'blob:sticker', name: 'sticker.webp', type: 'image/webp', size: 99, width: 100, height: 100,
-    }
+test('reuses matching assets by exact source key without duplicates and does not alias different sources', async () => {
+  const designA = {
+    ...createInitialState('sticker'),
+    image: {
+      src: 'blob:sticker-a',
+      name: 'sticker.webp',
+      type: 'image/webp',
+      size: 99,
+      width: 100,
+      height: 100,
+    },
   };
-  const first = await promoteDesignAssets(design);
-  const second = await promoteDesignAssets(design, first.promotedAssets);
+  const first = await promoteDesignAssets(designA);
+  const second = await promoteDesignAssets(designA, first.promotedAssets);
   assert.deepEqual(second.promotedAssets, first.promotedAssets);
   assert.equal(second.rewrittenDesign.image?.src, first.promotedAssets[0].id);
 
-  const byChecksum: PromotedAsset = { ...first.promotedAssets[0], sourceKey: 'different-source' };
-  const third = await promoteDesignAssets(design, [byChecksum]);
+  // Different image with identical dimensions/metadata must not be aliased by checksum
+  const designB = {
+    ...createInitialState('sticker'),
+    image: {
+      src: 'blob:sticker-b',
+      name: 'sticker.webp',
+      type: 'image/webp',
+      size: 99,
+      width: 100,
+      height: 100,
+    },
+  };
+  const third = await promoteDesignAssets(designB, first.promotedAssets);
   assert.equal(third.promotedAssets.length, 1);
-  assert.equal(third.promotedAssets[0].id, first.promotedAssets[0].id);
+  assert.notEqual(third.promotedAssets[0].id, first.promotedAssets[0].id);
+  assert.equal(third.promotedAssets[0].sourceKey, 'blob:sticker-b');
+});
+
+test('retains existing assets when design already uses promoted URLs on retry', async () => {
+  const initialDesign = {
+    ...createInitialState('card'),
+    image: {
+      src: 'blob:card-photo',
+      name: 'card.png',
+      type: 'image/png',
+      size: 1024,
+      width: 400,
+      height: 300,
+    },
+  };
+  const initial = await promoteDesignAssets(initialDesign);
+  assert.ok(initial.rewrittenDesign.image?.src.startsWith('/api/assets/asset-'));
+
+  // On retry or next phase, design already has /api/assets/ URL
+  const retried = await promoteDesignAssets(initial.rewrittenDesign, initial.promotedAssets);
+  assert.equal(retried.promotedAssets.length, 1);
+  assert.equal(retried.promotedAssets[0].id, initial.promotedAssets[0].id);
+  assert.equal(retried.rewrittenDesign.image?.src, initial.promotedAssets[0].id);
 });
 
 test('server order store recalculates quote and is idempotent with immutable approved version', () => {
@@ -85,4 +130,19 @@ test('server order store recalculates quote and is idempotent with immutable app
   const second = serverOrderStore.createOrder({ idempotencyKey: 'asset-test-key', design: { ...design, text: 'different' }, customer });
   assert.equal(second.id, first.id);
   assert.equal(serverOrderStore.getOrderByKey('asset-test-key')?.id, first.id);
+});
+
+test('server order store stores normalized quantity from price quote', () => {
+  serverOrderStore.clear();
+  const design = { ...createInitialState('card'), quantity: 0 };
+  const customer: CustomerInfo = { fullName: 'Test User', phone: '0900000000', shippingAddress: 'Address' };
+  const order = serverOrderStore.createOrder({
+    idempotencyKey: 'zero-qty-key',
+    design,
+    customer,
+  });
+
+  const quote = calculatePriceQuote({ productId: design.productId, quantity: design.quantity });
+  assert.equal(quote.quantity, 1);
+  assert.equal(order.product.quantity, 1);
 });

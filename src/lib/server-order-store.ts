@@ -120,7 +120,7 @@ export class ServerOrderStore {
       product: {
         productId: design.productId,
         variantId: design.variantId,
-        quantity: design.quantity,
+        quantity: quote.quantity,
         unitPrice: quote.unitPrice,
         subtotal: quote.subtotal,
       },

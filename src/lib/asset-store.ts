@@ -7,6 +7,36 @@ export interface AssetPromotionResult {
   rewrittenDesign: DesignState;
 }
 
+const assetRegistryKey = Symbol.for('quynhtrang.serverAssetStore');
+const globalAssetRegistry = globalThis as unknown as { [key: symbol]: Map<string, PromotedAsset> };
+if (!globalAssetRegistry[assetRegistryKey]) globalAssetRegistry[assetRegistryKey] = new Map();
+const assetRegistry = globalAssetRegistry[assetRegistryKey];
+
+export function storeAsset(asset: PromotedAsset): PromotedAsset {
+  assetRegistry.set(asset.id, JSON.parse(JSON.stringify(asset)) as PromotedAsset);
+  return JSON.parse(JSON.stringify(asset)) as PromotedAsset;
+}
+
+export function getAsset(id: string): PromotedAsset | null {
+  const asset = assetRegistry.get(id);
+  return asset ? JSON.parse(JSON.stringify(asset)) as PromotedAsset : null;
+}
+
+export function clearAssetStore(): void {
+  assetRegistry.clear();
+}
+
+function collectPromotedUrls(design: DesignState): string[] {
+  const urls = new Set<string>();
+  function scan(value: unknown) {
+    if (typeof value === 'string' && value.startsWith('/api/assets/')) urls.add(value);
+    else if (Array.isArray(value)) for (const item of value) scan(item);
+    else if (value !== null && typeof value === 'object') for (const item of Object.values(value)) scan(item);
+  }
+  scan(design);
+  return [...urls];
+}
+
 interface ScannedAssetMeta {
   sourceKey: string;
   mimeType?: string;
@@ -134,20 +164,27 @@ export async function promoteDesignAssets(
   design: DesignState,
   existingAssets: PromotedAsset[] = [],
 ): Promise<AssetPromotionResult> {
-  const scanned = collectBlobUrlsAndMeta(design);
+  const scannedBlobs = collectBlobUrlsAndMeta(design);
   const promotedAssets: PromotedAsset[] = [];
+  const seenAssetIds = new Set<string>();
   const urlMapping = new Map<string, string>();
 
-  for (const [url, meta] of scanned.entries()) {
+  // 1. Process any blob: URLs that need promotion
+  for (const [url, meta] of scannedBlobs.entries()) {
     const checksum = computeChecksum(meta);
 
-    // Check reuse by sourceKey or checksum
-    const matched = existingAssets.find(
-      (ea) => ea.sourceKey === url || (ea.checksum && ea.checksum === checksum),
-    );
+    // Match existing assets strictly by exact sourceKey or existing asset ID/URL
+    const matched =
+      existingAssets.find((ea) => ea.sourceKey === url || ea.id === url || ea.originalUrl === url) ??
+      getAsset(url) ??
+      Array.from(assetRegistry.values()).find((a) => a.sourceKey === url);
 
     if (matched) {
-      promotedAssets.push(matched);
+      if (!seenAssetIds.has(matched.id)) {
+        seenAssetIds.add(matched.id);
+        promotedAssets.push(matched);
+      }
+      storeAsset(matched);
       urlMapping.set(url, matched.id);
     } else {
       const assetId = `/api/assets/asset-${randomUUID().replace(/-/g, '').slice(0, 12)}`;
@@ -161,8 +198,26 @@ export async function promoteDesignAssets(
         originalUrl: assetId,
         checksum,
       };
-      promotedAssets.push(newAsset);
+      if (!seenAssetIds.has(newAsset.id)) {
+        seenAssetIds.add(newAsset.id);
+        promotedAssets.push(newAsset);
+      }
+      storeAsset(newAsset);
       urlMapping.set(url, assetId);
+    }
+  }
+
+  // 2. Retain existing assets when design already references promoted /api/assets/ URLs
+  const referencedPromotedUrls = collectPromotedUrls(design);
+  for (const pUrl of referencedPromotedUrls) {
+    const matched =
+      existingAssets.find((ea) => ea.id === pUrl || ea.originalUrl === pUrl || ea.sourceKey === pUrl) ??
+      getAsset(pUrl);
+
+    if (matched && !seenAssetIds.has(matched.id)) {
+      seenAssetIds.add(matched.id);
+      promotedAssets.push(matched);
+      storeAsset(matched);
     }
   }
 
