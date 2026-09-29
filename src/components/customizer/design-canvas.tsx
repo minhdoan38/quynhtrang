@@ -47,6 +47,7 @@ const DEFAULT_TEXT_TRANSFORMS: Record<string, TransformState> = Object.freeze({}
 
 export interface DesignCanvasProps {
   productId: ProductId;
+  variantId?: string;
   cardSurface?: CardSurface;
   text?: string;
   color?: string;
@@ -96,6 +97,7 @@ export interface DesignCanvasProps {
 
 export function DesignCanvas({
   productId,
+  variantId: propVariantId,
   cardSurface,
   text = '',
   color = '#111827',
@@ -144,7 +146,7 @@ export function DesignCanvas({
     backgroundColor: '#ffffff',
   };
 
-  const variantId = typeof productOptions.variant === 'string' ? productOptions.variant : undefined;
+  const variantId = propVariantId ?? (typeof productOptions.variant === 'string' ? productOptions.variant : undefined);
   const isFixedShapeSticker =
     productId === 'sticker' &&
     (variantId === 'fixed-shape' || Boolean(productOptions.shape));
@@ -576,11 +578,16 @@ export function DesignCanvas({
       surfaceId: currentSurface,
     });
   }, [
+    effectiveImageTransform.scale,
+    imgData?.crop,
+    imgData?.crop?.scale,
+    imgData?.crop?.x,
+    imgData?.crop?.y,
+    imgData?.sourceWidth,
+    imgData?.sourceHeight,
     image?.src,
     image?.width,
     image?.height,
-    imgData,
-    effectiveImageTransform.scale,
     productId,
     variantId,
     productOptions.patternScale,

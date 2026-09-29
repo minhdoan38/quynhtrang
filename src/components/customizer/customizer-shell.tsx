@@ -1803,6 +1803,7 @@ export function CustomizerShell() {
         >
           <DesignCanvas
             productId={state.productId}
+            variantId={state.variantId}
             cardSurface={activeCardSurface}
             text={state.text}
             color={state.color}
