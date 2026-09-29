@@ -1757,6 +1757,7 @@ export function CustomizerShell() {
             backgroundColor={state.backgroundColor}
             image={state.image}
             productOptions={state.productOptions}
+            stickerContour={state.productId === 'sticker' ? contourResult : undefined}
             patternConfig={state.productOptions.patternConfig as PatternConfig | undefined}
             onSwitchPatternView={(newView) => {
               setPatternWorkspaceView(newView);

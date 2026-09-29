@@ -14,6 +14,7 @@ import {
   type PatternConfig,
   type PatternWorkspaceView,
 } from '@/lib/product-state';
+import type { StickerContourResult } from '@/lib/sticker-contour';
 import { computePatternGrid, getWrappingPaperDimensions } from '@/lib/pattern-renderer';
 import { evaluateImageQuality, type ImageQualityReport } from '@/lib/image-quality';
 import {
@@ -60,6 +61,7 @@ export interface DesignCanvasProps {
   patternConfig?: PatternConfig;
   onSwitchPatternView?: (view: PatternWorkspaceView) => void;
   textElements?: CanvasElement[];
+  stickerContour?: StickerContourResult;
   elements?: CanvasElement[];
   onSelectTarget?: (target: 'image' | 'text' | 'group' | null) => void;
   onSelectElement?: (id: string | null) => void;
@@ -125,6 +127,7 @@ export function DesignCanvas({
   textTransforms = DEFAULT_TEXT_TRANSFORMS,
   onCommitTransform,
   onCommitMultiTransform,
+  stickerContour,
 }: DesignCanvasProps) {
   const isWrapping = productId === 'wrapping';
   const wrappingMode = productOptions.mode === 'full-sheet' ? 'full-sheet' : 'pattern';
@@ -684,6 +687,35 @@ export function DesignCanvas({
           </clipPath>
         </defs>
       </svg>
+      {productId === 'sticker' && Boolean(stickerContour?.borderSvgPath) && Boolean(productOptions.hasWhiteBorder) && (
+        <svg className="absolute inset-0 w-full h-full pointer-events-none z-[1] overflow-visible">
+          <path
+            d={stickerContour?.borderSvgPath}
+            fill="#ffffff"
+            stroke="#ffffff"
+            strokeWidth={Math.max(1, (Number(productOptions.borderWidth) || 2) * 2)}
+            strokeLinejoin="round"
+            className="drop-shadow-sm transition-all duration-150"
+          />
+        </svg>
+      )}
+
+      {productId === 'sticker' && Boolean(stickerContour?.cutlineSvgPath) && Boolean(productOptions.showCutline) && (
+        <svg
+          data-ui-guide="sticker-cutline"
+          className="absolute inset-0 w-full h-full pointer-events-none z-20 overflow-visible"
+        >
+          <path
+            d={stickerContour?.cutlineSvgPath}
+            fill="none"
+            stroke="#E11D48"
+            strokeWidth="1.5"
+            strokeDasharray="4 3"
+            strokeLinejoin="round"
+            opacity="0.85"
+          />
+        </svg>
+      )}
 
       {productId === 'card' && currentSurface === 'inside' && (
         <div
