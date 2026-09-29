@@ -16,6 +16,7 @@ import {
   getDefaultElements,
   getDesignSummary,
   getPreflight,
+  filterElementsBySurface,
   TEMPLATES,
   PRODUCTS,
   migrateLegacyText,
@@ -1822,8 +1823,63 @@ export function CustomizerShell() {
             }}
           />
 
-          {/* Empty Canvas State: only on blank project with no content */}
-          {(state.templateId === null || state.templateId === 'blank') &&
+          {/* Empty Canvas State: card surfaces or blank projects */}
+          {state.productId === 'card' ? (
+            filterElementsBySurface(state.elements, activeCardSurface).length === 0 && (
+              activeCardSurface === 'inside' ? (
+                <div className="absolute inset-0 flex flex-col items-center justify-center p-6 text-center pointer-events-none z-10">
+                  <div className="max-w-[280px] w-full p-4 rounded-2xl bg-[#FFFDF8]/90 backdrop-blur-xs border border-[#ECE6DC] shadow-xs pointer-events-auto space-y-3">
+                    <p className="text-xs text-[#666A6D] font-medium leading-relaxed">
+                      Thêm lời chúc, ảnh hoặc sticker.
+                    </p>
+                    <div className="flex flex-col gap-2 pt-1">
+                      <button
+                        type="button"
+                        onClick={() => handleInsertText('body')}
+                        className="w-full flex items-center justify-center gap-2 p-2 rounded-xl bg-[#315F86] text-white hover:bg-[#244A69] active:scale-98 transition-all text-xs font-semibold shadow-xs"
+                      >
+                        Thêm chữ
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setActiveSheet('add')}
+                        className="w-full flex items-center justify-center gap-2 p-2 rounded-xl border border-[#ECE6DC] bg-white hover:bg-[#F8F3E8] active:scale-98 transition-all text-xs font-semibold text-[#2E3338]"
+                      >
+                        Thêm nội dung
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ) : activeCardSurface === 'back' ? (
+                <div className="absolute inset-0 flex flex-col items-center justify-center p-6 text-center pointer-events-none z-10">
+                  <div className="max-w-[280px] w-full p-4 rounded-2xl bg-[#FFFDF8]/90 backdrop-blur-xs border border-[#ECE6DC] shadow-xs pointer-events-auto space-y-3">
+                    <p className="text-xs text-[#666A6D] font-medium leading-relaxed">
+                      Bạn có thể để trống hoặc thêm lời nhắn ở mặt sau.
+                    </p>
+                    <div className="flex flex-col gap-2 pt-1">
+                      <button
+                        type="button"
+                        onClick={() => handleInsertText('body')}
+                        className="w-full flex items-center justify-center gap-2 p-2 rounded-xl bg-[#315F86] text-white hover:bg-[#244A69] active:scale-98 transition-all text-xs font-semibold shadow-xs"
+                      >
+                        Thêm chữ
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <EmptyEditorState
+                  onAddImage={() => handleOpenImagePicker('file')}
+                  onAddText={() => handleInsertText('heading')}
+                  onChooseTemplate={() => {
+                    setTemplateReturnView('editor');
+                    setView('template-browser');
+                  }}
+                />
+              )
+            )
+          ) : (
+            (state.templateId === null || state.templateId === 'blank') &&
             !state.image?.src &&
             !state.text &&
             (!state.elements || state.elements.length === 0) && (
@@ -1861,7 +1917,8 @@ export function CustomizerShell() {
                   }}
                 />
               )
-            )}
+            )
+          )}
         </div>
       </main>
 

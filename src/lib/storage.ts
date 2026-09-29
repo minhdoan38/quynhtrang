@@ -19,7 +19,7 @@ export interface RecentProject {
   updatedAt: number;
 }
 
-function sanitizeElementsForStorage(elements?: CanvasElement[]): CanvasElement[] | undefined {
+export function sanitizeElementsForStorage(elements?: CanvasElement[]): CanvasElement[] | undefined {
   if (!elements) return undefined;
   return elements.filter((element) => {
     const candidate = element as { generated?: unknown; data?: Record<string, unknown> };
@@ -29,14 +29,18 @@ function sanitizeElementsForStorage(elements?: CanvasElement[]): CanvasElement[]
   });
 }
 
+export function sanitizeDesignForStorage(state: DesignState): DesignState {
+  return {
+    ...state,
+    productOptions: { ...state.productOptions },
+    elements: sanitizeElementsForStorage(state.elements),
+  };
+}
+
 export function saveState(state: DesignState): boolean {
-  if (typeof window === 'undefined') return true;
+  if (typeof window === 'undefined' && typeof sessionStorage === 'undefined') return true;
   try {
-    const sanitizedState: DesignState = {
-      ...state,
-      productOptions: { ...state.productOptions },
-      elements: sanitizeElementsForStorage(state.elements),
-    };
+    const sanitizedState = sanitizeDesignForStorage(state);
     sessionStorage.setItem(STATE_KEY, JSON.stringify(sanitizedState));
     return true;
   } catch (err) {
@@ -46,7 +50,7 @@ export function saveState(state: DesignState): boolean {
 }
 
 export function loadState(): Partial<DesignState> | null {
-  if (typeof window === 'undefined') return null;
+  if (typeof window === 'undefined' && typeof sessionStorage === 'undefined') return null;
   try {
     const raw = sessionStorage.getItem(STATE_KEY);
     return raw ? JSON.parse(raw) : null;
@@ -55,7 +59,6 @@ export function loadState(): Partial<DesignState> | null {
     return null;
   }
 }
-
 export function saveOrder(order: DemoOrder | null): boolean {
   if (typeof window === 'undefined') return true;
   try {

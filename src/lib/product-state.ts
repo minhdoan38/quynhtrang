@@ -126,8 +126,8 @@ export interface CreateTextElementParams {
   y?: number;
   color?: string;
   fontFamily?: string;
+  surface?: CardSurface;
 }
-
 export interface ImageAsset {
   id: string;
   originalSrc: string;
@@ -347,6 +347,7 @@ export interface TemplateConfig {
   backgroundColor: string;
   previewHint?: string;
   productOptions: Readonly<Partial<Record<ProductId, Readonly<Record<string, unknown>>>>>;
+  elements?: readonly CanvasElement[];
 }
 
 export const TEMPLATES: Readonly<Record<string, TemplateConfig>> = Object.freeze({
@@ -413,7 +414,6 @@ export const TEMPLATES: Readonly<Record<string, TemplateConfig>> = Object.freeze
       notebook: Object.freeze({ finish: 'glossy' }),
     }),
   }),
-  // Thêm template chuyên biệt theo yêu cầu Screen 03
   'card-h-birthday': Object.freeze({
     name: 'Sinh nhật ấm áp',
     category: 'birthday',
@@ -426,6 +426,24 @@ export const TEMPLATES: Readonly<Record<string, TemplateConfig>> = Object.freeze
     productOptions: Object.freeze({
       card: Object.freeze({ surface: 'front', fold: 'half' }),
     }),
+    elements: Object.freeze([
+      createTextElement({
+        id: 'card-h-birthday-front-text',
+        preset: 'heading',
+        text: 'Happy Birthday to You',
+        color: '#B86C84',
+        y: 50,
+        surface: 'front',
+      }),
+      createTextElement({
+        id: 'card-h-birthday-inside-text',
+        preset: 'body',
+        text: 'Chúc bạn một tuổi mới ngập tràn niềm vui và hạnh phúc!',
+        color: '#2E3338',
+        y: 50,
+        surface: 'inside',
+      }),
+    ]),
   }),
   'card-h-cute': Object.freeze({
     name: 'Gấu con đáng yêu',
@@ -439,6 +457,24 @@ export const TEMPLATES: Readonly<Record<string, TemplateConfig>> = Object.freeze
     productOptions: Object.freeze({
       card: Object.freeze({ surface: 'front', fold: 'half' }),
     }),
+    elements: Object.freeze([
+      createTextElement({
+        id: 'card-h-cute-front-text',
+        preset: 'heading',
+        text: 'You are so special!',
+        color: '#315F86',
+        y: 45,
+        surface: 'front',
+      }),
+      createTextElement({
+        id: 'card-h-cute-inside-text',
+        preset: 'body',
+        text: 'Gửi đến bạn những cái ôm ấm áp nhất hôm nay.',
+        color: '#2E3338',
+        y: 50,
+        surface: 'inside',
+      }),
+    ]),
   }),
   'card-h-love': Object.freeze({
     name: 'Tình yêu dịu êm',
@@ -452,6 +488,24 @@ export const TEMPLATES: Readonly<Record<string, TemplateConfig>> = Object.freeze
     productOptions: Object.freeze({
       card: Object.freeze({ surface: 'front', fold: 'half' }),
     }),
+    elements: Object.freeze([
+      createTextElement({
+        id: 'card-h-love-front-text',
+        preset: 'heading',
+        text: 'Forever & Always',
+        color: '#B3535D',
+        y: 48,
+        surface: 'front',
+      }),
+      createTextElement({
+        id: 'card-h-love-inside-text',
+        preset: 'body',
+        text: 'Cảm ơn vì đã luôn đồng hành và yêu thương.',
+        color: '#2E3338',
+        y: 50,
+        surface: 'inside',
+      }),
+    ]),
   }),
   'card-v-floral': Object.freeze({
     name: 'Nhành hoa nhỏ',
@@ -465,6 +519,24 @@ export const TEMPLATES: Readonly<Record<string, TemplateConfig>> = Object.freeze
     productOptions: Object.freeze({
       card: Object.freeze({ surface: 'front', fold: 'half' }),
     }),
+    elements: Object.freeze([
+      createTextElement({
+        id: 'card-v-floral-front-text',
+        preset: 'heading',
+        text: 'Lời chúc yêu thương',
+        color: '#2E3338',
+        y: 42,
+        surface: 'front',
+      }),
+      createTextElement({
+        id: 'card-v-floral-inside-text',
+        preset: 'body',
+        text: 'Mong mỗi ngày của bạn đều dịu dàng như hoa nở.',
+        color: '#2E3338',
+        y: 50,
+        surface: 'inside',
+      }),
+    ]),
   }),
   'card-thanks': Object.freeze({
     name: 'Lời cảm ơn',
@@ -477,6 +549,24 @@ export const TEMPLATES: Readonly<Record<string, TemplateConfig>> = Object.freeze
     productOptions: Object.freeze({
       card: Object.freeze({ surface: 'front', fold: 'half' }),
     }),
+    elements: Object.freeze([
+      createTextElement({
+        id: 'card-thanks-front-text',
+        preset: 'heading',
+        text: 'Thank you so much',
+        color: '#5F7E67',
+        y: 45,
+        surface: 'front',
+      }),
+      createTextElement({
+        id: 'card-thanks-inside-text',
+        preset: 'body',
+        text: 'Biết ơn tất cả sự giúp đỡ và quan tâm từ bạn.',
+        color: '#2E3338',
+        y: 50,
+        surface: 'inside',
+      }),
+    ]),
   }),
   'wrapping-a1-cute': Object.freeze({
     name: 'Họa tiết Cute A1',
@@ -833,9 +923,9 @@ export function createTextElement(params: CreateTextElementParams): CanvasElemen
     rotation: 0,
     locked: false,
     zIndex: 1,
+    ...(params.surface ? { surface: params.surface } : {}),
     data: data as unknown as Record<string, unknown>,
   };
-
   return element;
 }
 
@@ -948,6 +1038,9 @@ export function transitionState(state: DesignState, action: DesignAction): Desig
     case 'SET_TEMPLATE': {
       const template = TEMPLATES[action.value];
       if (!template) return state;
+      const nextElements: CanvasElement[] | undefined = template.elements
+        ? template.elements.map((el) => ({ ...el, data: el.data ? { ...el.data } : undefined }))
+        : state.elements;
       return {
         ...state,
         templateId: action.value,
@@ -955,6 +1048,7 @@ export function transitionState(state: DesignState, action: DesignAction): Desig
         color: template.color,
         backgroundColor: template.backgroundColor,
         image: null,
+        elements: nextElements,
         productOptions:
           state.productId === 'wrapping'
             ? normalizeWrappingOptions({
