@@ -1941,7 +1941,7 @@ export function getDesignSummary(state: DesignState): DesignSummary {
 export function getPreflight(state: DesignState): PreflightResult {
   const checks: PreflightCheck[] = [];
 
-  // Sticker-specific rules: contour analysis and empty content check
+  // Sticker-specific rules: contour analysis for die-cut and empty content check
   if (state.productId === 'sticker') {
     if (!state.elements || state.elements.length === 0) {
       checks.push({
@@ -1952,31 +1952,34 @@ export function getPreflight(state: DesignState): PreflightResult {
         description: 'Vui lòng thêm hình ảnh hoặc chữ vào sticker.',
       });
     } else {
-      const contour = computeStickerContour(state.elements, state.productOptions as StickerOptions);
-      if (contour.status === 'disconnected') {
-        checks.push({
-          id: 'sticker-contour',
-          level: 'warning',
-          type: 'warning',
-          label: 'Một số chi tiết đang tách rời',
-          description: 'Di chuyển chúng gần nhau hơn hoặc tăng viền để tạo thành một sticker.',
-        });
-      } else if (contour.status === 'tiny-details') {
-        checks.push({
-          id: 'sticker-contour',
-          level: 'warning',
-          type: 'warning',
-          label: 'Một số chi tiết quá nhỏ để cắt đẹp',
-          description: 'Tăng viền hoặc đơn giản thiết kế.',
-        });
-      } else if (contour.status === 'valid') {
-        checks.push({
-          id: 'sticker-contour',
-          level: 'pass',
-          type: 'pass',
-          label: 'Đường cắt sticker hợp lệ',
-          description: 'Các chi tiết đã được nối liền tạo thành một khối cắt duy nhất.',
-        });
+      const isDieCut = state.variantId === 'die-cut' || (!state.variantId && !state.productOptions.shape);
+      if (isDieCut) {
+        const contour = computeStickerContour(state.elements, state.productOptions as StickerOptions);
+        if (contour.status === 'disconnected') {
+          checks.push({
+            id: 'sticker-contour',
+            level: 'warning',
+            type: 'warning',
+            label: 'Một số chi tiết đang tách rời',
+            description: 'Di chuyển chúng gần nhau hơn hoặc tăng viền để tạo thành một sticker.',
+          });
+        } else if (contour.status === 'tiny-details') {
+          checks.push({
+            id: 'sticker-contour',
+            level: 'warning',
+            type: 'warning',
+            label: 'Một số chi tiết quá nhỏ để cắt đẹp',
+            description: 'Tăng viền hoặc đơn giản thiết kế.',
+          });
+        } else if (contour.status === 'valid') {
+          checks.push({
+            id: 'sticker-contour',
+            level: 'pass',
+            type: 'pass',
+            label: 'Đường cắt sticker hợp lệ',
+            description: 'Các chi tiết đã được nối liền tạo thành một khối cắt duy nhất.',
+          });
+        }
       }
     }
   }
