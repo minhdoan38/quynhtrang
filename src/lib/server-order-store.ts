@@ -1,14 +1,55 @@
-import type { CustomerInfo, PendingOrder, ApprovedDesignSnapshot, OrderPayment } from './order-types.ts';
+import type {
+  CustomerInfo,
+  PendingOrder,
+  ApprovedDesignSnapshot,
+  ApprovedDesignVersion,
+  OrderPayment,
+  PromotedAsset,
+} from './order-types.ts';
 import { getDesignSummary, type DesignState } from './product-state.ts';
 import { calculatePriceQuote } from './pricing.ts';
 
-// Server-side memory storage adapter for orders and immutable design snapshots
-class ServerOrderStore {
+export interface CreateOrderParams {
+  idempotencyKey: string;
+  design: DesignState;
+  customer: CustomerInfo;
+  preflightRevision?: string;
+  preflightAcknowledged?: boolean;
+  assets?: PromotedAsset[];
+}
+
+function isCreateOrderParams(arg: unknown): arg is CreateOrderParams {
+  return (
+    typeof arg === 'object' &&
+    arg !== null &&
+    'design' in arg &&
+    'customer' in arg &&
+    'idempotencyKey' in arg
+  );
+}
+
+// Server-side memory storage adapter for orders, immutable snapshots, and design versions
+export class ServerOrderStore {
   private orders: Map<string, PendingOrder> = new Map();
   private snapshots: Map<string, ApprovedDesignSnapshot> = new Map();
+  private approvedVersions: Map<string, ApprovedDesignVersion> = new Map();
   private idempotencyMap: Map<string, string> = new Map();
 
-  createOrder(design: DesignState, customer: CustomerInfo, idempotencyKey?: string): PendingOrder {
+  createOrder(params: CreateOrderParams): PendingOrder;
+  createOrder(design: DesignState, customer: CustomerInfo, idempotencyKey?: string): PendingOrder;
+  createOrder(
+    arg1: CreateOrderParams | DesignState,
+    arg2?: CustomerInfo,
+    arg3?: string,
+  ): PendingOrder {
+    const isParams = isCreateOrderParams(arg1);
+    const design = isParams ? arg1.design : arg1;
+    const customer = isParams ? arg1.customer : arg2!;
+    const idempotencyKey = isParams ? arg1.idempotencyKey : arg3;
+    const preflightRevision = (isParams ? arg1.preflightRevision : undefined) ?? 'rev-0';
+    const preflightAcknowledged = (isParams ? arg1.preflightAcknowledged : undefined) ?? false;
+    const assets = (isParams ? arg1.assets : undefined) ?? [];
+
     if (idempotencyKey && this.idempotencyMap.has(idempotencyKey)) {
       const existingId = this.idempotencyMap.get(idempotencyKey)!;
       const existing = this.orders.get(existingId);
@@ -18,7 +59,7 @@ class ServerOrderStore {
     }
 
     const orderId = `QT${Math.floor(1000 + Math.random() * 9000)}`;
-    const snapshotId = `SNAP-${Date.now()}`;
+    const versionId = `ADV-${Date.now()}-${Math.floor(1000 + Math.random() * 9000)}`;
     const summary = getDesignSummary(design);
 
     // Deep clone to ensure immutability and exclude generated repeat elements
@@ -31,12 +72,24 @@ class ServerOrderStore {
         return true;
       });
     }
+
     const snapshot: ApprovedDesignSnapshot = {
-      id: snapshotId,
+      id: versionId,
       design: immutableDesign,
       summary,
       createdAt: new Date().toISOString(),
     };
+
+    const approvedVersion: ApprovedDesignVersion = {
+      id: versionId,
+      revision: preflightRevision,
+      design: JSON.parse(JSON.stringify(immutableDesign)),
+      assets: JSON.parse(JSON.stringify(assets)),
+      preflightRevision,
+      preflightAcknowledged,
+      createdAt: new Date().toISOString(),
+    };
+
     const quote = calculatePriceQuote({
       productId: design.productId,
       variantId: design.variantId,
@@ -71,14 +124,15 @@ class ServerOrderStore {
         unitPrice: quote.unitPrice,
         subtotal: quote.subtotal,
       },
-      approvedDesignVersionId: snapshotId,
-      preflightRevision: 'rev-0',
+      approvedDesignVersionId: versionId,
+      preflightRevision,
       snapshot,
       payment,
       createdAt: new Date().toISOString(),
     };
 
-    this.snapshots.set(snapshotId, snapshot);
+    this.snapshots.set(versionId, snapshot);
+    this.approvedVersions.set(versionId, approvedVersion);
     this.orders.set(orderId, order);
     if (idempotencyKey) {
       this.idempotencyMap.set(idempotencyKey, orderId);
@@ -90,6 +144,17 @@ class ServerOrderStore {
     const order = this.orders.get(id);
     return order ? JSON.parse(JSON.stringify(order)) : null;
   }
+
+  getOrderByKey(idempotencyKey: string): PendingOrder | null {
+    const orderId = this.idempotencyMap.get(idempotencyKey);
+    return orderId ? this.getOrder(orderId) : null;
+  }
+
+  getApprovedDesignVersion(id: string): ApprovedDesignVersion | null {
+    const version = this.approvedVersions.get(id);
+    return version ? JSON.parse(JSON.stringify(version)) : null;
+  }
+
   getAllOrders(): PendingOrder[] {
     return Array.from(this.orders.values()).map((o) => JSON.parse(JSON.stringify(o)));
   }
@@ -111,6 +176,7 @@ class ServerOrderStore {
   clear(): void {
     this.orders.clear();
     this.snapshots.clear();
+    this.approvedVersions.clear();
     this.idempotencyMap.clear();
   }
 }
