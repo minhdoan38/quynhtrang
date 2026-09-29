@@ -129,7 +129,7 @@ test('CustomizerShell passes stickerContour to DesignCanvas', () => {
 
   assert.match(
     source,
-    /stickerContour=\{state\.productId === 'sticker' \? contourResult : undefined\}/,
-    'CustomizerShell must pass stickerContour to DesignCanvas'
+    /stickerContour=\{state\.productId === 'sticker' && state\.variantId !== 'fixed-shape' && !state\.productOptions\.shape \? contourResult : undefined\}/,
+    'CustomizerShell must pass stickerContour to DesignCanvas only for non-fixed sticker shapes'
   );
 });

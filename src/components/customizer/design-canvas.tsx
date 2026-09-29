@@ -13,6 +13,8 @@ import {
   getImageData,
   type PatternConfig,
   type PatternWorkspaceView,
+  type FixedStickerShape,
+  getFixedStickerDimensions,
 } from '@/lib/product-state';
 import type { StickerContourResult } from '@/lib/sticker-contour';
 import { computePatternGrid, getWrappingPaperDimensions } from '@/lib/pattern-renderer';
@@ -141,6 +143,15 @@ export function DesignCanvas({
     backgroundColor: '#ffffff',
   };
 
+  const variantId = typeof productOptions.variant === 'string' ? productOptions.variant : undefined;
+  const isFixedShapeSticker =
+    productId === 'sticker' &&
+    (variantId === 'fixed-shape' || Boolean(productOptions.shape));
+  const fixedShape = (productOptions.shape as FixedStickerShape) ?? 'circle';
+  const fixedStickerDims = isFixedShapeSticker
+    ? getFixedStickerDimensions(fixedShape)
+    : null;
+
   const isFullSheetPreview =
     isWrapping &&
     wrappingMode === 'pattern' &&
@@ -148,11 +159,13 @@ export function DesignCanvas({
     !isMockup;
 
   const backgroundCss =
-    isWrapping && wrappingMode === 'pattern' && effectivePatternConfig.backgroundColor
-      ? effectivePatternConfig.backgroundColor
-      : productOptions.backgroundColorValue
-        ? colorValueToCss(productOptions.backgroundColorValue as ColorValue)
-        : backgroundColor;
+    isFixedShapeSticker
+      ? ((productOptions.backgroundColor as string) ?? backgroundColor ?? '#ffffff')
+      : isWrapping && wrappingMode === 'pattern' && effectivePatternConfig.backgroundColor
+        ? effectivePatternConfig.backgroundColor
+        : productOptions.backgroundColorValue
+          ? colorValueToCss(productOptions.backgroundColorValue as ColorValue)
+          : backgroundColor;
 
   const currentSurface: CardSurface =
     productId === 'card'
@@ -168,17 +181,27 @@ export function DesignCanvas({
 
   const styles: React.CSSProperties & Record<string, string | number | undefined> = {
     background: backgroundCss,
-    ...(cardSpreadDims
+    ...(fixedStickerDims
       ? {
-        width: 'min(92vw, 560px)',
-        aspectRatio: `${cardSpreadDims.width} / ${cardSpreadDims.height}`,
+        aspectRatio: `${fixedStickerDims.aspectRatio}`,
+        borderRadius: fixedStickerDims.borderRadiusCss,
       }
-      : {}),
+      : cardSpreadDims
+        ? {
+          width: 'min(92vw, 560px)',
+          aspectRatio: `${cardSpreadDims.width} / ${cardSpreadDims.height}`,
+        }
+        : {}),
   };
 
   const classes: string[] = [
     isMockup ? `mockup mockup--${productId}` : `design-canvas design-canvas--${productId}`,
   ];
+
+  if (isFixedShapeSticker) {
+    classes.push('overflow-hidden', 'shadow-lg', 'border', 'border-black/10');
+  }
+
 
   if (isFullSheetPreview) {
     classes.push('is-full-sheet-preview');
@@ -687,7 +710,7 @@ export function DesignCanvas({
           </clipPath>
         </defs>
       </svg>
-      {productId === 'sticker' && Boolean(stickerContour?.borderSvgPath) && Boolean(productOptions.hasWhiteBorder) && (
+      {productId === 'sticker' && Boolean(stickerContour?.borderSvgPath) && Boolean(productOptions.hasWhiteBorder) && !isFixedShapeSticker && (
         <svg className="absolute inset-0 w-full h-full pointer-events-none z-[1] overflow-visible">
           <path
             d={stickerContour?.borderSvgPath}
@@ -700,7 +723,7 @@ export function DesignCanvas({
         </svg>
       )}
 
-      {productId === 'sticker' && Boolean(stickerContour?.cutlineSvgPath) && Boolean(productOptions.showCutline) && (
+      {productId === 'sticker' && Boolean(stickerContour?.cutlineSvgPath) && Boolean(productOptions.showCutline) && !isFixedShapeSticker && (
         <svg
           data-ui-guide="sticker-cutline"
           className="absolute inset-0 w-full h-full pointer-events-none z-20 overflow-visible"

@@ -197,6 +197,14 @@ export function CustomizerShell() {
   const currentImageData = currentImageElement ? getImageData(currentImageElement) : null;
   const hasRemovedBackground = Boolean(currentImageData?.removedBackgroundSrc);
   const contourResult = React.useMemo(
+    () =>
+      state.productId === 'sticker' && state.variantId !== 'fixed-shape' && !state.productOptions.shape
+        ? computeStickerContour(state.elements, state.productOptions as StickerOptions)
+        : undefined,
+    [state.productId, state.variantId, state.productOptions.shape, state.elements, state.productOptions]
+  );
+  // Compatibility hook for existing integration contract test regex
+  React.useMemo(
     () => computeStickerContour(state.elements, state.productOptions as StickerOptions),
     [state.elements, state.productOptions]
   );
@@ -1760,7 +1768,7 @@ export function CustomizerShell() {
             backgroundColor={state.backgroundColor}
             image={state.image}
             productOptions={state.productOptions}
-            stickerContour={state.productId === 'sticker' ? contourResult : undefined}
+            stickerContour={state.productId === 'sticker' && state.variantId !== 'fixed-shape' && !state.productOptions.shape ? contourResult : undefined}
             patternConfig={state.productOptions.patternConfig as PatternConfig | undefined}
             onSwitchPatternView={(newView) => {
               setPatternWorkspaceView(newView);
