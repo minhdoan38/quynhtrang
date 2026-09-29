@@ -131,7 +131,7 @@ export function CustomerInformationForm({
   };
 
   return (
-    <form onSubmit={handleSubmit} noValidate className="space-y-4 max-w-lg mx-auto w-full">
+    <form id="customer-info-form" onSubmit={handleSubmit} noValidate className="space-y-4 max-w-lg mx-auto w-full">
       {/* Secondary summary snippet (quiet, compact, non-duplicating) */}
       {summary && (
         <div className="rounded-xl border border-[#DDD6CC] bg-[#FFFDF8] px-3.5 py-2.5 text-xs text-[#666A6D] flex flex-wrap items-center justify-between gap-2 shadow-2xs">

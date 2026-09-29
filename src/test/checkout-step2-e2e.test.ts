@@ -11,6 +11,11 @@ const orderPageSource = readFileSync(
   resolve(process.cwd(), 'src/app/order/[id]/page.tsx'),
   'utf8',
 );
+const customerFormSource = readFileSync(
+  resolve(process.cwd(), 'src/components/checkout/customer-information-form.tsx'),
+  'utf8',
+);
+
 
 const stepTwoStart = checkoutSource.indexOf('{/* STEP 2: Customer Information Form */}');
 const stepThreeStart = checkoutSource.indexOf('{/* STEP 3: QR Payment Demo */}');
@@ -44,6 +49,12 @@ test('Step 2 exposes exact submit, pending, and recoverable error copy', () => {
   assert.match(checkoutSource, /'Kiểm tra kết nối và thử lại\.'/);
   assert.match(checkoutSource, /'Thử lại'/);
 });
+test('sticky Step 2 CTA submits through CustomerInformationForm validation', () => {
+  assert.match(customerFormSource, /<form id="customer-info-form" onSubmit=\{handleSubmit\}/);
+  assert.match(checkoutSource, /step === 2[\s\S]*?<button\s+type="submit"\s+form="customer-info-form"/);
+  assert.doesNotMatch(checkoutSource, /step === 2[\s\S]*?<button[\s\S]*?onClick=\{\(\) => handleSubmitCustomerInfo/);
+});
+
 
 test('submission posts stable draft identity and transitions with server order', () => {
   assert.match(checkoutSource, /fetch\('\/api\/orders', \{/);
@@ -53,9 +64,22 @@ test('submission posts stable draft identity and transitions with server order',
   assert.match(checkoutSource, /advanceToStep\(3\)/);
   assert.match(checkoutSource, /sessionStorage\.setItem\('quynhtrang\.pendingOrderId', data\.order\.id\)/);
 });
+test('quantity changes renew submitted draft identity and clear stale order state', () => {
+  assert.match(checkoutSource, /const quantityChanged = validQty !== design\.quantity;/);
+  assert.match(checkoutSource, /const shouldRenewOrder = quantityChanged \|\| Boolean\(currentDraft\.orderId\) \|\| Boolean\(createdOrder\);/);
+  assert.match(checkoutSource, /idempotencyKey: shouldRenewOrder\s*\? `checkout-\$\{crypto\.randomUUID\(\)\}`\s*:\s*currentDraft\.idempotencyKey/);
+  assert.match(checkoutSource, /orderId: shouldRenewOrder \? undefined : currentDraft\.orderId/);
+  assert.match(checkoutSource, /if \(shouldRenewOrder\) \{[\s\S]*?setCreatedOrder\(null\);[\s\S]*?sessionStorage\.removeItem\('quynhtrang\.pendingOrderId'\)/);
+});
 
-test('stale design revision is detected before continuing checkout', () => {
+
+test('stale design and preflight integrity are enforced before order creation', () => {
   assert.match(checkoutSource, /isSameCheckoutDesign\(existingDraft\.design, nextDesign\)/);
+  assert.match(checkoutSource, /JSON\.stringify\(a\.productOptions \|\| \{\}\) === JSON\.stringify\(b\.productOptions \|\| \{\}\)/);
+  assert.match(checkoutSource, /if \(staleRevisionWarning\) \{[\s\S]*?return;/);
+  assert.match(checkoutSource, /preflightRevision: draft\.preflightRevision \?\? 'rev-0'/);
+  assert.match(checkoutSource, /preflightAcknowledged: draft\.preflightAcknowledged \?\? true/);
+  assert.match(checkoutSource, /router\.push\('\/\?view=editor&mode=preflight'\)/);
   assert.match(checkoutSource, /Thiết kế đã thay đổi kể từ lần kiểm tra trước/);
   assert.match(checkoutSource, /Kiểm tra lại thiết kế/);
 });

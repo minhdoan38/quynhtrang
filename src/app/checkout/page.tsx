@@ -41,6 +41,7 @@ function isSameCheckoutDesign(a?: Partial<DesignState>, b?: Partial<DesignState>
   if (a.variantId !== b.variantId) return false;
   if (a.text !== b.text || a.color !== b.color || a.backgroundColor !== b.backgroundColor) return false;
   if (a.image?.src !== b.image?.src) return false;
+  if (!(JSON.stringify(a.productOptions || {}) === JSON.stringify(b.productOptions || {}))) return false;
   return JSON.stringify(a.elements || []) === JSON.stringify(b.elements || []);
 }
 
@@ -190,19 +191,28 @@ export default function CheckoutPage() {
 
   const handleUpdateQuantity = (newQty: number) => {
     const validQty = normalizeQuantity(newQty);
+    const quantityChanged = validQty !== design.quantity;
     const nextDesign = { ...design, quantity: validQty };
     setDesign(nextDesign);
     saveState(nextDesign);
     const currentDraft = loadCheckoutDraft();
     if (currentDraft) {
+      const shouldRenewOrder = quantityChanged || Boolean(currentDraft.orderId) || Boolean(createdOrder);
       saveCheckoutDraft({
         ...currentDraft,
         quantity: validQty,
+        idempotencyKey: shouldRenewOrder ? `checkout-${crypto.randomUUID()}` : currentDraft.idempotencyKey,
+        orderId: shouldRenewOrder ? undefined : currentDraft.orderId,
         design: { ...currentDraft.design, quantity: validQty },
         updatedAt: new Date().toISOString(),
       });
-    }
-    if (createdOrder) {
+      if (shouldRenewOrder) {
+        setCreatedOrder(null);
+        if (typeof window !== 'undefined') {
+          sessionStorage.removeItem('quynhtrang.pendingOrderId');
+        }
+      }
+    } else if (createdOrder) {
       setCreatedOrder(null);
       if (typeof window !== 'undefined') {
         sessionStorage.removeItem('quynhtrang.pendingOrderId');
@@ -240,6 +250,11 @@ export default function CheckoutPage() {
     }
     setFormError(null);
 
+    if (staleRevisionWarning) {
+      setFormError('Thiết kế đã thay đổi kể từ lần kiểm tra trước. Vui lòng kiểm tra lại thiết kế.');
+      return;
+    }
+
     const validation = validateCustomerInfo(customer);
     if (!validation.isValid) {
       setFormError(COPY_UNABLE_TO_PREPARE);
@@ -264,11 +279,10 @@ export default function CheckoutPage() {
             design,
             customer: normalizedCustomer,
             idempotencyKey: draft.idempotencyKey,
-            preflightRevision: draft.preflightRevision || 'rev-0',
-            preflightAcknowledged: true,
+            preflightRevision: draft.preflightRevision ?? 'rev-0',
+            preflightAcknowledged: draft.preflightAcknowledged ?? true,
           }),
         });
-
         const data = await res.json().catch(() => ({}));
         if (!res.ok || !data.order) {
           throw new Error(data.error || COPY_UNABLE_TO_PREPARE);
@@ -386,7 +400,7 @@ export default function CheckoutPage() {
                 </div>
                 <button
                   type="button"
-                  onClick={() => router.push(design.productId === 'wrapping' ? '/products/wrapping-paper' : `/products/${design.productId}`)}
+                  onClick={() => router.push('/?view=editor&mode=preflight')}
                   className="px-3 py-1.5 rounded-lg bg-[#A86E22] text-white text-xs font-semibold hover:bg-[#8B5919] transition-colors shrink-0"
                 >
                   Kiểm tra lại thiết kế
@@ -474,9 +488,9 @@ export default function CheckoutPage() {
 
             {step === 2 && (
               <button
-                type="button"
+                type="submit"
+                form="customer-info-form"
                 disabled={isPending}
-                onClick={() => handleSubmitCustomerInfo({ preventDefault: () => { } } as React.FormEvent)}
                 className="w-full h-11 inline-flex items-center justify-center gap-2 rounded-xl bg-[#315F86] text-xs sm:text-sm font-semibold text-white shadow-xs hover:bg-[#244A69] transition-all active:scale-[0.98] disabled:opacity-50"
               >
                 <span>{isPending ? COPY_PREPARING_ORDER : 'Tiếp tục'}</span>
