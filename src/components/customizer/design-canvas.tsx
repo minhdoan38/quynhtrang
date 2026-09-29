@@ -20,6 +20,7 @@ import {
 import type { StickerContourResult } from '@/lib/sticker-contour';
 import { computePatternGrid, getWrappingPaperDimensions } from '@/lib/pattern-renderer';
 import { evaluateImageQuality, type ImageQualityReport } from '@/lib/image-quality';
+import type { SafetyReport } from '@/lib/safe-area';
 import {
   TAP_THRESHOLD_PX,
   isDoubleTap,
@@ -78,6 +79,8 @@ export interface DesignCanvasProps {
   isLocked?: boolean;
   onLockedFeedback?: () => void;
   onQualityExplanation?: ((report: ImageQualityReport) => void) | ((message: string) => void);
+  showSafeAreaGuide?: boolean;
+  activeSafetyReport?: SafetyReport | null;
   imageTransform?: TransformState;
   textTransform?: TransformState;
   textTransforms?: Record<string, TransformState>;
@@ -133,6 +136,8 @@ export function DesignCanvas({
   onCommitTransform,
   onCommitMultiTransform,
   stickerContour,
+  showSafeAreaGuide,
+  activeSafetyReport,
 }: DesignCanvasProps) {
   const isWrapping = productId === 'wrapping';
   const wrappingMode = productOptions.mode === 'full-sheet' ? 'full-sheet' : 'pattern';
@@ -781,6 +786,17 @@ export function DesignCanvas({
           </span>
           <span className="text-[9px] text-[#743021]/60 px-1 py-0.5 bg-background/80 rounded mb-1.5 ml-1 whitespace-nowrap shadow-2xs">
             Vùng gần gáy
+          </span>
+        </div>
+      )}
+      {(showSafeAreaGuide || (activeSafetyReport && activeSafetyReport.risk !== 'safe')) && (
+        <div
+          data-ui-guide="safe-area"
+          className="absolute inset-[4%] pointer-events-none z-10 border border-dashed border-[#315F86]/35 rounded-xs select-none transition-opacity duration-200"
+          aria-hidden="true"
+        >
+          <span className="absolute top-1 left-1 text-[8px] text-[#315F86]/70 uppercase tracking-wider font-medium select-none bg-background/60 px-1 rounded-2xs">
+            Vùng an toàn
           </span>
         </div>
       )}
