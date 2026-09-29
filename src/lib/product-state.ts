@@ -341,19 +341,30 @@ export interface DesignSummary {
  priceLabel: string;
 }
 
+export type PreflightSeverity = 'pass' | 'warning' | 'error';
+export type PreflightCategory = 'image' | 'safe-area' | 'sticker' | 'notebook' | 'card' | 'general';
+
 export interface PreflightCheck {
  id: string;
- level: 'pass' | 'warning' | 'error';
+ level: PreflightSeverity;
  label: string;
- type?: 'pass' | 'warning' | 'error';
+ type?: PreflightSeverity;
+ category?: PreflightCategory;
  description?: string;
+ advice?: string;
  elementId?: string;
  surfaceId?: string;
+ canContinue?: boolean;
 }
 
 export interface PreflightResult {
- level: 'pass' | 'warning' | 'error';
+ level: PreflightSeverity;
  checks: PreflightCheck[];
+ hasErrors: boolean;
+ hasWarnings: boolean;
+ passCount: number;
+ warningCount: number;
+ errorCount: number;
 }
 
 export const PRODUCTS: Readonly<Record<ProductId, ProductConfig>> = Object.freeze({
@@ -1977,6 +1988,7 @@ export function getPreflight(state: DesignState): PreflightResult {
     id: 'sticker-content',
     level: 'error',
     type: 'error',
+    category: 'sticker',
     label: 'Chưa có nội dung sticker',
     description: 'Vui lòng thêm hình ảnh hoặc chữ vào sticker.',
    });
@@ -1989,6 +2001,7 @@ export function getPreflight(state: DesignState): PreflightResult {
       id: 'sticker-contour',
       level: 'warning',
       type: 'warning',
+      category: 'sticker',
       label: 'Một số chi tiết đang tách rời',
       description: 'Di chuyển chúng gần nhau hơn hoặc tăng viền để tạo thành một sticker.',
      });
@@ -1997,6 +2010,7 @@ export function getPreflight(state: DesignState): PreflightResult {
       id: 'sticker-contour',
       level: 'warning',
       type: 'warning',
+      category: 'sticker',
       label: 'Một số chi tiết quá nhỏ để cắt đẹp',
       description: 'Tăng viền hoặc đơn giản thiết kế.',
      });
@@ -2005,6 +2019,7 @@ export function getPreflight(state: DesignState): PreflightResult {
       id: 'sticker-contour',
       level: 'pass',
       type: 'pass',
+      category: 'sticker',
       label: 'Đường cắt sticker hợp lệ',
       description: 'Các chi tiết đã được nối liền tạo thành một khối cắt duy nhất.',
      });
@@ -2027,6 +2042,7 @@ export function getPreflight(state: DesignState): PreflightResult {
     id: 'notebook-content',
     level: 'warning',
     type: 'warning',
+    category: 'notebook',
     label: 'Bìa vở chưa có nội dung',
     description: 'Thêm hình ảnh, chữ hoặc sticker để bìa sổ sinh động hơn.',
    });
@@ -2040,6 +2056,7 @@ export function getPreflight(state: DesignState): PreflightResult {
      id: 'notebook-binding-zone',
      level: 'warning',
      type: 'warning',
+     category: 'notebook',
      label: 'Văn bản nằm gần mép gáy sổ',
      description: 'Giữ chữ quan trọng cách mép này một chút để không bị che bởi gáy hoặc lỗ lò xo.',
     });
@@ -2073,6 +2090,7 @@ export function getPreflight(state: DesignState): PreflightResult {
     id: `safe-area-${element.id}`,
     level: 'warning',
     type: 'warning',
+    category: 'safe-area',
     label: safety.badgeLabel || 'Chi tiết này hơi sát mép',
     description: safety.description,
     elementId: element.id,
@@ -2083,6 +2101,7 @@ export function getPreflight(state: DesignState): PreflightResult {
     id: `safe-area-${element.id}`,
     level: 'error',
     type: 'error',
+    category: 'safe-area',
     label: safety.badgeLabel || 'Chi tiết này có thể bị cắt mất',
     description: safety.description,
     elementId: element.id,
@@ -2140,6 +2159,7 @@ export function getPreflight(state: DesignState): PreflightResult {
      id: checkId,
      level: 'warning',
      type: 'warning',
+     category: 'image',
      label: 'Ảnh có thể hơi mờ khi in',
      description: report.description,
      elementId: imageElement.id,
@@ -2150,6 +2170,7 @@ export function getPreflight(state: DesignState): PreflightResult {
      id: checkId,
      level: 'error',
      type: 'error',
+     category: 'image',
      label: 'Ảnh quá nhỏ để in rõ',
      description: report.description,
      elementId: imageElement.id,
@@ -2160,6 +2181,7 @@ export function getPreflight(state: DesignState): PreflightResult {
      id: checkId,
      level: 'pass',
      type: 'pass',
+     category: 'image',
      label: 'Chất lượng ảnh đạt chuẩn',
      description: report.description,
      elementId: imageElement.id,
@@ -2207,18 +2229,20 @@ export function getPreflight(state: DesignState): PreflightResult {
   });
  }
 
- const hasWarning = checks.some((check) => check.level === 'warning');
- const hasError = checks.some((check) => check.level === 'error');
-
- let level: 'pass' | 'warning' | 'error' = 'pass';
- if (hasError) {
-  level = 'error';
- } else if (hasWarning) {
-  level = 'warning';
- }
+ const errorCount = checks.filter((c) => c.level === 'error').length;
+ const warningCount = checks.filter((c) => c.level === 'warning').length;
+ const passCount = checks.filter((c) => c.level === 'pass').length;
+ const hasErrors = errorCount > 0;
+ const hasWarnings = warningCount > 0;
+ const overallLevel: PreflightSeverity = hasErrors ? 'error' : hasWarnings ? 'warning' : 'pass';
 
  return {
-  level,
+  level: overallLevel,
   checks,
+  hasErrors,
+  hasWarnings,
+  passCount,
+  warningCount,
+  errorCount,
  };
 }
