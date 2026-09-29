@@ -184,7 +184,7 @@
 
 .design-canvas--notebook {
   width: min(78vw, 280px);
-  aspect-ratio: 3 / 4;
+  aspect-ratio: 148 / 210;
   border-radius: 3px 12px 12px 3px;
   box-shadow: -8px 0 0 #403b36, 0 15px 28px rgba(57, 43, 28, 0.24);
 }

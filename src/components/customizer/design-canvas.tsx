@@ -5,6 +5,7 @@ import {
   type ProductId,
   type CardSurface,
   getCardSpreadDimensions,
+  NOTEBOOK_COVER_DEFINITION,
   type ImageState,
   type CanvasElement,
   type TextElementData,
@@ -191,7 +192,11 @@ export function DesignCanvas({
           width: 'min(92vw, 560px)',
           aspectRatio: `${cardSpreadDims.width} / ${cardSpreadDims.height}`,
         }
-        : {}),
+        : productId === 'notebook'
+          ? {
+            aspectRatio: NOTEBOOK_COVER_DEFINITION.aspectRatio,
+          }
+          : {}),
   };
 
   const classes: string[] = [
@@ -222,6 +227,7 @@ export function DesignCanvas({
       : 0;
     (styles as Record<string, string | number>)['--sticker-border-width'] = `${border}px`;
   } else if (productId === 'notebook') {
+    classes.push('rounded-r-xl', 'rounded-l-xs', 'shadow-xl');
     if (productOptions.finish === 'glossy') classes.push('is-finish-glossy');
     else classes.push('is-finish-matte');
   }
@@ -751,6 +757,20 @@ export function DesignCanvas({
           </span>
           <span className="text-[10px] text-muted-foreground/60 px-1 py-0.5 bg-background/80 rounded mb-1">
             Nếp gấp
+          </span>
+        </div>
+      )}
+      {productId === 'notebook' && !isMockup && (
+        <div
+          data-ui-guide="notebook-binding"
+          className="absolute inset-y-0 left-[12%] pointer-events-none z-10 flex flex-col justify-between border-l border-dashed border-[#743021]/30 select-none"
+          aria-hidden="true"
+        >
+          <span className="text-[9px] text-[#743021]/60 px-1 py-0.5 bg-background/80 rounded mt-1.5 ml-1 whitespace-nowrap shadow-2xs">
+            Vùng gần gáy
+          </span>
+          <span className="text-[9px] text-[#743021]/60 px-1 py-0.5 bg-background/80 rounded mb-1.5 ml-1 whitespace-nowrap shadow-2xs">
+            Vùng gần gáy
           </span>
         </div>
       )}
