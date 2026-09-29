@@ -39,6 +39,8 @@ import type { PatternConfig, StickerOptions } from '@/lib/product-state';
 import { PatternControlsSheet } from './pattern-controls-sheet';
 import type { StickerContourResult } from '@/lib/sticker-contour';
 import { StickerBorderSheet } from './sticker-border-sheet';
+import type { ImageQualityReport } from '@/lib/image-quality';
+import { ImageQualitySheet } from './image-quality-sheet';
 export type ActiveSheetType =
   | 'add'
   | 'image-source'
@@ -53,6 +55,7 @@ export type ActiveSheetType =
   | 'more'
   | 'pattern'
   | 'sticker-border'
+  | 'image-quality'
   | null;
 interface EditorSheetsProps {
   activeSheet: ActiveSheetType;
@@ -128,6 +131,9 @@ interface EditorSheetsProps {
   onChangeStickerOptions?: (patch: Partial<StickerOptions>) => void;
   onCommitStickerOptions?: (patch: Partial<StickerOptions>) => void;
   onTriggerBackgroundRemoval?: () => void;
+  imageQualityReport?: ImageQualityReport | null;
+  onQualityScaleDown?: (recommendedScale: number) => void;
+  onQualityReplaceImage?: () => void;
 }
 
 const PALETTE = [
@@ -207,6 +213,9 @@ export function EditorSheets({
   onChangeStickerOptions,
   onCommitStickerOptions,
   onTriggerBackgroundRemoval,
+  imageQualityReport = null,
+  onQualityScaleDown,
+  onQualityReplaceImage,
 }: EditorSheetsProps) {
   const isOpen = activeSheet !== null;
 
@@ -270,6 +279,18 @@ export function EditorSheets({
             onChangeOptions={(patch) => onChangeStickerOptions?.(patch)}
             onCommitOptions={(patch) => onCommitStickerOptions?.(patch)}
             onTriggerBackgroundRemoval={onTriggerBackgroundRemoval}
+          />
+        )}
+        {/* IMAGE QUALITY SHEET */}
+        {activeSheet === 'image-quality' && (
+          <ImageQualitySheet
+            open={activeSheet === 'image-quality'}
+            onOpenChange={(open) => {
+              if (!open) onClose();
+            }}
+            report={imageQualityReport}
+            onScaleDown={onQualityScaleDown}
+            onReplaceImage={onQualityReplaceImage}
           />
         )}
         {/* IMAGE SOURCE SHEET (REPLACE IMAGE) */}

@@ -32,6 +32,7 @@ import {
   type PatternConfig,
   type StickerOptions,
 } from '@/lib/product-state';
+import type { ImageQualityReport } from '@/lib/image-quality';
 import { computeStickerContour } from '@/lib/sticker-contour';
 import { CardSurfaceSwitcher } from './card-surface-switcher';
 import { PatternWorkspaceToggle } from './pattern-workspace-toggle';
@@ -169,6 +170,7 @@ export function CustomizerShell() {
   const pendingExitOnCompositionEndRef = useRef(false);
   const preEditViewportRef = useRef<ViewportState | null>(null);
   const [activeSheet, setActiveSheet] = useState<ActiveSheetType>(null);
+  const [activeQualityReport, setActiveQualityReport] = useState<ImageQualityReport | null>(null);
   const [focusMode, setFocusMode] = useState<FocusMode>(null);
   const [bgRemovalState, setBgRemovalState] = useState<'idle' | 'processing' | 'result'>('idle');
   // Overlay Mode: Preview and Preflight full-screen within Editor
@@ -1120,6 +1122,35 @@ export function CustomizerShell() {
     },
     [dispatch]
   );
+  const handleQualityScaleDown = useCallback(
+    (recommendedScale: number) => {
+      const nextTransform = {
+        ...imageTransform,
+        scale: recommendedScale,
+      };
+      executeAction(
+        {
+          type: 'SET_PRODUCT_OPTION',
+          key: 'imageTransform',
+          value: nextTransform,
+        },
+        {
+          type: 'resize',
+          label: 'Thu nhỏ ảnh đạt chuẩn in',
+          affectedIds: [selectedElementId || 'image-1'],
+        }
+      );
+      showToast('Đã thu nhỏ ảnh về kích thước chuẩn.');
+    },
+    [imageTransform, executeAction, selectedElementId, showToast]
+  );
+
+  const handleQualityReplaceImage = useCallback(() => {
+    const targetId = selectedElementId || 'image-1';
+    setImageSourceContext({ mode: 'replace', targetElementId: targetId });
+    setActiveSheet('image-source');
+  }, [selectedElementId, setImageSourceContext]);
+
   const handleSelectLayer = useCallback(
     (layerIdOrType: string) => {
       const elements = state.elements ?? getDefaultElements(state);
@@ -1843,7 +1874,14 @@ export function CustomizerShell() {
             onLockedFeedback={() => {
               showToast('🔒 Thành phần này đã được khóa trong mẫu.');
             }}
-            onQualityExplanation={(msg) => showToast(msg)}
+            onQualityExplanation={(reportOrMsg: ImageQualityReport | string) => {
+              if (typeof reportOrMsg === 'object' && reportOrMsg !== null) {
+                setActiveQualityReport(reportOrMsg);
+                setActiveSheet('image-quality');
+              } else {
+                showToast(reportOrMsg);
+              }
+            }}
             imageTransform={imageTransform}
             textTransform={textTransform}
             onCommitTransform={(target, transform, elementId) => {
@@ -2198,6 +2236,9 @@ export function CustomizerShell() {
           setFocusMode('remove-bg');
           setActiveSheet(null);
         }}
+        imageQualityReport={activeQualityReport}
+        onQualityScaleDown={handleQualityScaleDown}
+        onQualityReplaceImage={handleQualityReplaceImage}
       />
 
       {/* Editor Overlay: Dedicated full-screen preview */}

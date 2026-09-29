@@ -76,7 +76,7 @@ export interface DesignCanvasProps {
   onMeasureText?: (id: string, height: number) => void;
   isLocked?: boolean;
   onLockedFeedback?: () => void;
-  onQualityExplanation?: (message: string) => void;
+  onQualityExplanation?: ((report: ImageQualityReport) => void) | ((message: string) => void);
   imageTransform?: TransformState;
   textTransform?: TransformState;
   textTransforms?: Record<string, TransformState>;
@@ -831,8 +831,8 @@ export function DesignCanvas({
               rotationAngle={effectiveImageTransform.rotation}
               qualityReport={imageQuality}
               onQualityClick={() => {
-                if (imageQuality) {
-                  onQualityExplanation?.(`${imageQuality.description} ${imageQuality.advice}`);
+                if (imageQuality && onQualityExplanation) {
+                  (onQualityExplanation as (arg: ImageQualityReport | string) => void)(imageQuality);
                 }
               }}
               onHandlePointerDown={(handle, e) => {
