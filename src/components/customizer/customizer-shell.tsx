@@ -32,6 +32,7 @@ import {
   type PatternConfig,
   type StickerOptions,
   type CardOptions,
+  type PreflightCheck,
 } from '@/lib/product-state';
 import type { ImageQualityReport } from '@/lib/image-quality';
 import { computeStickerContour } from '@/lib/sticker-contour';
@@ -1451,6 +1452,31 @@ export function CustomizerShell() {
     showToast,
   ]);
 
+  const handlePreflightFix = useCallback((check: PreflightCheck) => {
+    setOverlayMode(null);
+    if (state.productId === 'card' && check.surfaceId) {
+      setActiveCardSurface(check.surfaceId as CardSurface);
+    }
+    if (check.elementId) {
+      const elements = state.elements ?? getDefaultElements(state);
+      const targetElement = elements.find((e) => e.id === check.elementId);
+      if (targetElement) {
+        setSelectedElementId(targetElement.id);
+        setSelectedTarget(targetElement.type as SelectedTarget);
+        if (targetElement.type === 'text') {
+          setSelectedTextId(targetElement.id);
+        }
+      }
+    }
+    if (check.category === 'safe-area') {
+      setShowSafeAreaGuide(true);
+    }
+    if (check.id === 'sticker-contour') {
+      setActiveSheet('sticker-border');
+    }
+  }, [state.productId, state.elements, state]);
+
+
   // Canvas entrance animation
   useGSAP(() => {
     if (view !== 'editor') return;
@@ -2296,6 +2322,7 @@ export function CustomizerShell() {
             setOverlayMode(null);
             if (target) setSelectedTarget(target);
           }}
+          onFix={handlePreflightFix}
           onContinueToCheckout={() => {
             router.push('/checkout');
           }}
