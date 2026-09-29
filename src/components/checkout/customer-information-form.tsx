@@ -167,7 +167,7 @@ export function CustomerInformationForm({
             <button
               type="button"
               onClick={onRetry}
-              className="h-9 px-3 shrink-0 inline-flex items-center gap-1.5 rounded-lg bg-[#B3535D] text-white text-xs font-semibold hover:bg-[#8F3E47] transition-colors"
+              className="h-11 px-3.5 shrink-0 inline-flex items-center gap-1.5 rounded-lg bg-[#B3535D] text-white text-xs font-semibold hover:bg-[#8F3E47] transition-colors"
             >
               <RefreshCw size={13} />
               <span>Thử lại</span>
@@ -186,6 +186,8 @@ export function CustomerInformationForm({
           id={fullNameId}
           name="fullName"
           type="text"
+          required
+          aria-required="true"
           autoComplete="name"
           placeholder="Nguyễn Văn A"
           value={values.fullName}
@@ -196,8 +198,8 @@ export function CustomerInformationForm({
           aria-invalid={Boolean(errors.fullName)}
           aria-describedby={errors.fullName ? fullNameErrorId : undefined}
           className={`w-full h-11 px-3.5 rounded-xl border bg-white text-sm text-[#2E3338] placeholder:text-[#666A6D] focus:outline-none transition-colors ${errors.fullName
-              ? 'border-[#B3535D] focus:border-[#B3535D] bg-[#F6DADD]/10'
-              : 'border-[#DDD6CC] focus:border-[#315F86]'
+            ? 'border-[#B3535D] focus:border-[#B3535D] bg-[#F6DADD]/10'
+            : 'border-[#DDD6CC] focus:border-[#315F86]'
             }`}
         />
         {errors.fullName && (
@@ -219,6 +221,8 @@ export function CustomerInformationForm({
           type="tel"
           inputMode="tel"
           autoComplete="tel"
+          required
+          aria-required="true"
           placeholder="09xx xxx xxx"
           value={values.phone}
           onChange={(e) => handleInputChange('phone', e.target.value)}
@@ -230,8 +234,8 @@ export function CustomerInformationForm({
             errors.phone ? `${phoneErrorId} ${phoneHelpId}` : phoneHelpId
           }
           className={`w-full h-11 px-3.5 rounded-xl border bg-white text-sm text-[#2E3338] placeholder:text-[#666A6D] focus:outline-none transition-colors ${errors.phone
-              ? 'border-[#B3535D] focus:border-[#B3535D] bg-[#F6DADD]/10'
-              : 'border-[#DDD6CC] focus:border-[#315F86]'
+            ? 'border-[#B3535D] focus:border-[#B3535D] bg-[#F6DADD]/10'
+            : 'border-[#DDD6CC] focus:border-[#315F86]'
             }`}
         />
         <p id={phoneHelpId} className="text-[11px] text-[#666A6D]">
@@ -254,6 +258,8 @@ export function CustomerInformationForm({
           id={shippingAddressId}
           name="shippingAddress"
           rows={3}
+          required
+          aria-required="true"
           autoComplete="street-address"
           placeholder="Số nhà, đường, phường/xã, quận/huyện, tỉnh/thành"
           value={values.shippingAddress}
@@ -264,8 +270,8 @@ export function CustomerInformationForm({
           aria-invalid={Boolean(errors.shippingAddress)}
           aria-describedby={errors.shippingAddress ? shippingAddressErrorId : undefined}
           className={`w-full min-h-[44px] p-3 rounded-xl border bg-white text-sm text-[#2E3338] placeholder:text-[#666A6D] focus:outline-none transition-colors ${errors.shippingAddress
-              ? 'border-[#B3535D] focus:border-[#B3535D] bg-[#F6DADD]/10'
-              : 'border-[#DDD6CC] focus:border-[#315F86]'
+            ? 'border-[#B3535D] focus:border-[#B3535D] bg-[#F6DADD]/10'
+            : 'border-[#DDD6CC] focus:border-[#315F86]'
             }`}
         />
         {errors.shippingAddress && (
@@ -274,6 +280,11 @@ export function CustomerInformationForm({
           </p>
         )}
       </div>
+
+      {/* Customer data usage note */}
+      <p className="text-[11px] text-[#666A6D]">
+        Thông tin này được dùng để xử lý và giao đơn hàng.
+      </p>
 
       {/* Standalone submit button for direct form usage */}
       <div className="pt-2">

@@ -86,6 +86,7 @@ test('component source meets all UI and accessibility contracts', () => {
 
   // Exact helper copy
   assert.match(source, /Dùng để liên hệ về đơn hàng khi cần\./);
+  assert.match(source, /Thông tin này được dùng để xử lý và giao đơn hàng\./);
 
   // Input attributes
   assert.match(source, /autoComplete="name"/);
@@ -93,8 +94,12 @@ test('component source meets all UI and accessibility contracts', () => {
   assert.match(source, /autoComplete="street-address"/);
   assert.match(source, /inputMode="tel"/);
 
-  // 44px touch targets
+  // 44px touch targets, including the retry action
   assert.ok(source.includes('h-11') || source.includes('min-h-[44px]'));
+  assert.match(
+    source,
+    /<button[\s\S]*?className="[^"]*(?:h-11|min-h-\[44px\])[^"]*"[\s\S]*?>[\s\S]*?Thử lại[\s\S]*?<\/button>/,
+  );
 
   // Accessibility wiring
   assert.match(source, /aria-invalid=/);
@@ -102,6 +107,14 @@ test('component source meets all UI and accessibility contracts', () => {
   assert.match(source, /id=\{fullNameErrorId\}|id="fullName-error"/);
   assert.match(source, /id=\{phoneErrorId\}|id="phone-error"/);
   assert.match(source, /id=\{shippingAddressErrorId\}|id="shippingAddress-error"/);
+
+  // Native and explicit ARIA required semantics on every customer field
+  for (const name of ['fullName', 'phone', 'shippingAddress']) {
+    assert.match(
+      source,
+      new RegExp(`<(?:input|textarea)[\\s\\S]*?name="${name}"[\\s\\S]*?required[\\s\\S]*?aria-required="true"[\\s\\S]*?>`),
+    );
+  }
 
   // Exact error banner copy
   assert.match(source, /Chưa thể chuẩn bị đơn hàng\./);
