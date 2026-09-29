@@ -48,7 +48,16 @@ export class ServerOrderStore {
     const idempotencyKey = isParams ? arg1.idempotencyKey : arg3;
     const preflightRevision = (isParams ? arg1.preflightRevision : undefined) ?? 'rev-0';
     const preflightAcknowledged = (isParams ? arg1.preflightAcknowledged : undefined) ?? false;
-    const assets = (isParams ? arg1.assets : undefined) ?? [];
+    const rawAssets = (isParams ? arg1.assets : undefined) ?? [];
+    const assets = rawAssets.map((asset) => {
+      if (asset.payload !== undefined && typeof asset.payload !== 'string') {
+        return {
+          ...asset,
+          payload: Buffer.from(asset.payload as unknown as Uint8Array).toString('base64'),
+        };
+      }
+      return asset;
+    });
 
     if (idempotencyKey && this.idempotencyMap.has(idempotencyKey)) {
       const existingId = this.idempotencyMap.get(idempotencyKey)!;

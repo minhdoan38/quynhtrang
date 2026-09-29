@@ -208,7 +208,7 @@ test('promotes asset with payload and serves real artwork payload from route', a
   const asset = promotedAssets[0];
   assert.ok(asset);
   assert.equal(rewrittenDesign.image?.src, asset.id);
-  assert.deepEqual(asset.payload, rawArtwork);
+  assert.equal(asset.payload, Buffer.from(rawArtwork).toString('base64'));
   const assetId = asset.id.replace(/^\/api\/assets\//, '');
   const req = new Request(`http://localhost:3000/api/assets/${assetId}`);
   const res = await getAssetRoute(req, { params: Promise.resolve({ id: assetId }) });
@@ -217,4 +217,57 @@ test('promotes asset with payload and serves real artwork payload from route', a
 
   const servedBuffer = new Uint8Array(await res.arrayBuffer());
   assert.deepEqual(servedBuffer, rawArtwork);
+});
+
+test('normalizes binary payloads before approved-version JSON storage', async () => {
+  serverOrderStore.clear();
+  const rawArtwork = Buffer.from([0xfb, 0xef]);
+  const design = {
+    ...createInitialState('card'),
+    image: {
+      src: 'blob:approved-artwork',
+      name: 'approved.png',
+      type: 'image/png',
+      payload: rawArtwork,
+    },
+  };
+
+  const { promotedAssets } = await promoteDesignAssets(design);
+  const expectedPayload = rawArtwork.toString('base64');
+  assert.equal(promotedAssets[0].payload, expectedPayload);
+  assert.equal(getAsset(promotedAssets[0].id)?.payload, expectedPayload);
+
+  const order = serverOrderStore.createOrder({
+    idempotencyKey: 'approved-binary-payload',
+    design,
+    customer: { fullName: 'Test User', phone: '0900000000', shippingAddress: 'Address' },
+    assets: promotedAssets,
+  });
+  const version = serverOrderStore.getApprovedDesignVersion(order.approvedDesignVersionId);
+  assert.equal(version?.assets[0].payload, expectedPayload);
+  assert.equal(JSON.parse(JSON.stringify(version)).assets[0].payload, expectedPayload);
+});
+
+test('asset route decodes unpadded, whitespace-wrapped, and data URL base64 payloads', async () => {
+  const expected = new Uint8Array([0xfb, 0xef]);
+  const payloads = ['++8', ' ++\n8= \t', 'data:image/png;base64,++8='];
+
+  for (const [index, payload] of payloads.entries()) {
+    const id = `/api/assets/asset-base64-${index}`;
+    storeAsset({
+      id,
+      sourceKey: `blob:base64-${index}`,
+      mimeType: 'image/png',
+      byteSize: expected.byteLength,
+      originalUrl: id,
+      payload,
+    });
+    const response = await getAssetRoute(
+      new Request(`http://localhost:3000${id}`),
+      { params: Promise.resolve({ id: id.replace('/api/assets/', '') }) },
+    );
+
+    assert.equal(response.status, 200);
+    assert.deepEqual(new Uint8Array(await response.arrayBuffer()), expected);
+  }
 });

@@ -27,8 +27,8 @@ export async function GET(
     const payload = asset.payload ?? asset.data;
 
     if (payload !== undefined && payload !== null) {
-      if (payload instanceof Uint8Array) {
-        const buffer = Buffer.from(payload);
+      if ((payload as unknown) instanceof Uint8Array) {
+        const buffer = Buffer.from(payload as unknown as Uint8Array);
         return new Response(buffer, {
           status: 200,
           headers: {
@@ -39,22 +39,15 @@ export async function GET(
         });
       }
       if (typeof payload === 'string' && payload.length > 0) {
-        if (payload.startsWith('data:')) {
-          const base64Index = payload.indexOf(';base64,');
-          const base64Payload = base64Index !== -1 ? payload.slice(base64Index + 8) : payload;
-          const buffer = Buffer.from(base64Payload, 'base64');
-          return new Response(buffer, {
-            status: 200,
-            headers: {
-              'Content-Type': contentType,
-              'Content-Length': String(buffer.byteLength),
-              'Cache-Control': 'public, max-age=31536000, immutable',
-            },
-          });
+        let base64Payload = payload.trim();
+        if (base64Payload.startsWith('data:')) {
+          const commaIndex = base64Payload.indexOf(',');
+          if (commaIndex !== -1) {
+            base64Payload = base64Payload.slice(commaIndex + 1);
+          }
         }
-        const trimmed = payload.trim();
-        const isBase64 = /^[A-Za-z0-9+/=]+$/.test(trimmed) && trimmed.length % 4 === 0 && !trimmed.includes('<');
-        const buffer = isBase64 ? Buffer.from(trimmed, 'base64') : Buffer.from(payload, 'utf8');
+        const cleaned = base64Payload.replace(/\s+/g, '');
+        const buffer = Buffer.from(cleaned, 'base64');
         return new Response(buffer, {
           status: 200,
           headers: {
