@@ -141,16 +141,11 @@ export default function OrderConfirmationPage(props: {
 
           <div className="space-y-1 pt-1 border-t border-[#ECE6DC] text-[#666A6D]">
             <p>
-              <strong className="text-[#2E3338]">Người nhận:</strong> {customer.name} ({customer.phone})
+              <strong className="text-[#2E3338]">Người nhận:</strong> {customer.fullName} ({customer.phone})
             </p>
             <p>
-              <strong className="text-[#2E3338]">Địa chỉ:</strong> {customer.address}
+              <strong className="text-[#2E3338]">Địa chỉ:</strong> {customer.shippingAddress}
             </p>
-            {customer.note && (
-              <p>
-                <strong className="text-[#2E3338]">Ghi chú:</strong> {customer.note}
-              </p>
-            )}
           </div>
         </div>
 

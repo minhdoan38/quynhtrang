@@ -15,7 +15,7 @@ export async function POST(request: Request) {
       );
     }
 
-    if (!customer?.name?.trim() || !customer?.phone?.trim() || !customer?.address?.trim()) {
+    if (!customer?.fullName?.trim() || !customer?.phone?.trim() || !customer?.shippingAddress?.trim()) {
       return NextResponse.json(
         { error: 'Vui lòng cung cấp đầy đủ tên, số điện thoại và địa chỉ.' },
         { status: 400 }
