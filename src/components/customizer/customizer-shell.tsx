@@ -1684,6 +1684,13 @@ export function CustomizerShell() {
             value={activeCardSurface}
             onChange={(newSurface) => {
               setActiveCardSurface(newSurface);
+              if (typeof window !== 'undefined') {
+                window.dispatchEvent(
+                  new CustomEvent('card_surface_changed', {
+                    detail: { surface: newSurface },
+                  })
+                );
+              }
               setSelectedTarget(null);
               setSelectedElementId(null);
               setSelectedTextId(null);

@@ -29,6 +29,14 @@ export function getCardSpreadDimensions(
     ? { width: 210, height: 148, foldPosition: 105 }
     : { width: 105, height: 148, foldPosition: 0 };
 }
+export function isElementCrossingCardFold(
+  element: CanvasElement,
+  orientation: CardOrientation = 'horizontal'
+): boolean {
+  if (element.surface !== 'inside') return false;
+  const foldPosition = orientation === 'horizontal' ? 148 : 105;
+  return element.x < foldPosition && element.x + element.width > foldPosition;
+}
 
 
 export interface ProductVariant {
@@ -1865,6 +1873,11 @@ export function getDesignSummary(state: DesignState): DesignSummary {
 
 export function getPreflight(state: DesignState): PreflightResult {
   const checks: PreflightCheck[] = [];
+
+  // Card-specific rules: blank inside or back is valid and not an error
+  if (state.productId === 'card') {
+    // Intentionally omit missing-content errors for inside or back surfaces
+  }
 
   const imageElement = (state.elements ?? getDefaultElements(state)).find((element) => element.type === 'image');
   const imageData = imageElement ? getImageData(imageElement) : null;
