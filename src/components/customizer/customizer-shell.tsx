@@ -177,15 +177,19 @@ export function CustomizerShell() {
   const [hasUnsavedWarning, setHasUnsavedWarning] = useState(false);
   const saveTimerRef = useRef<NodeJS.Timeout | null>(null);
   const [projectRecents, setProjectRecents] = useState<string[]>([]);
+  const [colorPickerTarget, setColorPickerTarget] = useState<ColorTarget | null>(null);
 
   const activeColorTarget = React.useMemo<ColorTarget | null>(() => {
+    if (colorPickerTarget) {
+      return colorPickerTarget;
+    }
     if (selectedTarget === 'text') {
       const elements = state.elements ?? getDefaultElements(state);
       const targetId = selectedTextId || elements.find((e) => e.type === 'text')?.id || 'text-1';
       return { kind: 'element', elementId: targetId, property: 'fill' };
     }
     return { kind: 'surface', surfaceId: 'front', property: 'background' };
-  }, [selectedTarget, selectedTextId, state]);
+  }, [colorPickerTarget, selectedTarget, selectedTextId, state]);
 
   const currentImageElement = React.useMemo(() => {
     const elements = state.elements ?? getDefaultElements(state);
@@ -249,6 +253,7 @@ export function CustomizerShell() {
   const handleCloseSheet = useCallback(() => {
     if (activeSheet === 'color') {
       closeColorSession();
+      setColorPickerTarget(null);
     }
     // Commit any active sheet transaction (font, opacity, font-size, mask, etc.)
     commitActiveTransaction();
@@ -1354,6 +1359,11 @@ export function CustomizerShell() {
         startTransaction('change-color', 'Đổi màu', activeColorTarget?.kind === 'element' ? [activeColorTarget.elementId] : []);
         setActiveSheet('color');
         break;
+      case 'background-color':
+        setColorPickerTarget({ kind: 'surface', surfaceId: 'front', property: 'background' });
+        startTransaction('change-color', 'Đổi màu', []);
+        setActiveSheet('color');
+        break;
       case 'font-size':
         startTransaction('change-font-size', 'Đổi cỡ chữ', [selectedTextId || 'text-1']);
         setActiveSheet('font-size');
@@ -1967,6 +1977,8 @@ export function CustomizerShell() {
         selectedTarget={selectedTarget}
         selectedId={selectedElementId}
         productId={state.productId}
+        variantId={state.variantId}
+        productOptions={state.productOptions}
         selectionMode={selectionMode}
         selectedCount={selectedElementIds.length}
         canGroup={selectedElementIds.length >= 2}
