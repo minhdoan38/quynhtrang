@@ -16,7 +16,7 @@ import { getFriendlyProductName } from '@/components/checkout/order-summary-card
 import { QuantityStepper } from '@/components/checkout/quantity-stepper';
 import { CustomerInformationForm } from '@/components/checkout/customer-information-form';
 import { calculatePriceQuote } from '@/lib/pricing';
-import type { CustomerInfo, PendingOrder } from '@/lib/order-types';
+import type { CustomerInfo, PendingOrder, CheckoutDraft } from '@/lib/order-types';
 import {
   createCheckoutDraft,
   loadCheckoutDraft,
@@ -219,6 +219,33 @@ export default function CheckoutPage() {
       }
     }
   };
+  const handleRefreshStaleDraft = () => {
+    const currentDraft = loadCheckoutDraft();
+    const updatedDraft: CheckoutDraft = {
+      ...(currentDraft || createCheckoutDraft(design, customer)),
+      design: JSON.parse(JSON.stringify(design)),
+      productId: design.productId,
+      variantId: design.variantId,
+      quantity: design.quantity,
+      customer,
+      idempotencyKey: `checkout-${crypto.randomUUID()}`,
+      orderId: undefined,
+      preflightAcknowledged: true,
+      preflightRevision: currentDraft?.preflightRevision || 'rev-0',
+      status: 'editing',
+      updatedAt: new Date().toISOString(),
+    };
+    saveCheckoutDraft(updatedDraft);
+    setStaleRevisionWarning(false);
+    setFormError(null);
+    if (createdOrder) {
+      setCreatedOrder(null);
+      if (typeof window !== 'undefined') {
+        sessionStorage.removeItem('quynhtrang.pendingOrderId');
+      }
+    }
+  };
+
 
   const handleBack = () => {
     if (step === 3 && state36Mode === 'confirmation') {
@@ -398,13 +425,22 @@ export default function CheckoutPage() {
                   <AlertTriangle size={18} className="shrink-0 text-[#A86E22]" />
                   <span>Thiết kế đã thay đổi kể từ lần kiểm tra trước.</span>
                 </div>
-                <button
-                  type="button"
-                  onClick={() => router.push('/?view=editor&mode=preflight')}
-                  className="px-3 py-1.5 rounded-lg bg-[#A86E22] text-white text-xs font-semibold hover:bg-[#8B5919] transition-colors shrink-0"
-                >
-                  Kiểm tra lại thiết kế
-                </button>
+                <div className="flex items-center gap-2 shrink-0">
+                  <button
+                    type="button"
+                    onClick={handleRefreshStaleDraft}
+                    className="px-3 py-1.5 rounded-lg bg-[#315F86] text-white text-xs font-semibold hover:bg-[#244A69] transition-colors"
+                  >
+                    Cập nhật thiết kế mới
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => router.push('/?view=editor&mode=preflight')}
+                    className="px-3 py-1.5 rounded-lg bg-[#A86E22] text-white text-xs font-semibold hover:bg-[#8B5919] transition-colors"
+                  >
+                    Kiểm tra lại thiết kế
+                  </button>
+                </div>
               </div>
             )}
 

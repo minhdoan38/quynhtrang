@@ -53,6 +53,11 @@ import {
   flushAutosave,
   type RecentProject,
 } from '@/lib/storage';
+import {
+  createCheckoutDraft,
+  loadCheckoutDraft,
+  saveCheckoutDraft,
+} from '@/lib/checkout-draft';
 import { processImageUpload, revokeImageUrl } from '@/lib/upload';
 import {
   resetToFit,
@@ -2325,6 +2330,25 @@ export function CustomizerShell() {
           onFix={handlePreflightFix}
           onContinueToCheckout={() => {
             router.push('/checkout');
+            const existingDraft = loadCheckoutDraft();
+            const preflightRev = (preflight as { revision?: string }).revision ?? 'rev-0';
+            if (existingDraft) {
+              saveCheckoutDraft({
+                ...existingDraft,
+                design: JSON.parse(JSON.stringify(state)),
+                productId: state.productId,
+                variantId: state.variantId,
+                quantity: state.quantity,
+                preflightRevision: preflightRev,
+                preflightAcknowledged: true,
+                updatedAt: new Date().toISOString(),
+              });
+            } else {
+              const draft = createCheckoutDraft(state);
+              draft.preflightRevision = preflightRev;
+              draft.preflightAcknowledged = true;
+              saveCheckoutDraft(draft);
+            }
           }}
         />
       )}
