@@ -38,6 +38,29 @@ export function isElementCrossingCardFold(
   const foldPosition = orientation === 'horizontal' ? 148 : 105;
   return element.x < foldPosition && element.x + element.width > foldPosition;
 }
+export interface NotebookCoverDefinition {
+  widthMm: number;
+  heightMm: number;
+  aspectRatio: number;
+  bindingMarginMm: number;
+  bindingMarginPct: number;
+}
+
+export const NOTEBOOK_COVER_DEFINITION: Readonly<NotebookCoverDefinition> = Object.freeze({
+  widthMm: 148,
+  heightMm: 210,
+  aspectRatio: 148 / 210,
+  bindingMarginMm: 18,
+  bindingMarginPct: 12,
+});
+
+export function isElementInNotebookBindingZone(
+  element: { x: number; width?: number },
+  canvasWidth: number = 100
+): boolean {
+  return element.x < canvasWidth * 0.12;
+}
+
 
 export type FixedStickerShape = 'circle' | 'square' | 'rectangle' | 'oval' | 'rounded-rectangle';
 
@@ -133,7 +156,8 @@ export interface StickerOptions {
 }
 
 export interface NotebookOptions {
-  finish: 'matte' | 'glossy';
+  finish?: 'matte' | 'glossy';
+  backgroundColor?: string;
   [key: string]: unknown;
 }
 
