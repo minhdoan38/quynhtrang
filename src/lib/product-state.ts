@@ -2013,6 +2013,35 @@ export function getPreflight(state: DesignState): PreflightResult {
     // Intentionally omit missing-content errors for inside or back surfaces
   }
 
+  if (state.productId === 'notebook') {
+    const hasElements = state.elements && state.elements.length > 0;
+    const hasCustomBg = state.backgroundColor &&
+      state.backgroundColor.toLowerCase() !== '#ffffff';
+    if (!hasElements && !hasCustomBg) {
+      checks.push({
+        id: 'notebook-content',
+        level: 'warning',
+        type: 'warning',
+        label: 'Bìa vở chưa có nội dung',
+        description: 'Thêm hình ảnh, chữ hoặc sticker để bìa sổ sinh động hơn.',
+      });
+    }
+    if (hasElements) {
+      const textInBindingZone = state.elements?.some(
+        (e) => e.type === 'text' && isElementInNotebookBindingZone(e, 100)
+      );
+      if (textInBindingZone) {
+        checks.push({
+          id: 'notebook-binding-zone',
+          level: 'warning',
+          type: 'warning',
+          label: 'Văn bản nằm gần mép gáy sổ',
+          description: 'Giữ chữ quan trọng cách mép này một chút để không bị che bởi gáy hoặc lỗ lò xo.',
+        });
+      }
+    }
+  }
+
   const imageElement = (state.elements ?? getDefaultElements(state)).find((element) => element.type === 'image');
   const imageData = imageElement ? getImageData(imageElement) : null;
   const image = state.image ?? (imageData?.src ? {
