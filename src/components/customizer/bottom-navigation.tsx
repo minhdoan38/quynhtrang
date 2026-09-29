@@ -29,6 +29,8 @@ export type SelectedTarget = 'image' | 'text' | 'group' | null;
 
 interface BottomNavigationProps {
   selectedTarget: SelectedTarget;
+  selectedId?: string | null;
+  productId?: string;
   selectionMode?: 'default' | 'multi-select' | 'group-edit';
   selectedCount?: number;
   canGroup?: boolean;
@@ -44,6 +46,8 @@ interface BottomNavigationProps {
 
 export function BottomNavigation({
   selectedTarget,
+  selectedId = null,
+  productId,
   selectionMode = 'default',
   selectedCount = 0,
   canGroup = false,
@@ -81,8 +85,8 @@ export function BottomNavigation({
               onClick={() => onAction('group')}
               aria-label="Tạo nhóm các mục đã chọn"
               className={`flex flex-col items-center justify-center min-w-[44px] h-[48px] px-1.5 rounded-lg active:scale-95 transition-all ${canGroup
-                  ? 'text-[#315F86] hover:bg-[#DCEBF4]/40 font-medium'
-                  : 'text-[#666A6D]/40 cursor-not-allowed'
+                ? 'text-[#315F86] hover:bg-[#DCEBF4]/40 font-medium'
+                : 'text-[#666A6D]/40 cursor-not-allowed'
                 }`}
             >
               <FolderPlus className="w-4 h-4" />
@@ -95,8 +99,8 @@ export function BottomNavigation({
               onClick={() => onAction('duplicate-multi')}
               aria-label="Nhân bản các mục đã chọn"
               className={`flex flex-col items-center justify-center min-w-[44px] h-[48px] px-1.5 rounded-lg active:scale-95 transition-all ${selectedCount > 0
-                  ? 'text-[#2E3338] hover:bg-[#F8F3E8]'
-                  : 'text-[#666A6D]/40 cursor-not-allowed'
+                ? 'text-[#2E3338] hover:bg-[#F8F3E8]'
+                : 'text-[#666A6D]/40 cursor-not-allowed'
                 }`}
             >
               <Copy className="w-4 h-4 text-[#315F86]" />
@@ -109,8 +113,8 @@ export function BottomNavigation({
               onClick={() => onAction('delete-multi')}
               aria-label="Xóa các mục đã chọn"
               className={`flex flex-col items-center justify-center min-w-[44px] h-[48px] px-1.5 rounded-lg active:scale-95 transition-all ${selectedCount > 0
-                  ? 'text-[#B3535D] hover:bg-[#F6DADD]/40'
-                  : 'text-[#666A6D]/40 cursor-not-allowed'
+                ? 'text-[#B3535D] hover:bg-[#F6DADD]/40'
+                : 'text-[#666A6D]/40 cursor-not-allowed'
                 }`}
             >
               <Trash2 className="w-4 h-4" />
@@ -390,6 +394,17 @@ export function BottomNavigation({
           >
             <Grid2x2 className="w-4 h-4 text-[#315F86]" />
             <span className="text-[11px] font-medium mt-0.5">Họa tiết</span>
+          </button>
+        )}
+
+        {productId === 'sticker' && !selectedId && (
+          <button
+            type="button"
+            onClick={() => onAction('sticker-border')}
+            className="flex-1 flex flex-col items-center justify-center min-w-[44px] h-[48px] rounded-lg text-[#2E3338] hover:bg-[#F8F3E8] active:scale-95 transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#315F86]"
+          >
+            <Scissors className="w-4 h-4 text-[#315F86]" />
+            <span className="text-[11px] font-medium mt-0.5">Viền sticker</span>
           </button>
         )}
 

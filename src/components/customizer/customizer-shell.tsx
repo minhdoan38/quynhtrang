@@ -30,7 +30,9 @@ import {
   type TextPreset,
   type PatternWorkspaceView,
   type PatternConfig,
+  type StickerOptions,
 } from '@/lib/product-state';
+import { computeStickerContour } from '@/lib/sticker-contour';
 import { CardSurfaceSwitcher } from './card-surface-switcher';
 import { PatternWorkspaceToggle } from './pattern-workspace-toggle';
 import { getBackgroundRemovalProvider } from '@/lib/background-removal/provider';
@@ -194,6 +196,22 @@ export function CustomizerShell() {
 
   const currentImageData = currentImageElement ? getImageData(currentImageElement) : null;
   const hasRemovedBackground = Boolean(currentImageData?.removedBackgroundSrc);
+  const contourResult = React.useMemo(
+    () => computeStickerContour(state.elements, state.productOptions as StickerOptions),
+    [state.elements, state.productOptions]
+  );
+
+  const defaultStickerOptions: StickerOptions = React.useMemo(() => ({
+    borderWidth: 2,
+    hasWhiteBorder: true,
+    showCutline: true,
+    cutLineMode: 'die-cut',
+  }), []);
+
+  const currentStickerOptions: StickerOptions = React.useMemo(() => ({
+    ...defaultStickerOptions,
+    ...((state.productOptions as Partial<StickerOptions>) || {}),
+  }), [defaultStickerOptions, state.productOptions]);
   const {
     currentColor: activeColorValue,
     updateColorLive,
@@ -1226,6 +1244,9 @@ export function CustomizerShell() {
       case 'layers':
         setActiveSheet('layers');
         break;
+      case 'sticker-border':
+        setActiveSheet('sticker-border');
+        break;
       case 'preview':
         setOverlayMode('preview');
         break;
@@ -1932,6 +1953,8 @@ export function CustomizerShell() {
       {/* ZONE 3: One Adaptive Bottom Toolbar */}
       <BottomNavigation
         selectedTarget={selectedTarget}
+        selectedId={selectedElementId}
+        productId={state.productId}
         selectionMode={selectionMode}
         selectedCount={selectedElementIds.length}
         canGroup={selectedElementIds.length >= 2}
@@ -2117,6 +2140,39 @@ export function CustomizerShell() {
             },
             { type: 'change-pattern-repeat', label: 'Khôi phục mặc định' }
           );
+        }}
+        stickerOptions={state.productId === 'sticker' ? currentStickerOptions : undefined}
+        stickerContourResult={state.productId === 'sticker' ? contourResult : undefined}
+        onChangeStickerOptions={(patch) => {
+          Object.entries(patch).forEach(([key, value]) => {
+            dispatchDirect({
+              type: 'SET_PRODUCT_OPTION',
+              key,
+              value,
+            });
+          });
+        }}
+        onCommitStickerOptions={(patch) => {
+          Object.entries(patch).forEach(([key, value]) => {
+            executeAction(
+              {
+                type: 'SET_PRODUCT_OPTION',
+                key,
+                value,
+              },
+              { type: 'change-product-option', label: 'Đổi viền sticker' }
+            );
+          });
+        }}
+        onTriggerBackgroundRemoval={() => {
+          const elements = state.elements ?? getDefaultElements(state);
+          const targetImage = elements.find((el) => el.type === 'image');
+          if (!targetImage) return;
+          setSelectedTarget('image');
+          setSelectedElementId(targetImage.id);
+          startTransaction('refine-background', 'Chỉnh vùng cắt', [targetImage.id]);
+          setFocusMode('remove-bg');
+          setActiveSheet(null);
         }}
       />
 

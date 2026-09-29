@@ -35,8 +35,10 @@ import { MaskSheetContent } from './mask-sheet-content';
 import type { MaskType } from '@/lib/image-mask';
 import type { ColorValue, HexColor } from '@/lib/color/color-types';
 import { createSolidColor } from '@/lib/color/color-validation';
-import type { PatternConfig } from '@/lib/product-state';
+import type { PatternConfig, StickerOptions } from '@/lib/product-state';
 import { PatternControlsSheet } from './pattern-controls-sheet';
+import type { StickerContourResult } from '@/lib/sticker-contour';
+import { StickerBorderSheet } from './sticker-border-sheet';
 export type ActiveSheetType =
   | 'add'
   | 'image-source'
@@ -50,6 +52,7 @@ export type ActiveSheetType =
   | 'align'
   | 'more'
   | 'pattern'
+  | 'sticker-border'
   | null;
 interface EditorSheetsProps {
   activeSheet: ActiveSheetType;
@@ -120,6 +123,11 @@ interface EditorSheetsProps {
   ) => void;
   onOpenColorSheet?: () => void;
   onResetPatternDefault?: () => void;
+  stickerOptions?: StickerOptions;
+  stickerContourResult?: StickerContourResult;
+  onChangeStickerOptions?: (patch: Partial<StickerOptions>) => void;
+  onCommitStickerOptions?: (patch: Partial<StickerOptions>) => void;
+  onTriggerBackgroundRemoval?: () => void;
 }
 
 const PALETTE = [
@@ -194,6 +202,11 @@ export function EditorSheets({
   onCommitPatternChange,
   onOpenColorSheet,
   onResetPatternDefault,
+  stickerOptions,
+  stickerContourResult,
+  onChangeStickerOptions,
+  onCommitStickerOptions,
+  onTriggerBackgroundRemoval,
 }: EditorSheetsProps) {
   const isOpen = activeSheet !== null;
 
@@ -243,6 +256,20 @@ export function EditorSheets({
             onOpenColorSheet={() => onOpenColorSheet?.()}
             onResetDefault={() => onResetPatternDefault?.()}
             onClose={onClose}
+          />
+        )}
+        {/* STICKER BORDER SHEET */}
+        {activeSheet === 'sticker-border' && stickerOptions && stickerContourResult && (
+          <StickerBorderSheet
+            open={activeSheet === 'sticker-border'}
+            onOpenChange={(open) => {
+              if (!open) onClose();
+            }}
+            options={stickerOptions}
+            contourResult={stickerContourResult}
+            onChangeOptions={(patch) => onChangeStickerOptions?.(patch)}
+            onCommitOptions={(patch) => onCommitStickerOptions?.(patch)}
+            onTriggerBackgroundRemoval={onTriggerBackgroundRemoval}
           />
         )}
         {/* IMAGE SOURCE SHEET (REPLACE IMAGE) */}
