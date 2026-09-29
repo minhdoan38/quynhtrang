@@ -5,6 +5,7 @@ import {
   deleteSelectedElements,
 } from './grouping.ts';
 import { moveElements } from './multi-selection.ts';
+import { computeStickerContour } from './sticker-contour.ts';
 export type ProductId = 'wrapping' | 'card' | 'sticker' | 'notebook';
 export type CardSurface = 'front' | 'inside' | 'back';
 export type CardOrientation = 'horizontal' | 'vertical';
@@ -273,6 +274,8 @@ export interface PreflightCheck {
   id: string;
   level: 'pass' | 'warning' | 'error';
   label: string;
+  type?: 'pass' | 'warning' | 'error';
+  description?: string;
 }
 
 export interface PreflightResult {
@@ -1880,6 +1883,46 @@ export function getDesignSummary(state: DesignState): DesignSummary {
 
 export function getPreflight(state: DesignState): PreflightResult {
   const checks: PreflightCheck[] = [];
+
+  // Sticker-specific rules: contour analysis and empty content check
+  if (state.productId === 'sticker') {
+    if (!state.elements || state.elements.length === 0) {
+      checks.push({
+        id: 'sticker-content',
+        level: 'error',
+        type: 'error',
+        label: 'Chưa có nội dung sticker',
+        description: 'Vui lòng thêm hình ảnh hoặc chữ vào sticker.',
+      });
+    } else {
+      const contour = computeStickerContour(state.elements, state.productOptions as StickerOptions);
+      if (contour.status === 'disconnected') {
+        checks.push({
+          id: 'sticker-contour',
+          level: 'warning',
+          type: 'warning',
+          label: 'Một số chi tiết đang tách rời',
+          description: 'Di chuyển chúng gần nhau hơn hoặc tăng viền để tạo thành một sticker.',
+        });
+      } else if (contour.status === 'tiny-details') {
+        checks.push({
+          id: 'sticker-contour',
+          level: 'warning',
+          type: 'warning',
+          label: 'Một số chi tiết quá nhỏ để cắt đẹp',
+          description: 'Tăng viền hoặc đơn giản thiết kế.',
+        });
+      } else if (contour.status === 'valid') {
+        checks.push({
+          id: 'sticker-contour',
+          level: 'pass',
+          type: 'pass',
+          label: 'Đường cắt sticker hợp lệ',
+          description: 'Các chi tiết đã được nối liền tạo thành một khối cắt duy nhất.',
+        });
+      }
+    }
+  }
 
   // Card-specific rules: blank inside or back is valid and not an error
   if (state.productId === 'card') {

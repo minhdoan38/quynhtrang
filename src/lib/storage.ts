@@ -21,18 +21,56 @@ export interface RecentProject {
 
 export function sanitizeElementsForStorage(elements?: CanvasElement[]): CanvasElement[] | undefined {
   if (!elements) return undefined;
-  return elements.filter((element) => {
-    const candidate = element as { generated?: unknown; data?: Record<string, unknown> };
-    if (candidate.generated === true) return false;
-    if (candidate.data?.generated === true || candidate.data?.patternGenerated === true) return false;
-    return true;
-  });
+  return elements
+    .filter((element) => {
+      const candidate = element as {
+        generated?: unknown;
+        isGeneratedContour?: unknown;
+        data?: Record<string, unknown>;
+      };
+      if (candidate.generated === true || candidate.isGeneratedContour === true) return false;
+      if (
+        candidate.data?.generated === true ||
+        candidate.data?.patternGenerated === true ||
+        candidate.data?.isGeneratedContour === true
+      ) {
+        return false;
+      }
+      return true;
+    })
+    .map((element) => {
+      // Strip generated sticker contour fields attached directly or inside data
+      const copy = { ...element } as Record<string, unknown>;
+      delete copy.borderSvgPath;
+      delete copy.cutlineSvgPath;
+      delete copy.stickerContour;
+      if (copy.data && typeof copy.data === 'object') {
+        const dataCopy = { ...(copy.data as Record<string, unknown>) };
+        delete dataCopy.borderSvgPath;
+        delete dataCopy.cutlineSvgPath;
+        delete dataCopy.stickerContour;
+        copy.data = dataCopy;
+      }
+      return copy as unknown as CanvasElement;
+    });
+}
+
+export function sanitizeProductOptionsForStorage(
+  options?: Record<string, unknown>
+): Record<string, unknown> {
+  if (!options) return {};
+  const sanitized: Record<string, unknown> = { ...options };
+  delete sanitized.borderSvgPath;
+  delete sanitized.cutlineSvgPath;
+  delete sanitized.stickerContour;
+  delete sanitized.contourResult;
+  return sanitized;
 }
 
 export function sanitizeDesignForStorage(state: DesignState): DesignState {
   return {
     ...state,
-    productOptions: { ...state.productOptions },
+    productOptions: sanitizeProductOptionsForStorage(state.productOptions),
     elements: sanitizeElementsForStorage(state.elements),
   };
 }
@@ -112,7 +150,7 @@ export function saveRecentProject(state: DesignState): boolean {
       color: state.color,
       backgroundColor: state.backgroundColor,
       image: state.image ? { ...state.image } : null,
-      productOptions: { ...state.productOptions },
+      productOptions: sanitizeProductOptionsForStorage(state.productOptions),
       elements: sanitizeElementsForStorage(state.elements),
       updatedAt: Date.now(),
     };

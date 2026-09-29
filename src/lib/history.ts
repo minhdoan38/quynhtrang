@@ -30,7 +30,9 @@ export type HistoryActionType =
   | 'change-pattern-scale'
   | 'change-pattern-spacing'
   | 'change-pattern-background'
-  | 'rotate-pattern';
+  | 'rotate-pattern'
+  | 'change-sticker-border'
+  | 'toggle-sticker-border';
 
 export interface SelectionSnapshot {
   selectedTarget: 'image' | 'text' | 'group' | null;
@@ -154,4 +156,75 @@ export function canUndo(history: HistoryState): boolean {
 
 export function canRedo(history: HistoryState): boolean {
   return history.future.length > 0;
+}
+
+export function getHistoryActionLabel(type: HistoryActionType): string {
+  switch (type) {
+    case 'change-sticker-border':
+      return 'Đổi độ dày viền sticker';
+    case 'toggle-sticker-border':
+      return 'Bật/tắt viền trắng sticker';
+    case 'add':
+      return 'Thêm đối tượng';
+    case 'move':
+      return 'Di chuyển';
+    case 'resize':
+      return 'Thay đổi kích thước';
+    case 'rotate':
+      return 'Xoay';
+    case 'edit-text':
+      return 'Sửa chữ';
+    case 'change-font':
+      return 'Đổi font';
+    case 'change-font-size':
+      return 'Đổi cỡ chữ';
+    case 'change-text-align':
+      return 'Đổi căn lề';
+    case 'change-color':
+      return 'Đổi màu';
+    case 'change-gradient':
+      return 'Đổi dải màu';
+    case 'change-opacity':
+      return 'Đổi độ mờ';
+    case 'crop':
+      return 'Cắt ảnh';
+    case 'remove-background':
+      return 'Xóa nền';
+    case 'refine-background':
+      return 'Chỉnh viền cắt';
+    case 'replace-image':
+      return 'Thay ảnh';
+    case 'change-mask':
+      return 'Đổi khung hình';
+    case 'group':
+      return 'Nhóm';
+    case 'ungroup':
+      return 'Rã nhóm';
+    case 'delete':
+      return 'Xóa';
+    case 'duplicate':
+      return 'Nhân bản';
+    case 'reorder-layer':
+      return 'Đổi thứ tự lớp';
+    case 'lock':
+      return 'Khóa lớp';
+    case 'unlock':
+      return 'Mở khóa lớp';
+    case 'apply-template':
+      return 'Áp dụng mẫu';
+    case 'change-product-option':
+      return 'Đổi tùy chọn sản phẩm';
+    case 'change-pattern-repeat':
+      return 'Đổi kiểu lặp';
+    case 'change-pattern-scale':
+      return 'Đổi cỡ họa tiết';
+    case 'change-pattern-spacing':
+      return 'Đổi khoảng cách họa tiết';
+    case 'change-pattern-background':
+      return 'Đổi màu nền giấy';
+    case 'rotate-pattern':
+      return 'Xoay họa tiết';
+    default:
+      return 'Chỉnh sửa';
+  }
 }
