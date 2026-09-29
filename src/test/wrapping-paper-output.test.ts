@@ -80,10 +80,9 @@ test('order snapshot retains source composition and patternConfig without genera
   });
 
   const customer: CustomerInfo = {
-    name: 'Trần Thị B',
+    fullName: 'Trần Thị B',
     phone: '0901234567',
-    address: '456 Lê Lợi, Quận 1, TP.HCM',
-    note: 'Gói quà sinh nhật',
+    shippingAddress: '456 Lê Lợi, Quận 1, TP.HCM',
   };
 
   const order = serverOrderStore.createOrder(configuredDesign, customer);

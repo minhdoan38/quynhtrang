@@ -15,18 +15,17 @@ test('creates a pending order and immutable snapshot', () => {
   };
 
   const customer: CustomerInfo = {
-    name: 'Nguyễn Văn A',
+    fullName: 'Nguyễn Văn A',
     phone: '0987654321',
-    address: '123 Đường Hoa Lan, Quận Phú Nhuận, TP.HCM',
-    note: 'In nhanh giúp mình',
+    shippingAddress: '123 Đường Hoa Lan, Quận Phú Nhuận, TP.HCM',
   };
 
   const order = serverOrderStore.createOrder(originalDesign, customer);
 
   assert.ok(order.id.startsWith('QT'));
   assert.equal(order.status, 'pending');
-  assert.equal(order.paymentStatus, 'pending');
-  assert.equal(order.customer.name, 'Nguyễn Văn A');
+  assert.equal(order.paymentStatus, 'pending_payment');
+  assert.equal(order.customer.fullName, 'Nguyễn Văn A');
   assert.equal(order.snapshot.design.text, 'Chúc mừng đám cưới');
   assert.equal(order.snapshot.summary.quantity, 5);
 

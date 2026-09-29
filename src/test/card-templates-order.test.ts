@@ -65,9 +65,9 @@ test('serverOrderStore creates snapshot keeping all multi-surface elements intac
   ];
   const state = { ...createInitialState('card'), elements };
   const order = serverOrderStore.createOrder(state, {
-    name: 'Nguyễn Văn A',
+    fullName: 'Nguyễn Văn A',
     phone: '0901234567',
-    address: '123 Phố Huế, Hà Nội',
+    shippingAddress: '123 Phố Huế, Hà Nội',
   });
   assert.ok(order.id);
   assert.equal(order.snapshot.design.elements?.length, 3);

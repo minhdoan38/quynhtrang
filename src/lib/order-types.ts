@@ -1,13 +1,85 @@
-import type { DesignState, DesignSummary } from './product-state';
+import type { DesignState, DesignSummary, ProductId } from './product-state';
 
-export type PaymentStatus = 'pending' | 'confirmed';
+export type PaymentStatus =
+  | 'pending_payment'
+  | 'payment_reported'
+  | 'paid'
+  | 'payment_failed'
+  | 'cancelled';
+
+export interface OrderPayment {
+  orderId: string;
+  provider: string;
+  amount: number;
+  currency: string;
+  paymentReference: string;
+  status: PaymentStatus;
+  customerReportedAt?: string;
+  confirmedAt?: string;
+  confirmedBy?: string;
+  providerTransactionId?: string;
+}
+
+export interface PaymentInstructions {
+  orderId: string;
+  provider: string;
+  bankName: string;
+  accountNumber: string;
+  accountName: string;
+  amount: number;
+  currency: string;
+  paymentReference: string;
+  qrPayload: string;
+  qrUrl?: string;
+  expiresAt?: string;
+}
 
 export interface CustomerInfo {
-  name: string;
+  fullName: string;
   phone: string;
-  address: string;
-  email?: string;
-  note?: string;
+  shippingAddress: string;
+}
+
+export interface PromotedAsset {
+  id: string;
+  sourceKey: string;
+  mimeType: string;
+  byteSize: number;
+  width?: number;
+  height?: number;
+  originalUrl: string;
+  derivedUrls?: Record<string, string>;
+  checksum?: string;
+}
+
+export interface ApprovedDesignVersion {
+  id: string;
+  revision: string;
+  design: DesignState;
+  assets: PromotedAsset[];
+  preflightRevision: string;
+  preflightAcknowledged: boolean;
+  createdAt: string;
+}
+
+export interface PendingOrder {
+  id: string;
+  idempotencyKey: string;
+  status: 'pending' | 'processing' | 'completed' | 'cancelled';
+  paymentStatus: 'pending' | 'confirmed' | PaymentStatus;
+  customer: CustomerInfo;
+  product: {
+    productId: ProductId;
+    variantId: string;
+    quantity: number;
+    unitPrice: number;
+    subtotal: number;
+  };
+  approvedDesignVersionId: string;
+  preflightRevision: string;
+  createdAt: string;
+  snapshot: ApprovedDesignSnapshot;
+  payment: OrderPayment;
 }
 
 export interface ApprovedDesignSnapshot {
@@ -17,11 +89,20 @@ export interface ApprovedDesignSnapshot {
   createdAt: string;
 }
 
-export interface PendingOrder {
+export interface CheckoutDraft {
   id: string;
-  status: 'pending' | 'processing' | 'completed' | 'cancelled';
-  paymentStatus: PaymentStatus;
+  idempotencyKey: string;
+  designRevision: string;
+  design: DesignState;
+  productId: ProductId;
+  variantId: string;
+  quantity: number;
   customer: CustomerInfo;
-  snapshot: ApprovedDesignSnapshot;
-  createdAt: string;
+  preflightRevision: string;
+  preflightAcknowledged: boolean;
+  promotedAssets: PromotedAsset[];
+  approvedDesignVersionId?: string;
+  orderId?: string;
+  status: 'editing' | 'promoting' | 'creating-order' | 'ready-for-payment' | 'failed';
+  updatedAt: string;
 }
