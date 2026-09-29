@@ -853,6 +853,7 @@ export function DesignCanvas({
               isRotating={isRotating}
               rotationAngle={effectiveImageTransform.rotation}
               qualityReport={imageQuality}
+              safetyReport={activeSafetyReport}
               onQualityClick={() => {
                 if (imageQuality && onQualityExplanation) {
                   (onQualityExplanation as (arg: ImageQualityReport | string) => void)(imageQuality);

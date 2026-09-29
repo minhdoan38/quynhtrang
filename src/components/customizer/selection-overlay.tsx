@@ -4,6 +4,7 @@ import React from 'react';
 import { RotateCw, Lock, Check, AlertTriangle, Folder } from 'lucide-react';
 import type { TransformHandle } from '@/lib/canvas-interaction';
 import type { ImageQualityReport } from '@/lib/image-quality';
+import type { SafetyReport } from '@/lib/safe-area';
 
 export interface SelectionOverlayProps {
   mode?: 'single' | 'multi' | 'group';
@@ -11,6 +12,7 @@ export interface SelectionOverlayProps {
   isRotating?: boolean;
   rotationAngle?: number;
   qualityReport?: ImageQualityReport | null;
+  safetyReport?: SafetyReport | null;
   onQualityClick?: () => void;
   onHandlePointerDown: (handle: TransformHandle, e: React.PointerEvent) => void;
   onBoxPointerDown?: (e: React.PointerEvent) => void;
@@ -23,6 +25,7 @@ export function SelectionOverlay({
   isRotating = false,
   rotationAngle = 0,
   qualityReport,
+  safetyReport,
   onQualityClick,
   onHandlePointerDown,
   onBoxPointerDown,
@@ -54,6 +57,21 @@ export function SelectionOverlay({
       {mode === 'multi' && typeof selectionCount === 'number' && selectionCount > 0 && (
         <div className="absolute -top-7 left-0 bg-[#315F86] text-white text-xs font-medium px-2 py-0.5 rounded-full flex items-center gap-1 shadow-sm whitespace-nowrap pointer-events-none">
           <span>{selectionCount} mục đã chọn</span>
+        </div>
+      )}
+      {/* Contextual Safe Area Warning Badge */}
+      {safetyReport && safetyReport.risk !== 'safe' && (
+        <div
+          role="status"
+          aria-live="polite"
+          aria-label={`Cảnh báo an toàn: ${safetyReport.badgeLabel || 'Chi tiết này hơi sát mép'}`}
+          className={`absolute -top-8 left-1/2 -translate-x-1/2 pointer-events-auto flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-semibold shadow-xs whitespace-nowrap z-30 ${safetyReport.risk === 'high-risk'
+              ? 'bg-[#FDF0ED] text-[#A63626] border border-[#F5C7C0]'
+              : 'bg-[#FEF6E7] text-[#9A6214] border border-[#F4DCB0]'
+            }`}
+        >
+          <AlertTriangle className="w-3 h-3 shrink-0" />
+          <span>{safetyReport.badgeLabel || 'Hơi sát mép'}</span>
         </div>
       )}
       {/* Rotation Stem and Handle */}
