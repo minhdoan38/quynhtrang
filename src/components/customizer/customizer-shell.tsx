@@ -562,6 +562,10 @@ export function CustomizerShell() {
   const handleGroupSelected = useCallback(() => {
     if (selectedElementIds.length < 2) return;
     const result = groupElements(state, selectedElementIds);
+    if (!result.groupId) {
+      showToast('Không thể nhóm các đối tượng ở bề mặt khác nhau.');
+      return;
+    }
     executeAction(
       { type: 'SET_ELEMENTS', value: result.state.elements ?? [] },
       { type: 'group', label: 'Nhóm', affectedIds: [result.groupId, ...selectedElementIds] }
@@ -922,6 +926,7 @@ export function CustomizerShell() {
           type: 'ADD_TEXT_ELEMENT',
           preset: textPreset,
           id: newId,
+          surface: state.productId === 'card' ? activeCardSurface : undefined,
         },
         { type: 'add', label: 'Thêm chữ', affectedIds: [newId] }
       );
@@ -934,7 +939,7 @@ export function CustomizerShell() {
       startTransaction('edit-text', 'Sửa chữ', [newId]);
       setTextEditState(startTextEdit(newId, initialText, true));
     },
-    [executeAction, startTransaction, viewport]
+    [executeAction, startTransaction, viewport, state.productId, activeCardSurface]
   );
 
   const handleInsertShape = (shapeType: ShapePrimitiveType) => {
@@ -948,6 +953,7 @@ export function CustomizerShell() {
       height: 40,
       rotation: 0,
       zIndex: (state.elements?.length || 0) + 1,
+      surface: state.productId === 'card' ? activeCardSurface : undefined,
       data: { shapeType, fill: '#DCEBF4' },
     };
     executeAction(
@@ -1907,6 +1913,7 @@ export function CustomizerShell() {
         onUngroup={handleUngroupSelected}
         elements={state.elements ?? getDefaultElements(state)}
         surface={String(state.productOptions.surface || 'front')}
+        cardSurface={activeCardSurface}
         productId={state.productId}
         templateId={state.templateId}
         text={state.text}
@@ -1936,6 +1943,7 @@ export function CustomizerShell() {
         onAddText={(preset) => handleInsertText(preset)}
         onUploadImageClick={(source, ctx) => handleOpenImagePicker(source, ctx)}
         imageSourceContext={imageSourceContext}
+        onAddShape={handleInsertShape}
         onSetColor={handleSetColor}
         onSetFont={handleSetFont}
         onSetFontSize={handleSetFontSize}

@@ -24,7 +24,7 @@ import {
   FolderMinus,
   CheckSquare,
 } from 'lucide-react';
-import { TEMPLATES, type ProductId, type CanvasElement } from '@/lib/product-state';
+import { TEMPLATES, type ProductId, type CanvasElement, type CardSurface } from '@/lib/product-state';
 import { AddContentSheet } from './add-content-sheet';
 import { ImageSourceChooser } from './image-source-chooser';
 import { LayersSheetContent } from './layers-sheet-content';
@@ -66,6 +66,7 @@ interface EditorSheetsProps {
   onUngroup?: () => void;
   elements?: CanvasElement[];
   surface?: string;
+  cardSurface?: CardSurface;
   productId: ProductId;
   templateId: string | null;
   text: string;
@@ -140,6 +141,7 @@ export function EditorSheets({
   selectedElementId,
   elements,
   surface = 'front',
+  cardSurface,
   productId,
   templateId,
   text,
@@ -299,9 +301,9 @@ export function EditorSheets({
         )}
 
         {/* LAYERS SHEET */}
-        {activeSheet === 'layers' && (
-          <LayersSheetContent
-            elements={
+        {activeSheet === 'layers' &&
+          (() => {
+            const baseElements =
               elements && elements.length > 0
                 ? elements
                 : [
@@ -336,39 +338,67 @@ export function EditorSheets({
                       },
                     ]
                     : []),
-                ]
-            }
-            selectedId={
-              selectedElementId ||
-              (selectedTarget === 'image'
-                ? 'image-1'
-                : selectedTarget === 'text'
-                  ? 'text-1'
-                  : null)
-            }
-            surface={surface}
-            onSelect={(id) => {
-              if (id) {
-                onSelectLayer(id);
-              }
-            }}
-            onReorder={(ids) => {
-              onReorderElements?.(ids);
-            }}
-            onAddClick={() => {
-              onOpenAddSheet?.();
-            }}
-            onClose={onClose}
-            imageThumbnailSrc={imageThumbnailSrc}
-            selectionMode={selectionMode}
-            selectedElementIds={selectedElementIds}
-            activeGroupId={activeGroupId}
-            onEnterMultiSelect={onEnterMultiSelect}
-            onExitMultiSelect={onExitMultiSelect}
-            onToggleSelectElement={onToggleSelectElement}
-            onSelectChildInGroup={onSelectChildInGroup}
-          />
-        )}
+                ];
+
+            const surfaceElements = productId === 'card'
+              ? baseElements.filter((e) => (e.surface ?? 'front') === (cardSurface ?? 'front'))
+              : baseElements;
+
+            return (
+              <LayersSheetContent
+                elements={surfaceElements}
+                selectedId={
+                  selectedElementId ||
+                  (selectedTarget === 'image'
+                    ? 'image-1'
+                    : selectedTarget === 'text'
+                      ? 'text-1'
+                      : null)
+                }
+                surface={cardSurface ?? surface}
+                onSelect={(id) => {
+                  if (id) {
+                    onSelectLayer(id);
+                  }
+                }}
+                onReorder={(orderedSurfaceIds) => {
+                  if (!onReorderElements) return;
+                  if (productId !== 'card') {
+                    onReorderElements(orderedSurfaceIds);
+                    return;
+                  }
+                  // Preserve relative order and slots of elements on other surfaces
+                  const activeSurfaceKey = cardSurface ?? 'front';
+                  const activeSet = new Set(orderedSurfaceIds);
+                  const activeMap = new Map(orderedSurfaceIds.map((id, index) => [id, index]));
+                  const activeOriginalElements = baseElements.filter((e) => activeSet.has(e.id));
+                  activeOriginalElements.sort((a, b) => (activeMap.get(a.id) ?? 0) - (activeMap.get(b.id) ?? 0));
+                  let activePointer = 0;
+                  const mergedIds = baseElements.map((el) => {
+                    const elSurface = el.surface ?? 'front';
+                    if (elSurface === activeSurfaceKey && activePointer < activeOriginalElements.length) {
+                      const nextEl = activeOriginalElements[activePointer++];
+                      return nextEl.id;
+                    }
+                    return el.id;
+                  });
+                  onReorderElements(mergedIds);
+                }}
+                onAddClick={() => {
+                  onOpenAddSheet?.();
+                }}
+                onClose={onClose}
+                imageThumbnailSrc={imageThumbnailSrc}
+                selectionMode={selectionMode}
+                selectedElementIds={selectedElementIds}
+                activeGroupId={activeGroupId}
+                onEnterMultiSelect={onEnterMultiSelect}
+                onExitMultiSelect={onExitMultiSelect}
+                onToggleSelectElement={onToggleSelectElement}
+                onSelectChildInGroup={onSelectChildInGroup}
+              />
+            );
+          })()}
 
         {/* FONT SHEET */}
         {activeSheet === 'font' && (

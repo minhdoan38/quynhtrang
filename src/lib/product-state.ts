@@ -232,7 +232,7 @@ export type DesignAction =
   | { type: 'DELETE_ELEMENT'; id: string }
   | { type: 'BRING_FORWARD'; id: string }
   | { type: 'SEND_BACKWARD'; id: string }
-  | { type: 'ADD_TEXT_ELEMENT'; preset: TextPreset; id?: string; text?: string; color?: string }
+  | { type: 'ADD_TEXT_ELEMENT'; preset: TextPreset; id?: string; text?: string; color?: string; surface?: CardSurface }
   | { type: 'COMMIT_TEXT_EDIT'; id: string; text: string }
   | { type: 'UPDATE_TEXT_STYLE'; id: string; patch: Partial<TextElementData> }
   | { type: 'REPLACE_IMAGE_ASSET'; id?: string; asset: Partial<ImageAsset> & { src: string; name?: string } }
@@ -1260,6 +1260,13 @@ export function transitionState(state: DesignState, action: DesignAction): Desig
       };
     }
     case 'GROUP_ELEMENTS': {
+      const currentList = state.elements ?? getDefaultElements(state);
+      const selectedElements = currentList.filter((el) => action.ids.includes(el.id));
+      const surfaces = new Set(selectedElements.map((el) => el.surface ?? 'front'));
+      if (surfaces.size > 1) {
+        // Disallow cross-surface grouping
+        return state;
+      }
       const result = groupElements(state, action.ids);
       return result.state;
     }
@@ -1294,6 +1301,7 @@ export function transitionState(state: DesignState, action: DesignAction): Desig
         text: action.text,
         color: action.color ?? state.color,
       });
+      newElement.surface = action.surface ?? (state.productId === 'card' ? (state.productOptions.surface as CardSurface) ?? 'front' : undefined);
       newElement.zIndex = maxZ + 1;
       const syncPatch: Partial<DesignState> = {};
       const data = getTextData(newElement);
