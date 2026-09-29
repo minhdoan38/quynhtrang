@@ -25,8 +25,35 @@ export interface CreateOrderResponseBody {
 }
 
 function hasUnpromotedOrInvalidBlob(design: DesignState, rewrittenDesign: DesignState): boolean {
-  if (JSON.stringify(rewrittenDesign).includes('blob:')) {
+  if (rewrittenDesign.image?.src?.startsWith('blob:')) {
     return true;
+  }
+
+  const customBg = (rewrittenDesign.productOptions as { customBackgroundImage?: unknown } | undefined)?.customBackgroundImage;
+  if (typeof customBg === 'string' && customBg.startsWith('blob:')) {
+    return true;
+  }
+
+  if (Array.isArray(rewrittenDesign.elements)) {
+    for (const el of rewrittenDesign.elements) {
+      const data = el.data as Record<string, unknown> | undefined;
+      if (data) {
+        for (const key of ['src', 'url', 'originalSrc', 'removedBackgroundSrc', 'previewSrc']) {
+          const val = data[key];
+          if (typeof val === 'string' && val.startsWith('blob:')) {
+            return true;
+          }
+        }
+        if (data.texture && typeof data.texture === 'object') {
+          const texture = data.texture as Record<string, unknown>;
+          if (typeof texture.url === 'string' && texture.url.startsWith('blob:')) return true;
+          if (typeof texture.src === 'string' && texture.src.startsWith('blob:')) return true;
+        }
+      }
+      const directEl = el as unknown as Record<string, unknown>;
+      if (typeof directEl.src === 'string' && directEl.src.startsWith('blob:')) return true;
+      if (typeof directEl.url === 'string' && directEl.url.startsWith('blob:')) return true;
+    }
   }
 
   if (design.image?.src && typeof design.image.src === 'string' && design.image.src.startsWith('blob:')) {
@@ -36,39 +63,22 @@ function hasUnpromotedOrInvalidBlob(design: DesignState, rewrittenDesign: Design
       size?: number;
       width?: number;
       height?: number;
-      payload?: unknown;
-      data?: unknown;
     };
     if (img.type && !img.type.startsWith('image/')) return true;
     if (img.size !== undefined && img.size <= 0) return true;
     if (img.width !== undefined && img.width <= 0) return true;
     if (img.height !== undefined && img.height <= 0) return true;
-
-    const hasBacking = Boolean(
-      img.payload ||
-      img.data ||
-      (img.size && img.size > 0 && img.width && img.width > 0 && img.height && img.height > 0)
-    );
-    const hasServerStore = Boolean(getAsset(img.src));
-    if (!hasBacking && !hasServerStore) {
-      return true;
-    }
   }
 
   if (Array.isArray(design.elements)) {
     for (const el of design.elements) {
       const data = el.data as Record<string, unknown> | undefined;
       if (!data) continue;
-      for (const key of ['src', 'originalSrc', 'removedBackgroundSrc', 'previewSrc']) {
+      for (const key of ['src', 'url', 'originalSrc', 'removedBackgroundSrc', 'previewSrc']) {
         const val = data[key];
         if (typeof val === 'string' && val.startsWith('blob:')) {
           if (typeof data.type === 'string' && !data.type.startsWith('image/')) return true;
           if (typeof data.size === 'number' && data.size <= 0) return true;
-          const hasBacking = Boolean(data.payload || data.data || (typeof data.size === 'number' && data.size > 0));
-          const hasServerStore = Boolean(getAsset(val));
-          if (!hasBacking && !hasServerStore) {
-            return true;
-          }
         }
       }
     }
@@ -112,6 +122,16 @@ export async function POST(request: Request) {
       rewrittenDesign = promotion.rewrittenDesign;
       promotedAssets = promotion.promotedAssets;
       if (hasUnpromotedOrInvalidBlob(body.design, rewrittenDesign)) {
+        return Response.json(
+          { error: 'Chưa thể chuẩn bị tệp in từ thiết kế. Vui lòng tải lại ảnh và thử lại.' },
+          { status: 400 }
+        );
+      }
+
+      const hasMissingPayload = promotedAssets.some(
+        (asset) => !(asset.payload || getAsset(asset.id)?.payload)
+      );
+      if (hasMissingPayload) {
         return Response.json(
           { error: 'Chưa thể chuẩn bị tệp in từ thiết kế. Vui lòng tải lại ảnh và thử lại.' },
           { status: 400 }

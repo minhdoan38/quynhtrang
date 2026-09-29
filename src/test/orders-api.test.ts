@@ -272,3 +272,79 @@ test('POST rejects blob image with invalid or unsupported metadata with 400', as
   });
   assert.equal(serverOrderStore.getAllOrders().length, 0);
 });
+
+test('POST rejects promoted assets that have metadata but no actual content', async () => {
+  const response = await postOrder({
+    idempotencyKey: 'orders-api-contentless-asset',
+    design: {
+      ...createInitialState('card'),
+      image: {
+        src: 'blob:metadata-only-image',
+        name: 'metadata-only.png',
+        type: 'image/png',
+        size: 2048,
+        width: 640,
+        height: 480,
+      },
+    },
+    customer: validCustomer,
+  });
+
+  assert.equal(response.status, 400);
+  assert.deepEqual(await response.json(), {
+    error: 'Chưa thể chuẩn bị tệp in từ thiết kế. Vui lòng tải lại ảnh và thử lại.',
+  });
+  assert.equal(serverOrderStore.getAllOrders().length, 0);
+});
+
+test('POST allows ordinary design text containing the literal blob prefix', async () => {
+  const response = await postOrder({
+    idempotencyKey: 'orders-api-blob-text',
+    design: {
+      ...createInitialState('card'),
+      text: 'Nội dung tham chiếu blob: nhưng không phải URL tài nguyên',
+      elements: [{
+        id: 'text-blob-literal',
+        type: 'text',
+        x: 10,
+        y: 10,
+        width: 60,
+        height: 20,
+        rotation: 0,
+        data: { text: 'blob: chỉ là nội dung văn bản' },
+      }],
+    },
+    customer: validCustomer,
+  });
+
+  assert.equal(response.status, 201);
+  const body = await response.json() as OrderResponse;
+  assert.equal(body.order.snapshot.design.text, 'Nội dung tham chiếu blob: nhưng không phải URL tài nguyên');
+  assert.equal(body.order.snapshot.design.elements?.[0].data?.text, 'blob: chỉ là nội dung văn bản');
+});
+
+test('POST rejects unresolved blob references in element asset URL fields', async () => {
+  const response = await postOrder({
+    idempotencyKey: 'orders-api-element-url-blob',
+    design: {
+      ...createInitialState('card'),
+      elements: [{
+        id: 'texture-blob',
+        type: 'image',
+        x: 0,
+        y: 0,
+        width: 100,
+        height: 100,
+        rotation: 0,
+        data: { url: 'blob:unresolved-texture' },
+      }],
+    },
+    customer: validCustomer,
+  });
+
+  assert.equal(response.status, 400);
+  assert.deepEqual(await response.json(), {
+    error: 'Chưa thể chuẩn bị tệp in từ thiết kế. Vui lòng tải lại ảnh và thử lại.',
+  });
+  assert.equal(serverOrderStore.getAllOrders().length, 0);
+});
