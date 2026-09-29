@@ -6,6 +6,7 @@ import {
 } from './grouping.ts';
 import { moveElements } from './multi-selection.ts';
 import { computeStickerContour } from './sticker-contour.ts';
+import { evaluateImageQuality } from './image-quality.ts';
 export type ProductId = 'wrapping' | 'card' | 'sticker' | 'notebook';
 export type CardSurface = 'front' | 'inside' | 'back';
 export type CardOrientation = 'horizontal' | 'vertical';
@@ -239,6 +240,7 @@ export interface ImageObjectData {
   removedBackgroundSrc?: string;
   name?: string;
   opacity?: number;
+  scale?: number;
   crop?: ImageCropData;
   mask?: string | null;
   placeholder?: boolean;
@@ -344,6 +346,8 @@ export interface PreflightCheck {
   label: string;
   type?: 'pass' | 'warning' | 'error';
   description?: string;
+  elementId?: string;
+  surfaceId?: string;
 }
 
 export interface PreflightResult {
@@ -2042,16 +2046,82 @@ export function getPreflight(state: DesignState): PreflightResult {
     }
   }
 
-  const imageElement = (state.elements ?? getDefaultElements(state)).find((element) => element.type === 'image');
-  const imageData = imageElement ? getImageData(imageElement) : null;
-  const image = state.image ?? (imageData?.src ? {
-    name: imageData.name ?? 'Ảnh',
-    src: imageData.src,
-    width: imageData.sourceWidth,
-    height: imageData.sourceHeight,
-  } : null);
+  const rawImageElements = state.elements?.filter((e) => e.type === 'image');
+  const hasExplicitElements = Boolean(state.elements);
+  const imageElements = (hasExplicitElements && rawImageElements ? rawImageElements : (state.elements ?? getDefaultElements(state)).filter((e) => e.type === 'image'));
 
-  if (image) {
+  if (hasExplicitElements ? imageElements.length > 0 : false) {
+    const options = state.productOptions as Record<string, unknown>;
+    const patternConfig = options.patternConfig as { enabled?: unknown; scale?: unknown } | undefined;
+    const isPatternWrapping = state.productId === 'wrapping' &&
+      (options.mode === 'pattern' || patternConfig?.enabled === true);
+    const configuredPatternScale = Number(options.patternScale);
+    const patternScale = isPatternWrapping
+      ? (Number.isFinite(configuredPatternScale) && configuredPatternScale > 0
+        ? configuredPatternScale
+        : (Number.isFinite(Number(patternConfig?.scale)) ? Number(patternConfig?.scale) : undefined))
+      : undefined;
+
+    for (const imageElement of imageElements) {
+      const imageData = getImageData(imageElement);
+      const crop = imageData?.crop;
+      const cropFraction = crop
+        ? crop.scale && crop.scale > 1
+          ? 1 / (crop.scale * crop.scale)
+          : crop.width && crop.height && imageData?.sourceWidth && imageData?.sourceHeight
+            ? (crop.width * crop.height) / (imageData.sourceWidth * imageData.sourceHeight)
+            : 1
+        : 1;
+
+      const report = evaluateImageQuality({
+        sourceWidth: imageData?.sourceWidth ?? 1200,
+        sourceHeight: imageData?.sourceHeight ?? 1200,
+        scale: imageData?.scale ?? 1,
+        cropFraction,
+        productId: state.productId,
+        variantId: state.variantId,
+        patternScale,
+        elementWidthPct: imageElement.width,
+        elementId: imageElement.id,
+        surfaceId: imageElement.surface ?? 'front',
+      });
+
+      const checkId = `image-quality-${imageElement.id}`;
+      const surfaceId = imageElement.surface ?? 'front';
+
+      if (report.level === 'warning') {
+        checks.push({
+          id: checkId,
+          level: 'warning',
+          type: 'warning',
+          label: 'Ảnh có thể hơi mờ khi in',
+          description: report.description,
+          elementId: imageElement.id,
+          surfaceId,
+        });
+      } else if (report.level === 'critical') {
+        checks.push({
+          id: checkId,
+          level: 'error',
+          type: 'error',
+          label: 'Ảnh quá nhỏ để in rõ',
+          description: report.description,
+          elementId: imageElement.id,
+          surfaceId,
+        });
+      } else {
+        checks.push({
+          id: checkId,
+          level: 'pass',
+          type: 'pass',
+          label: 'Chất lượng ảnh đạt chuẩn',
+          description: report.description,
+          elementId: imageElement.id,
+          surfaceId,
+        });
+      }
+    }
+  } else if (state.image) {
     const options = state.productOptions as Record<string, unknown>;
     const patternConfig = options.patternConfig as { enabled?: unknown; scale?: unknown } | undefined;
     const isPatternWrapping = state.productId === 'wrapping' &&
@@ -2063,8 +2133,8 @@ export function getPreflight(state: DesignState): PreflightResult {
     const scaleFactor = isPatternWrapping && Number.isFinite(patternScale) && patternScale > 0
       ? patternScale / 100
       : 1;
-    const sourceWidth = imageData?.sourceWidth ?? image.width;
-    const sourceHeight = imageData?.sourceHeight ?? image.height;
+    const sourceWidth = state.image.width;
+    const sourceHeight = state.image.height;
     const effectiveWidth = sourceWidth !== undefined ? sourceWidth / scaleFactor : undefined;
     const effectiveHeight = sourceHeight !== undefined ? sourceHeight / scaleFactor : undefined;
     const isSmall = (effectiveWidth !== undefined && effectiveWidth < 1200) ||
