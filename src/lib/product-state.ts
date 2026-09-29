@@ -39,6 +39,49 @@ export function isElementCrossingCardFold(
   return element.x < foldPosition && element.x + element.width > foldPosition;
 }
 
+export type FixedStickerShape = 'circle' | 'square' | 'rectangle' | 'oval' | 'rounded-rectangle';
+
+export const FIXED_STICKER_SHAPES: readonly FixedStickerShape[] = [
+  'circle',
+  'square',
+  'rectangle',
+  'oval',
+  'rounded-rectangle',
+] as const;
+
+export function getFixedStickerShapeLabel(shape: FixedStickerShape): string {
+  switch (shape) {
+    case 'circle': return 'Tròn';
+    case 'square': return 'Vuông';
+    case 'rectangle': return 'Chữ nhật';
+    case 'oval': return 'Oval';
+    case 'rounded-rectangle': return 'Bo góc';
+  }
+}
+
+export interface FixedStickerDimensions {
+  width: number;
+  height: number;
+  aspectRatio: number;
+  borderRadiusCss: string;
+  isEllipse?: boolean;
+}
+
+export function getFixedStickerDimensions(shape: FixedStickerShape): FixedStickerDimensions {
+  switch (shape) {
+    case 'circle':
+      return { width: 50, height: 50, aspectRatio: 1, borderRadiusCss: '9999px' };
+    case 'square':
+      return { width: 50, height: 50, aspectRatio: 1, borderRadiusCss: '0px' };
+    case 'rectangle':
+      return { width: 70, height: 50, aspectRatio: 1.4, borderRadiusCss: '0px' };
+    case 'oval':
+      return { width: 70, height: 50, aspectRatio: 1.4, borderRadiusCss: '50%', isEllipse: true };
+    case 'rounded-rectangle':
+      return { width: 70, height: 50, aspectRatio: 1.4, borderRadiusCss: '16px' };
+  }
+}
+
 
 export interface ProductVariant {
   readonly id: string;
@@ -85,6 +128,7 @@ export interface StickerOptions {
   hasWhiteBorder: boolean;
   showCutline?: boolean;
   cutLineMode?: 'die-cut' | 'fixed-shape' | 'phone';
+  shape?: FixedStickerShape;
   [key: string]: unknown;
 }
 
