@@ -191,3 +191,30 @@ test('asset route serves promoted asset with proper content-type and returns 404
   const unknownRes = await getAssetRoute(unknownReq, { params: Promise.resolve({ id: 'non-existent-id' }) });
   assert.equal(unknownRes.status, 404);
 });
+
+test('promotes asset with payload and serves real artwork payload from route', async () => {
+  const rawArtwork = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x42]);
+  const design = {
+    ...createInitialState('card'),
+    image: {
+      src: 'blob:artwork-full',
+      name: 'artwork.png',
+      type: 'image/png',
+      payload: rawArtwork,
+    },
+  };
+
+  const { promotedAssets, rewrittenDesign } = await promoteDesignAssets(design);
+  const asset = promotedAssets[0];
+  assert.ok(asset);
+  assert.equal(rewrittenDesign.image?.src, asset.id);
+  assert.deepEqual(asset.payload, rawArtwork);
+  const assetId = asset.id.replace(/^\/api\/assets\//, '');
+  const req = new Request(`http://localhost:3000/api/assets/${assetId}`);
+  const res = await getAssetRoute(req, { params: Promise.resolve({ id: assetId }) });
+  assert.equal(res.status, 200);
+  assert.equal(res.headers.get('Content-Type'), 'image/png');
+
+  const servedBuffer = new Uint8Array(await res.arrayBuffer());
+  assert.deepEqual(servedBuffer, rawArtwork);
+});

@@ -24,20 +24,46 @@ export async function GET(
     }
 
     const contentType = asset.mimeType || 'image/png';
+    const payload = asset.payload ?? asset.data;
 
-    // Serve payload if asset.data is available
-    if (typeof asset.data === 'string' && asset.data.length > 0) {
-      const base64Index = asset.data.indexOf(';base64,');
-      const base64Payload = base64Index !== -1 ? asset.data.slice(base64Index + 8) : asset.data;
-      const buffer = Buffer.from(base64Payload, 'base64');
-      return new Response(buffer, {
-        status: 200,
-        headers: {
-          'Content-Type': contentType,
-          'Content-Length': String(buffer.byteLength),
-          'Cache-Control': 'public, max-age=31536000, immutable',
-        },
-      });
+    if (payload !== undefined && payload !== null) {
+      if (payload instanceof Uint8Array) {
+        const buffer = Buffer.from(payload);
+        return new Response(buffer, {
+          status: 200,
+          headers: {
+            'Content-Type': contentType,
+            'Content-Length': String(buffer.byteLength),
+            'Cache-Control': 'public, max-age=31536000, immutable',
+          },
+        });
+      }
+      if (typeof payload === 'string' && payload.length > 0) {
+        if (payload.startsWith('data:')) {
+          const base64Index = payload.indexOf(';base64,');
+          const base64Payload = base64Index !== -1 ? payload.slice(base64Index + 8) : payload;
+          const buffer = Buffer.from(base64Payload, 'base64');
+          return new Response(buffer, {
+            status: 200,
+            headers: {
+              'Content-Type': contentType,
+              'Content-Length': String(buffer.byteLength),
+              'Cache-Control': 'public, max-age=31536000, immutable',
+            },
+          });
+        }
+        const trimmed = payload.trim();
+        const isBase64 = /^[A-Za-z0-9+/=]+$/.test(trimmed) && trimmed.length % 4 === 0 && !trimmed.includes('<');
+        const buffer = isBase64 ? Buffer.from(trimmed, 'base64') : Buffer.from(payload, 'utf8');
+        return new Response(buffer, {
+          status: 200,
+          headers: {
+            'Content-Type': contentType,
+            'Content-Length': String(buffer.byteLength),
+            'Cache-Control': 'public, max-age=31536000, immutable',
+          },
+        });
+      }
     }
 
     // Default 1x1 transparent PNG fallback payload for promoted assets

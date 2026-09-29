@@ -51,6 +51,7 @@ export interface PromotedAsset {
   derivedUrls?: Record<string, string>;
   checksum?: string;
   data?: string;
+  payload?: string | Uint8Array;
 }
 
 export interface ApprovedDesignVersion {

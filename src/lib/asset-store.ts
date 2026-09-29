@@ -13,7 +13,13 @@ if (!globalAssetRegistry[assetRegistryKey]) globalAssetRegistry[assetRegistryKey
 const assetRegistry = globalAssetRegistry[assetRegistryKey];
 
 export function storeAsset(asset: PromotedAsset): PromotedAsset {
-  const copy = JSON.parse(JSON.stringify(asset)) as PromotedAsset;
+  const copy: PromotedAsset = {
+    ...asset,
+    derivedUrls: asset.derivedUrls ? { ...asset.derivedUrls } : undefined,
+  };
+  if (asset.payload instanceof Uint8Array) {
+    copy.payload = new Uint8Array(asset.payload);
+  }
   const idWithoutPrefix = asset.id.replace(/^\/api\/assets\//, '');
   const idWithPrefix = asset.id.startsWith('/api/assets/') ? asset.id : `/api/assets/${asset.id}`;
 
@@ -30,7 +36,15 @@ export function getAsset(id: string): PromotedAsset | null {
     assetRegistry.get(id) ??
     assetRegistry.get(idWithoutPrefix) ??
     assetRegistry.get(idWithPrefix);
-  return asset ? (JSON.parse(JSON.stringify(asset)) as PromotedAsset) : null;
+  if (!asset) return null;
+  const copy: PromotedAsset = {
+    ...asset,
+    derivedUrls: asset.derivedUrls ? { ...asset.derivedUrls } : undefined,
+  };
+  if (asset.payload instanceof Uint8Array) {
+    copy.payload = new Uint8Array(asset.payload);
+  }
+  return copy;
 }
 
 export function clearAssetStore(): void {
@@ -56,6 +70,7 @@ interface ScannedAssetMeta {
   height?: number;
   name?: string;
   data?: string;
+  payload?: string | Uint8Array;
 }
 
 function inferMimeType(urlOrName: string): string {
@@ -94,6 +109,8 @@ function collectBlobUrlsAndMeta(design: DesignState): Map<string, ScannedAssetMe
     const width = partial?.width ?? existing?.width;
     const height = partial?.height ?? existing?.height;
     const name = partial?.name ?? existing?.name;
+    const data = partial?.data ?? existing?.data;
+    const payload = partial?.payload ?? existing?.payload;
 
     metaMap.set(url, {
       sourceKey: url,
@@ -102,17 +119,22 @@ function collectBlobUrlsAndMeta(design: DesignState): Map<string, ScannedAssetMe
       width,
       height,
       name,
+      data,
+      payload,
     });
   }
 
   // 1. Check design.image
   if (design.image?.src) {
+    const rawImg = design.image as { payload?: string | Uint8Array; data?: string };
     record(design.image.src, {
       name: design.image.name,
       mimeType: design.image.type,
       byteSize: design.image.size,
       width: design.image.width,
       height: design.image.height,
+      data: rawImg.data,
+      payload: rawImg.payload ?? (rawImg.data ? rawImg.data : undefined),
     });
   }
 
@@ -122,6 +144,7 @@ function collectBlobUrlsAndMeta(design: DesignState): Map<string, ScannedAssetMe
       const data = el.data as Record<string, unknown> | undefined;
       if (!data) continue;
 
+      const rawPayload = (data.payload as string | Uint8Array | undefined) ?? (typeof data.data === 'string' ? data.data : undefined);
       const elementMeta: Partial<ScannedAssetMeta> = {
         name: typeof data.name === 'string' ? data.name : undefined,
         mimeType: typeof data.type === 'string' ? data.type : typeof data.mimeType === 'string' ? data.mimeType : undefined,
@@ -129,8 +152,8 @@ function collectBlobUrlsAndMeta(design: DesignState): Map<string, ScannedAssetMe
         width: typeof data.sourceWidth === 'number' ? data.sourceWidth : typeof data.width === 'number' ? data.width : undefined,
         height: typeof data.sourceHeight === 'number' ? data.sourceHeight : typeof data.height === 'number' ? data.height : undefined,
         data: typeof data.data === 'string' ? data.data : undefined,
+        payload: rawPayload,
       };
-
       if (typeof data.src === 'string') record(data.src, elementMeta);
       if (typeof data.originalSrc === 'string') record(data.originalSrc, elementMeta);
       if (typeof data.removedBackgroundSrc === 'string') record(data.removedBackgroundSrc, elementMeta);
@@ -193,6 +216,12 @@ export async function promoteDesignAssets(
       Array.from(assetRegistry.values()).find((a) => a.sourceKey === url);
 
     if (matched) {
+      if (meta.payload !== undefined && matched.payload === undefined) {
+        matched.payload = meta.payload;
+      }
+      if (meta.data !== undefined && matched.data === undefined) {
+        matched.data = meta.data;
+      }
       if (!seenAssetIds.has(matched.id)) {
         seenAssetIds.add(matched.id);
         promotedAssets.push(matched);
@@ -201,16 +230,22 @@ export async function promoteDesignAssets(
       urlMapping.set(url, matched.id);
     } else {
       const assetId = `/api/assets/asset-${randomUUID().replace(/-/g, '').slice(0, 12)}`;
+      const resolvedPayload = meta.payload ?? (meta.data ? meta.data : undefined);
+      const byteSize = meta.byteSize && meta.byteSize > 0
+        ? meta.byteSize
+        : (resolvedPayload ? (typeof resolvedPayload === 'string' ? resolvedPayload.length : resolvedPayload.byteLength) : 0);
+
       const newAsset: PromotedAsset = {
         id: assetId,
         sourceKey: url,
         mimeType: meta.mimeType ?? 'image/png',
-        byteSize: meta.byteSize ?? 0,
+        byteSize,
         ...(meta.width !== undefined ? { width: meta.width } : {}),
         ...(meta.height !== undefined ? { height: meta.height } : {}),
         originalUrl: assetId,
         checksum,
         ...(meta.data ? { data: meta.data } : {}),
+        ...(resolvedPayload !== undefined ? { payload: resolvedPayload } : {}),
       };
       if (!seenAssetIds.has(newAsset.id)) {
         seenAssetIds.add(newAsset.id);

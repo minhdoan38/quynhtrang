@@ -180,6 +180,8 @@ export interface ImageState {
  src: string;
  width?: number;
  height?: number;
+ data?: string;
+ payload?: string | Uint8Array;
 }
 export type ElementType = 'image' | 'text' | 'shape' | 'sticker' | 'group';
 
