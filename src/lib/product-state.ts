@@ -79,7 +79,11 @@ export interface CardOptions {
 
 export interface StickerOptions {
   borderWidth: number;
+  minBorderWidth?: number;
+  maxBorderWidth?: number;
   hasWhiteBorder: boolean;
+  showCutline?: boolean;
+  cutLineMode?: 'die-cut' | 'fixed-shape' | 'phone';
   [key: string]: unknown;
 }
 
@@ -325,8 +329,11 @@ export const PRODUCTS: Readonly<Record<ProductId, ProductConfig>> = Object.freez
       Object.freeze({ id: 'phone', name: 'Sticker điện thoại (Phone Sticker)', price: 25000 }),
     ]),
     defaultOptions: Object.freeze({
-      borderWidth: 4,
+      borderWidth: 2,
+      minBorderWidth: 0,
+      maxBorderWidth: 6,
       hasWhiteBorder: true,
+      showCutline: false,
     }),
   }),
   notebook: Object.freeze({
