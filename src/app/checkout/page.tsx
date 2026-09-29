@@ -4,15 +4,16 @@ import { useState, useEffect, useRef, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import gsap from 'gsap';
 import { useGSAP } from '@gsap/react';
-import { ArrowLeft, ArrowRight, Minus, Plus, QrCode, CheckCircle2, AlertCircle } from 'lucide-react';
+import { ArrowLeft, ArrowRight, QrCode, CheckCircle2, AlertCircle } from 'lucide-react';
 import {
   type DesignState,
   createInitialState,
-  getDesignSummary,
   normalizeQuantity,
 } from '@/lib/product-state';
 import { loadState, saveState } from '@/lib/storage';
-import { DesignCanvas } from '@/components/customizer/design-canvas';
+import { OrderSummaryCard } from '@/components/checkout/order-summary-card';
+import { QuantityStepper } from '@/components/checkout/quantity-stepper';
+import { calculatePriceQuote } from '@/lib/pricing';
 import type { CustomerInfo, PendingOrder } from '@/lib/order-types';
 
 export default function CheckoutPage() {
@@ -64,7 +65,12 @@ export default function CheckoutPage() {
     setIsLoaded(true);
   }, []);
 
-  const summary = getDesignSummary(design);
+  const priceQuote = calculatePriceQuote({
+    productId: design.productId,
+    variantId: design.variantId,
+    quantity: design.quantity,
+    productOptions: design.productOptions,
+  });
 
   // Motion transitions between wizard steps
   useGSAP(
@@ -185,14 +191,12 @@ export default function CheckoutPage() {
           className="inline-flex h-10 items-center gap-1.5 rounded-lg px-2 text-xs sm:text-sm font-semibold text-[#2E3338] hover:bg-[#F8F3E8] transition-colors"
         >
           <ArrowLeft size={16} aria-hidden="true" />
-          <span>{step === 1 ? 'Chỉnh sửa' : 'Quay lại'}</span>
+          <span>{step === 1 ? 'Đơn hàng' : 'Quay lại'}</span>
         </button>
 
         <div className="text-center">
           <h1 className="font-serif text-sm sm:text-base font-bold text-[#2E3338]">
-            {step === 1 && '1. Tóm tắt đơn hàng'}
-            {step === 2 && '2. Thông tin nhận hàng'}
-            {step === 3 && '3. Hướng dẫn thanh toán'}
+            {step === 1 ? '1. Tóm tắt đơn hàng' : step === 2 ? '2. Thông tin nhận hàng' : '3. Hướng dẫn thanh toán'}
           </h1>
           <p className="text-[11px] text-[#666A6D]">Bước {step} / 3</p>
         </div>
@@ -205,83 +209,35 @@ export default function CheckoutPage() {
         {/* STEP 1: Order Summary + Quantity */}
         {step === 1 && (
           <div className="checkout-step-content space-y-5">
-            {/* Design Preview Thumbnail Card */}
-            <div className="rounded-2xl border border-[#DDD6CC] bg-white p-4 shadow-xs flex gap-4 items-center">
-              <div className="w-24 h-24 rounded-xl bg-[#F8F3E8] border border-[#ECE6DC] overflow-hidden flex items-center justify-center shrink-0">
-                <div className="scale-[0.4] transform origin-center">
-                  <DesignCanvas
-                    productId={design.productId}
-                    text={design.text}
-                    color={design.color}
-                    backgroundColor={design.backgroundColor}
-                    image={design.image}
-                    productOptions={design.productOptions}
-                  />
-                </div>
-              </div>
+            <OrderSummaryCard
+              design={design}
+              onEditDesign={() =>
+                router.push(
+                  design.productId === 'wrapping'
+                    ? '/products/wrapping-paper'
+                    : `/products/${design.productId}`
+                )
+              }
+            />
 
-              <div className="flex-1 min-w-0">
-                <span className="inline-block rounded-full bg-[#DCEBF4] px-2.5 py-0.5 text-[10px] font-semibold text-[#315F86]">
-                  {summary.product}
-                </span>
-                <h2 className="mt-1 text-sm font-bold text-[#2E3338] truncate">
-                  {summary.variant}
-                </h2>
-                <p className="mt-1 text-xs text-[#666A6D]">
-                  Đơn giá: {new Intl.NumberFormat('vi-VN').format(summary.unitPrice)} ₫
-                </p>
-              </div>
-            </div>
+            <QuantityStepper quantity={design.quantity} onChange={handleUpdateQuantity} />
 
-            {/* Quantity Selector */}
-            <div className="rounded-2xl border border-[#DDD6CC] bg-[#FFFDF8] p-4 space-y-2">
-              <label htmlFor="quantity-input" className="text-xs font-semibold text-[#2E3338]">
-                Số lượng đặt in (1 - 999 bản):
-              </label>
-              <div className="flex items-center gap-3">
-                <button
-                  type="button"
-                  onClick={() => handleUpdateQuantity(design.quantity - 1)}
-                  disabled={design.quantity <= 1}
-                  className="w-10 h-10 rounded-xl border border-[#DDD6CC] bg-white flex items-center justify-center text-[#2E3338] disabled:opacity-30 disabled:pointer-events-none hover:bg-[#F8F3E8] transition-colors"
-                >
-                  <Minus size={16} />
-                </button>
-
-                <input
-                  id="quantity-input"
-                  type="number"
-                  min={1}
-                  max={999}
-                  value={design.quantity}
-                  onChange={(e) => handleUpdateQuantity(Number.parseInt(e.target.value, 10))}
-                  className="w-24 h-10 rounded-xl border border-[#DDD6CC] bg-white text-center text-sm font-bold text-[#2E3338] focus:border-[#315F86] focus:outline-none"
-                />
-
-                <button
-                  type="button"
-                  onClick={() => handleUpdateQuantity(design.quantity + 1)}
-                  disabled={design.quantity >= 999}
-                  className="w-10 h-10 rounded-xl border border-[#DDD6CC] bg-white flex items-center justify-center text-[#2E3338] disabled:opacity-30 disabled:pointer-events-none hover:bg-[#F8F3E8] transition-colors"
-                >
-                  <Plus size={16} />
-                </button>
-              </div>
-            </div>
-
-            {/* Pricing Summary */}
             <div className="rounded-2xl border border-[#DDD6CC] bg-[#F8F3E8]/60 p-4 space-y-2 text-xs">
               <div className="flex justify-between text-[#666A6D]">
                 <span>Tạm tính ({design.quantity} bản):</span>
-                <span className="font-semibold text-[#2E3338]">{summary.priceLabel}</span>
+                <span className="font-semibold text-[#2E3338]">{priceQuote.formattedSubtotal}</span>
+              </div>
+              <div className="flex justify-between text-[#666A6D]">
+                <span>Đơn giá:</span>
+                <span className="font-semibold text-[#2E3338]">
+                  {priceQuote.formattedUnitPrice} / sản phẩm
+                </span>
               </div>
               <div className="flex justify-between text-[#666A6D]">
                 <span>Phí vận chuyển:</span>
-                <span className="font-semibold text-[#5F7E67]">Tính theo địa chỉ giao</span>
-              </div>
-              <div className="border-t border-[#DDD6CC] pt-2 flex justify-between text-sm font-bold text-[#2E3338]">
-                <span>Tổng ước tính:</span>
-                <span className="text-[#315F86]">{summary.priceLabel}</span>
+                <span className="font-semibold text-[#5F7E67]">
+                  Tính theo địa chỉ giao ở bước tiếp theo
+                </span>
               </div>
             </div>
           </div>
@@ -412,14 +368,20 @@ export default function CheckoutPage() {
       <footer className="fixed bottom-0 inset-x-0 border-t border-[#DDD6CC] bg-[#FFFDF8]/95 backdrop-blur-md p-4 z-40">
         <div className="max-w-lg mx-auto w-full flex items-center gap-3">
           {step === 1 && (
-            <button
-              type="button"
-              onClick={() => advanceToStep(2)}
-              className="w-full h-11 inline-flex items-center justify-center gap-2 rounded-xl bg-[#315F86] text-xs sm:text-sm font-semibold text-white shadow-xs hover:bg-[#244A69] transition-all active:scale-[0.98]"
-            >
-              <span>Tiếp tục: Điền thông tin</span>
-              <ArrowRight size={16} />
-            </button>
+            <div className="w-full flex items-center justify-between gap-4">
+              <div className="flex flex-col">
+                <span className="text-[11px] text-[#666A6D]">Tạm tính:</span>
+                <span className="text-base font-bold text-[#315F86]">{priceQuote.formattedSubtotal}</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => advanceToStep(2)}
+                className="h-11 px-6 inline-flex items-center justify-center gap-2 rounded-xl bg-[#315F86] text-xs sm:text-sm font-semibold text-white shadow-xs hover:bg-[#244A69] transition-all active:scale-[0.98]"
+              >
+                <span>Tiếp tục</span>
+                <ArrowRight size={16} />
+              </button>
+            </div>
           )}
 
           {step === 2 && (
