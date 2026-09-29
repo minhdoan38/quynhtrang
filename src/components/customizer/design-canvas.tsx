@@ -568,11 +568,12 @@ export function DesignCanvas({
       sourceHeight: imgData?.sourceHeight ?? image.height ?? 1200,
       scale: effectiveImageTransform.scale,
       cropFraction: Math.max(0.05, Math.min(1, cropFraction)),
-      productId,
-      patternScale:
-        isWrapping && wrappingMode === 'pattern'
-          ? effectivePatternConfig.scale
-          : undefined,
+      productId: productId,
+      variantId: variantId,
+      patternScale: Number(productOptions.patternScale) || 100,
+      elementWidthPct: imgElement?.width ?? 50,
+      elementId: imgElement?.id,
+      surfaceId: currentSurface,
     });
   }, [
     image?.src,
@@ -581,9 +582,11 @@ export function DesignCanvas({
     imgData,
     effectiveImageTransform.scale,
     productId,
-    isWrapping,
-    wrappingMode,
-    effectivePatternConfig.scale,
+    variantId,
+    productOptions.patternScale,
+    imgElement?.width,
+    imgElement?.id,
+    currentSurface,
   ]);
   const imageOpacity = typeof productOptions.imageOpacity === 'number'
     ? productOptions.imageOpacity / 100

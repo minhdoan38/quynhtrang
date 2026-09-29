@@ -148,10 +148,10 @@ export function SelectionOverlay({
             onQualityClick?.();
           }}
           className={`absolute -bottom-8 left-1/2 -translate-x-1/2 pointer-events-auto cursor-pointer flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-medium shadow-xs transition-transform active:scale-95 whitespace-nowrap z-30 ${qualityReport.level === 'good'
-              ? 'bg-[#EBF3ED] text-[#2D5A3A] border border-[#C2DEC9]'
-              : qualityReport.level === 'warning'
-                ? 'bg-[#FEF6E7] text-[#9A6214] border border-[#F4DCB0]'
-                : 'bg-[#FDF0ED] text-[#A63626] border border-[#F5C7C0]'
+            ? 'bg-[#EBF3ED]/90 text-[#2D5A3A] border border-[#C2DEC9]/60'
+            : qualityReport.level === 'warning'
+              ? 'bg-[#FEF6E7] text-[#9A6214] border border-[#F4DCB0] font-semibold'
+              : 'bg-[#FDF0ED] text-[#A63626] border border-[#F5C7C0] font-semibold'
             }`}
         >
           {qualityReport.level === 'good' ? (
