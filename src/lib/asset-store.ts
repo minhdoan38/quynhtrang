@@ -14,7 +14,14 @@ const assetRegistry = globalAssetRegistry[assetRegistryKey];
 
 function normalizePayload(payload: unknown): string | undefined {
   if (payload === undefined || payload === null) return undefined;
-  if (typeof payload === 'string') return payload;
+  if (typeof payload === 'string') {
+    const trimmed = payload.trim();
+    if (trimmed.startsWith('data:')) return payload;
+    if (trimmed.startsWith('<') || trimmed.includes('xmlns') || !/^[A-Za-z0-9+/=\s]+$/.test(trimmed)) {
+      return Buffer.from(payload, 'utf8').toString('base64');
+    }
+    return payload;
+  }
   if (payload instanceof Uint8Array || Buffer.isBuffer(payload)) {
     return Buffer.from(payload).toString('base64');
   }

@@ -271,3 +271,42 @@ test('asset route decodes unpadded, whitespace-wrapped, and data URL base64 payl
     assert.deepEqual(new Uint8Array(await response.arrayBuffer()), expected);
   }
 });
+
+test('asset store preserves and serves raw SVG artwork text', async () => {
+  const rawSvg = '<svg xmlns="http://www.w3.org/2000/svg"><text>Artwork</text></svg>';
+  const id = '/api/assets/asset-raw-svg';
+  const stored = storeAsset({
+    id,
+    sourceKey: 'blob:raw-svg',
+    mimeType: 'image/svg+xml',
+    byteSize: Buffer.byteLength(rawSvg),
+    originalUrl: id,
+    payload: rawSvg,
+  });
+
+  assert.equal(stored.payload, Buffer.from(rawSvg, 'utf8').toString('base64'));
+  const response = await getAssetRoute(
+    new Request(`http://localhost:3000${id}`),
+    { params: Promise.resolve({ id: 'asset-raw-svg' }) },
+  );
+  assert.equal(response.status, 200);
+  assert.equal(response.headers.get('Content-Type'), 'image/svg+xml');
+  assert.equal(await response.text(), rawSvg);
+  // Also verify raw SVG passed through asset.data directly
+  const dataSvgId = '/api/assets/asset-raw-svg-data';
+  storeAsset({
+    id: dataSvgId,
+    sourceKey: 'blob:raw-svg-data',
+    mimeType: 'image/svg+xml',
+    byteSize: Buffer.byteLength(rawSvg),
+    originalUrl: dataSvgId,
+    data: rawSvg,
+  });
+  const dataResponse = await getAssetRoute(
+    new Request(`http://localhost:3000${dataSvgId}`),
+    { params: Promise.resolve({ id: 'asset-raw-svg-data' }) },
+  );
+  assert.equal(dataResponse.status, 200);
+  assert.equal(dataResponse.headers.get('Content-Type'), 'image/svg+xml');
+  assert.equal(await dataResponse.text(), rawSvg);
+});

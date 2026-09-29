@@ -50,11 +50,20 @@ export class ServerOrderStore {
     const preflightAcknowledged = (isParams ? arg1.preflightAcknowledged : undefined) ?? false;
     const rawAssets = (isParams ? arg1.assets : undefined) ?? [];
     const assets = rawAssets.map((asset) => {
-      if (asset.payload !== undefined && typeof asset.payload !== 'string') {
-        return {
-          ...asset,
-          payload: Buffer.from(asset.payload as unknown as Uint8Array).toString('base64'),
-        };
+      if (asset.payload !== undefined) {
+        if (typeof asset.payload !== 'string') {
+          return {
+            ...asset,
+            payload: Buffer.from(asset.payload as unknown as Uint8Array).toString('base64'),
+          };
+        }
+        const trimmed = asset.payload.trim();
+        if (trimmed.startsWith('<') || trimmed.includes('xmlns') || (!trimmed.startsWith('data:') && !/^[A-Za-z0-9+/=\s]+$/.test(trimmed))) {
+          return {
+            ...asset,
+            payload: Buffer.from(asset.payload, 'utf8').toString('base64'),
+          };
+        }
       }
       return asset;
     });

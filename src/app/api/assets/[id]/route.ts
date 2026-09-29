@@ -40,6 +40,17 @@ export async function GET(
       }
       if (typeof payload === 'string' && payload.length > 0) {
         let base64Payload = payload.trim();
+        if (base64Payload.startsWith('<') || base64Payload.includes('xmlns')) {
+          const buffer = Buffer.from(payload, 'utf8');
+          return new Response(buffer, {
+            status: 200,
+            headers: {
+              'Content-Type': contentType,
+              'Content-Length': String(buffer.byteLength),
+              'Cache-Control': 'public, max-age=31536000, immutable',
+            },
+          });
+        }
         if (base64Payload.startsWith('data:')) {
           const commaIndex = base64Payload.indexOf(',');
           if (commaIndex !== -1) {
