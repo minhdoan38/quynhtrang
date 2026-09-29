@@ -78,6 +78,7 @@ export default function CheckoutPage() {
           .then((data) => {
             if (data?.order) {
               setCreatedOrder(data.order);
+              setStep(3);
             }
           })
           .catch(() => { });
