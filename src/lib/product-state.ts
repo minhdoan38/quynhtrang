@@ -6,6 +6,30 @@ import {
 } from './grouping.ts';
 import { moveElements } from './multi-selection.ts';
 export type ProductId = 'wrapping' | 'card' | 'sticker' | 'notebook';
+export type CardSurface = 'front' | 'inside' | 'back';
+export type CardOrientation = 'horizontal' | 'vertical';
+export const CARD_SURFACES: readonly CardSurface[] = ['front', 'inside', 'back'] as const;
+export function getCardSurfaceLabel(surface: CardSurface): string {
+  switch (surface) {
+    case 'front': return 'Mặt trước';
+    case 'inside': return 'Bên trong';
+    case 'back': return 'Mặt sau';
+  }
+}
+export function getCardSpreadDimensions(
+  orientation: CardOrientation,
+  surface: CardSurface
+): { width: number; height: number; foldPosition: number } {
+  if (orientation === 'horizontal') {
+    return surface === 'inside'
+      ? { width: 296, height: 105, foldPosition: 148 }
+      : { width: 148, height: 105, foldPosition: 0 };
+  }
+  return surface === 'inside'
+    ? { width: 210, height: 148, foldPosition: 105 }
+    : { width: 105, height: 148, foldPosition: 0 };
+}
+
 
 export interface ProductVariant {
   readonly id: string;
@@ -39,8 +63,9 @@ export interface WrappingOptions {
 }
 
 export interface CardOptions {
-  surface: 'front' | 'inside';
+  surface: CardSurface;
   fold?: 'half' | 'flat';
+  orientation?: CardOrientation;
   [key: string]: unknown;
 }
 
@@ -156,8 +181,19 @@ export interface CanvasElement {
   locked?: boolean;
   zIndex?: number;
   parentGroupId?: string;
-  surface?: 'front' | 'inside';
+  surface?: CardSurface;
+
   data?: Record<string, unknown>;
+}
+export function filterElementsBySurface(
+  elements: readonly CanvasElement[] | undefined,
+  surface: CardSurface
+): CanvasElement[] {
+  if (!elements) return [];
+  return elements.filter((el) => {
+    const elSurface = el.surface ?? 'front';
+    return elSurface === surface;
+  });
 }
 
 export interface DesignState {
