@@ -79,6 +79,11 @@ export default function CheckoutPage() {
             if (data?.order) {
               setCreatedOrder(data.order);
               setStep(3);
+              if (data.order.paymentStatus === 'payment_reported' || data.order.paymentStatus === 'paid') {
+                setState36Mode('confirmation');
+              } else {
+                setState36Mode('payment');
+              }
             }
           })
           .catch(() => { });
