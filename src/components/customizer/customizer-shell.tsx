@@ -2331,7 +2331,10 @@ export function CustomizerShell() {
           onContinueToCheckout={() => {
             router.push('/checkout');
             const existingDraft = loadCheckoutDraft();
-            const preflightRev = (preflight as { revision?: string }).revision ?? 'rev-0';
+            const revision = `rev-${Date.now()}`;
+            if (typeof window !== 'undefined') {
+              sessionStorage.removeItem('quynhtrang.pendingOrderId');
+            }
             if (existingDraft) {
               saveCheckoutDraft({
                 ...existingDraft,
@@ -2339,13 +2342,18 @@ export function CustomizerShell() {
                 productId: state.productId,
                 variantId: state.variantId,
                 quantity: state.quantity,
-                preflightRevision: preflightRev,
+                idempotencyKey: `checkout-${crypto.randomUUID()}`,
+                orderId: undefined,
+                status: 'editing',
+                designRevision: revision,
+                preflightRevision: revision,
                 preflightAcknowledged: true,
                 updatedAt: new Date().toISOString(),
               });
             } else {
               const draft = createCheckoutDraft(state);
-              draft.preflightRevision = preflightRev;
+              draft.designRevision = revision;
+              draft.preflightRevision = revision;
               draft.preflightAcknowledged = true;
               saveCheckoutDraft(draft);
             }

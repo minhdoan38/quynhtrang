@@ -79,6 +79,10 @@ test('quantity changes renew submitted draft identity and clear stale order stat
 
 test('stale design and preflight integrity are enforced before order creation', () => {
   assert.match(shellSource, /preflightAcknowledged:\s*true/);
+  assert.match(shellSource, /designRevision:\s*revision/);
+  assert.match(shellSource, /preflightRevision:\s*revision/);
+  assert.match(shellSource, /idempotencyKey:\s*`checkout-\$\{crypto\.randomUUID\(\)\}`/);
+  assert.match(shellSource, /orderId:\s*undefined/);
   assert.match(shellSource, /saveCheckoutDraft\(/);
   assert.match(checkoutSource, /isSameCheckoutDesign\(existingDraft\.design, nextDesign\)/);
   assert.match(checkoutSource, /JSON\.stringify\(a\.productOptions \|\| \{\}\) === JSON\.stringify\(b\.productOptions \|\| \{\}\)/);
@@ -88,8 +92,8 @@ test('stale design and preflight integrity are enforced before order creation', 
   assert.match(checkoutSource, /router\.push\('\/\?view=editor&mode=preflight'\)/);
   assert.match(checkoutSource, /Thiết kế đã thay đổi kể từ lần kiểm tra trước/);
   assert.match(checkoutSource, /Kiểm tra lại thiết kế/);
-  assert.match(checkoutSource, /Cập nhật thiết kế mới/);
-  assert.match(checkoutSource, /handleRefreshStaleDraft/);
+  assert.doesNotMatch(checkoutSource, /Cập nhật thiết kế mới/);
+  assert.doesNotMatch(checkoutSource, /handleRefreshStaleDraft/);
 });
 
 test('GSAP transition respects reduced motion and order page uses canonical customer fields', () => {
