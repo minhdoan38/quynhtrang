@@ -28,9 +28,11 @@ export default async function AdminOrderDetailPage({
   }
 
   const { returnTo } = await searchParams;
+  const rawReturnTo = Array.isArray(returnTo) ? returnTo[0] : returnTo;
   const safeReturnTo =
-    returnTo && returnTo.startsWith('/admin/orders') ? returnTo : '/admin/orders';
-
+    typeof rawReturnTo === 'string' && rawReturnTo.startsWith('/admin/orders')
+      ? rawReturnTo
+      : '/admin/orders';
   return (
     <OrderDetailClient
       initialDetail={detail}

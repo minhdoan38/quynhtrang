@@ -171,4 +171,17 @@ describe('AdminOrderDetail data contracts and permissions', () => {
     assert.equal(detail.customer.phone, '0901234567');
     assert.equal(detail.delivery.shippingAddress, '123 Đường Lê Lợi, Q1, TP.HCM');
   });
+
+  it('safely normalizes returnTo parameter whether string, array, or malicious', () => {
+    function normalizeReturnTo(returnTo: unknown): string {
+      const raw = Array.isArray(returnTo) ? returnTo[0] : returnTo;
+      return typeof raw === 'string' && raw.startsWith('/admin/orders') ? raw : '/admin/orders';
+    }
+
+    assert.equal(normalizeReturnTo('/admin/orders?view=payment'), '/admin/orders?view=payment');
+    assert.equal(normalizeReturnTo(['/admin/orders?page=2', '/admin/orders']), '/admin/orders?page=2');
+    assert.equal(normalizeReturnTo('https://evil.com'), '/admin/orders');
+    assert.equal(normalizeReturnTo(null), '/admin/orders');
+    assert.equal(normalizeReturnTo(undefined), '/admin/orders');
+  });
 });
