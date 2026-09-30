@@ -229,3 +229,105 @@ export function toOrderListQuery(
 
   return query;
 }
+
+export const FORBIDDEN_MUTATION_ACTIONS = [
+  'Xác nhận thanh toán',
+  'Huỷ đơn hàng',
+  'Hủy đơn hàng',
+  'Duyệt thiết kế',
+  'Chuyển trạng thái',
+  'Xoá đơn',
+  'Xóa đơn',
+  'Hoàn tiền',
+  'Chuyển sang sản xuất',
+] as const;
+
+export function getViewCounts(counts: InboxCounts | Record<string, number | undefined>): {
+  attention: number;
+  payment: number;
+  production: number;
+  all: number;
+} {
+  const c = counts as Record<string, number | undefined>;
+  return {
+    attention: c.attention ?? c.needsAttention ?? 0,
+    payment: c.payment ?? c.paymentReported ?? 0,
+    production: c.production ?? c.readyForProduction ?? 0,
+    all: c.all ?? 0,
+  };
+}
+
+export function buildInboxQueryString(params: Partial<InboxQueryParams>): string {
+  const searchParams = new URLSearchParams();
+  if (params.view && params.view !== 'attention') {
+    searchParams.set('view', params.view);
+  }
+  if (params.q && params.q.trim()) {
+    searchParams.set('q', normalizeSearchTerm(params.q));
+  }
+  if (params.payment) {
+    searchParams.set('payment', params.payment);
+  }
+  if (params.processing) {
+    searchParams.set('processing', params.processing);
+  }
+  if (params.product) {
+    searchParams.set('product', params.product);
+  }
+  if (params.date) {
+    searchParams.set('date', params.date);
+  }
+  if (params.page && params.page > 1) {
+    searchParams.set('page', String(params.page));
+  }
+  if (params.pageSize && params.pageSize !== 20) {
+    searchParams.set('pageSize', String(params.pageSize));
+  }
+  return searchParams.toString();
+}
+
+export function buildInboxUrl(basePath: string, params: Partial<InboxQueryParams>): string {
+  const qs = buildInboxQueryString(params);
+  return qs ? `${basePath}?${qs}` : basePath;
+}
+
+export function buildOrderDetailUrl(orderId: string, currentQuery: InboxQueryParams): string {
+  const returnTo = buildInboxUrl('/admin/orders', currentQuery);
+  return `/admin/orders/${orderId}?returnTo=${encodeURIComponent(returnTo)}`;
+}
+
+export function getNextViewQuery(
+  current: InboxQueryParams,
+  nextView: InboxQueryParams['view']
+): InboxQueryParams {
+  return {
+    ...current,
+    view: nextView,
+    page: 1,
+  };
+}
+
+export function isFilterActive(query: InboxQueryParams): boolean {
+  return Boolean(
+    (query.q && query.q.trim().length > 0) ||
+    query.payment ||
+    query.processing ||
+    query.product ||
+    query.date ||
+    (query.page && query.page > 1)
+  );
+}
+
+export function resetFilterQuery(query: InboxQueryParams): InboxQueryParams {
+  return {
+    view: query.view,
+    q: '',
+    page: 1,
+    pageSize: query.pageSize || 20,
+  };
+}
+
+export function formatVnd(amount: number): string {
+  const formatted = new Intl.NumberFormat('vi-VN').format(Math.max(0, amount));
+  return `${formatted} ₫`;
+}
