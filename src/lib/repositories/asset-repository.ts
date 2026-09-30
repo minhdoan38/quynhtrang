@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import type { SupabaseClient } from '@supabase/supabase-js';
 
 export interface AssetRecord {
@@ -30,11 +31,59 @@ export interface CreateAssetInput {
   metadata?: Record<string, unknown>;
 }
 
+export interface PromoteAssetInput {
+  projectId: string;
+  storageBucket: 'customer-assets';
+  kind: string;
+  originalName?: string | null;
+  mimeType: string;
+  bytes: Uint8Array;
+  pixelWidth?: number | null;
+  pixelHeight?: number | null;
+  checksum?: string | null;
+  metadata?: Record<string, unknown>;
+}
+
 export class AssetRepository {
   private readonly client: SupabaseClient;
 
   constructor(client: SupabaseClient) {
     this.client = client;
+  }
+
+  async promoteAsset(input: PromoteAssetInput): Promise<AssetRecord> {
+    const extension = input.originalName?.match(/\.([a-zA-Z0-9]+)$/)?.[1]?.toLowerCase();
+    const storagePath = `${input.projectId}/${randomUUID()}${extension ? `.${extension}` : ''}`;
+    const storageBucket = input.storageBucket;
+    const { error: uploadError } = await this.client.storage
+      .from(storageBucket)
+      .upload(storagePath, input.bytes, {
+        contentType: input.mimeType,
+        upsert: false,
+      });
+
+    if (uploadError) {
+      throw new Error(`Failed to upload asset: ${uploadError.message}`);
+    }
+
+    try {
+      return await this.create({
+        projectId: input.projectId,
+        kind: input.kind,
+        storageBucket,
+        storagePath,
+        originalName: input.originalName,
+        mimeType: input.mimeType,
+        byteSize: input.bytes.byteLength,
+        pixelWidth: input.pixelWidth,
+        pixelHeight: input.pixelHeight,
+        checksum: input.checksum,
+        metadata: input.metadata,
+      });
+    } catch (error) {
+      await this.client.storage.from(storageBucket).remove([storagePath]);
+      throw error;
+    }
   }
 
   async create(input: CreateAssetInput): Promise<AssetRecord> {

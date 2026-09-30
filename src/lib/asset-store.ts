@@ -19,6 +19,26 @@ export interface AssetPromotionResult {
   rewrittenDesign: DesignState;
 }
 
+export interface AssetPromotionRepository {
+  promoteAsset(input: {
+    projectId: string;
+    storageBucket: 'customer-assets';
+    kind: string;
+    originalName?: string | null;
+    mimeType: string;
+    bytes: Uint8Array;
+    pixelWidth?: number | null;
+    pixelHeight?: number | null;
+    checksum?: string | null;
+    metadata?: Record<string, unknown>;
+  }): Promise<{ id: string }>;
+}
+
+export interface AssetPromotionOptions {
+  projectId: string;
+  assetRepo: AssetPromotionRepository;
+}
+
 const MAX_FS_ASSETS = 300;
 const STORAGE_DIR = process.env.ASSET_STORAGE_DIR || join(process.cwd(), 'node_modules', '.cache', 'quynhtrang-assets');
 
@@ -215,7 +235,7 @@ function collectBlobUrlsAndMeta(design: DesignState): Map<string, ScannedAssetMe
   const metaMap = new Map<string, ScannedAssetMeta>();
 
   function record(url: string, partial?: Partial<ScannedAssetMeta> & { payload?: string | Uint8Array }) {
-    if (!url || typeof url !== 'string' || !url.startsWith('blob:')) return;
+    if (!url || typeof url !== 'string' || (!url.startsWith('blob:') && !url.startsWith('data:image/'))) return;
     const existing = metaMap.get(url);
     const mimeType = partial?.mimeType ?? existing?.mimeType ?? (partial?.name ? inferMimeType(partial.name) : undefined);
     const byteSize = partial?.byteSize ?? existing?.byteSize;
@@ -223,7 +243,7 @@ function collectBlobUrlsAndMeta(design: DesignState): Map<string, ScannedAssetMe
     const height = partial?.height ?? existing?.height;
     const name = partial?.name ?? existing?.name;
     const data = partial?.data ?? existing?.data;
-    const rawPayload = partial?.payload ?? existing?.payload;
+    const rawPayload = partial?.payload ?? existing?.payload ?? (url.startsWith('data:image/') ? url : undefined);
     const payload = normalizePayload(rawPayload);
 
     metaMap.set(url, {
@@ -268,6 +288,7 @@ function collectBlobUrlsAndMeta(design: DesignState): Map<string, ScannedAssetMe
         data: typeof data.data === 'string' ? data.data : undefined,
         payload: normalizePayload(rawPayload),
       };
+      if (typeof data.url === 'string') record(data.url, elementMeta);
       if (typeof data.src === 'string') record(data.src, elementMeta);
       if (typeof data.originalSrc === 'string') record(data.originalSrc, elementMeta);
       if (typeof data.removedBackgroundSrc === 'string') record(data.removedBackgroundSrc, elementMeta);
@@ -277,7 +298,7 @@ function collectBlobUrlsAndMeta(design: DesignState): Map<string, ScannedAssetMe
 
   // 3. Recursive fallback scan for any other blob: strings (e.g. in productOptions)
   function scanGeneric(val: unknown) {
-    if (typeof val === 'string' && val.startsWith('blob:')) {
+    if (typeof val === 'string' && (val.startsWith('blob:') || val.startsWith('data:image/'))) {
       if (!metaMap.has(val)) {
         record(val);
       }
@@ -313,6 +334,7 @@ function replaceStrings(obj: unknown, mapping: Map<string, string>): unknown {
 export async function promoteDesignAssets(
   design: DesignState,
   existingAssets: PromotedAsset[] = [],
+  options?: AssetPromotionOptions,
 ): Promise<AssetPromotionResult> {
   const scannedBlobs = collectBlobUrlsAndMeta(design);
   const promotedAssets: PromotedAsset[] = [];
@@ -324,10 +346,11 @@ export async function promoteDesignAssets(
     const checksum = computeChecksum(meta);
 
     // Match existing assets strictly by exact sourceKey or existing asset ID/URL
-    const matched =
+    const matched = options ? undefined : (
       existingAssets.find((ea) => ea.sourceKey === url || ea.id === url || ea.originalUrl === url) ??
       getAsset(url) ??
-      Array.from(assetRegistry.values()).find((a) => a.sourceKey === url);
+      Array.from(assetRegistry.values()).find((a) => a.sourceKey === url)
+    );
 
     if (matched) {
       if (meta.payload !== undefined && matched.payload === undefined) {
@@ -346,12 +369,36 @@ export async function promoteDesignAssets(
       storeAsset(matched);
       urlMapping.set(url, matched.id);
     } else {
-      const assetId = `/api/assets/asset-${randomUUID().replace(/-/g, '').slice(0, 12)}`;
       const resolvedPayload = meta.payload ?? (meta.data ? normalizePayload(meta.data) : undefined);
-      const byteSize = meta.byteSize && meta.byteSize > 0
-        ? meta.byteSize
-        : (resolvedPayload ? Buffer.from(resolvedPayload, 'base64').byteLength || resolvedPayload.length : 0);
-
+      if (options && resolvedPayload === undefined) {
+        throw new Error(`Tài nguyên không có dữ liệu để tải lên: ${url}`);
+      }
+      let bytes = Buffer.alloc(0);
+      if (resolvedPayload) {
+        const dataUrl = /^data:([^,]*),(.*)$/s.exec(resolvedPayload);
+        bytes = dataUrl && !dataUrl[1].includes(';base64')
+          ? Buffer.from(decodeURIComponent(dataUrl[2]), 'utf8')
+          : Buffer.from(dataUrl ? dataUrl[2] : resolvedPayload, 'base64');
+      }
+      if (options && bytes.byteLength === 0) {
+        throw new Error(`Tài nguyên không có dữ liệu để tải lên: ${url}`);
+      }
+      const byteSize = options ? bytes.byteLength : (meta.byteSize && meta.byteSize > 0 ? meta.byteSize : bytes.byteLength);
+      const stored = options
+        ? await options.assetRepo.promoteAsset({
+          projectId: options.projectId,
+          storageBucket: 'customer-assets',
+          kind: 'customer_upload',
+          originalName: meta.name,
+          mimeType: meta.mimeType ?? 'image/png',
+          bytes,
+          pixelWidth: meta.width,
+          pixelHeight: meta.height,
+          checksum: createHash('sha256').update(bytes).digest('hex'),
+          metadata: { sourceKey: url },
+        })
+        : null;
+      const assetId = `/api/assets/${stored?.id ?? `asset-${randomUUID().replace(/-/g, '').slice(0, 12)}`}`;
       const newAsset: PromotedAsset = {
         id: assetId,
         sourceKey: url,
@@ -368,7 +415,7 @@ export async function promoteDesignAssets(
         seenAssetIds.add(newAsset.id);
         promotedAssets.push(newAsset);
       }
-      storeAsset(newAsset);
+      if (!options) storeAsset(newAsset);
       urlMapping.set(url, assetId);
     }
   }

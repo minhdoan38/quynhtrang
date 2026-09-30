@@ -63,25 +63,35 @@ export class OrderRepository {
       throw new Error(`Failed to create order: ${orderError?.message ?? 'unknown error'}`);
     }
 
-    const createdOrderId = this.extractStringField(orderData, 'id') ?? '';
-    const paymentPayload = {
-      order_id: createdOrderId,
-      provider: input.payment.provider,
-      amount: input.payment.amount,
-      currency: input.payment.currency || 'VND',
-      reference: input.payment.paymentReference,
-      status: input.payment.status,
-      customer_reported_at: input.payment.customerReportedAt ?? null,
-      confirmed_at: input.payment.confirmedAt ?? null,
-    };
-
-    const { error: paymentError } = await this.client.from('order_payments').insert(paymentPayload);
-    if (paymentError) {
-      await this.client.from('orders').delete().eq('id', createdOrderId);
-      throw new Error(`Failed to create order payment: ${paymentError.message}`);
-    }
 
     return this.mapToPendingOrder(orderData, input);
+  }
+
+  async getByIdempotencyKey(idempotencyKey: string): Promise<PendingOrder | null> {
+    const { data, error } = await this.client
+      .from('orders')
+      .select('*, order_payments(*), design_versions(*)')
+      .eq('idempotency_key', idempotencyKey)
+      .maybeSingle();
+
+    if (error || !data) return null;
+    return this.mapToPendingOrder(data);
+  }
+
+  async createGuestAccess(input: {
+    orderId: string;
+    tokenHash: string;
+    expiresAt: string;
+  }): Promise<void> {
+    const { error } = await this.client.from('guest_order_access').insert({
+      order_id: input.orderId,
+      token_hash: input.tokenHash,
+      expires_at: input.expiresAt,
+    });
+
+    if (error) {
+      throw new Error(`Failed to create guest order access: ${error.message}`);
+    }
   }
 
   async getById(id: string, access: OrderAccess): Promise<PendingOrder | null> {

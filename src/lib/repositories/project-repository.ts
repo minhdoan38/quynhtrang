@@ -30,7 +30,7 @@ export class ProjectRepository {
     this.client = client;
   }
 
-  async create(input: CreateProjectInput): Promise<ProjectRecord> {
+  async createProject(input: CreateProjectInput): Promise<ProjectRecord> {
     const payload = {
       product_id: input.productId,
       variant_id: input.variantId ?? null,

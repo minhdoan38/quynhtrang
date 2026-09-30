@@ -33,7 +33,7 @@ export class DesignVersionRepository {
     this.client = client;
   }
 
-  async create(input: CreateDesignVersionInput): Promise<DesignVersionRecord> {
+  async createVersion(input: CreateDesignVersionInput): Promise<DesignVersionRecord> {
     const payload = {
       project_id: input.projectId,
       version_number: input.versionNumber,

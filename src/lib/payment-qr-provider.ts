@@ -1,4 +1,4 @@
-import type { PaymentInstructions } from './order-types.ts';
+import type { PaymentInstructions, PendingOrder } from './order-types.ts';
 import { serverOrderStore } from './server-order-store.ts';
 
 export interface BankAccountDetails {
@@ -29,37 +29,39 @@ export class DemoVietQrProvider implements PaymentQrProvider {
       throw new Error(`Không tìm thấy đơn hàng #${orderId}`);
     }
 
-    const amount = order.payment?.amount ?? 0;
-    const paymentReference = order.payment?.paymentReference ?? orderId;
-
-    // Standard VietQR Quicklink specification for banking apps
-    const encodedAccountName = encodeURIComponent(DEFAULT_BANK_DETAILS.accountName);
-    const encodedReference = encodeURIComponent(paymentReference);
-    const qrUrl = `https://img.vietqr.io/image/${DEFAULT_BANK_DETAILS.bankCode}-${DEFAULT_BANK_DETAILS.accountNumber}-compact2.png?amount=${amount}&addInfo=${encodedReference}&accountName=${encodedAccountName}`;
-
-    // Text payload representing EMVCo/VietQR transfer content
-    const qrPayload = `00020101021238540010A000000727012400069704220110${DEFAULT_BANK_DETAILS.accountNumber}520460115303704540${amount.toString().length}${amount}5802VN62${paymentReference.length + 4}080${paymentReference.length}${paymentReference}6304`;
-
-    return {
-      orderId,
-      provider: this.name,
-      bankName: DEFAULT_BANK_DETAILS.bankName,
-      accountNumber: DEFAULT_BANK_DETAILS.accountNumber,
-      accountName: DEFAULT_BANK_DETAILS.accountName,
-      amount,
-      currency: 'VND',
-      paymentReference,
-      qrPayload,
-      qrUrl,
-    };
+    return buildPaymentInstructions(order, this.name);
   }
+}
+
+function buildPaymentInstructions(order: PendingOrder, provider: string): PaymentInstructions {
+  const amount = order.payment?.amount ?? 0;
+  const paymentReference = order.payment?.paymentReference ?? order.id;
+  const encodedAccountName = encodeURIComponent(DEFAULT_BANK_DETAILS.accountName);
+  const encodedReference = encodeURIComponent(paymentReference);
+  const qrUrl = `https://img.vietqr.io/image/${DEFAULT_BANK_DETAILS.bankCode}-${DEFAULT_BANK_DETAILS.accountNumber}-compact2.png?amount=${amount}&addInfo=${encodedReference}&accountName=${encodedAccountName}`;
+  const qrPayload = `00020101021238540010A000000727012400069704220110${DEFAULT_BANK_DETAILS.accountNumber}520460115303704540${amount.toString().length}${amount}5802VN62${paymentReference.length + 4}080${paymentReference.length}${paymentReference}6304`;
+
+  return {
+    orderId: order.id,
+    provider,
+    bankName: DEFAULT_BANK_DETAILS.bankName,
+    accountNumber: DEFAULT_BANK_DETAILS.accountNumber,
+    accountName: DEFAULT_BANK_DETAILS.accountName,
+    amount,
+    currency: 'VND',
+    paymentReference,
+    qrPayload,
+    qrUrl,
+  };
 }
 
 const defaultProvider: PaymentQrProvider = new DemoVietQrProvider();
 
 export async function getPaymentInstructions(
-  orderId: string,
+  order: string | PendingOrder,
   provider: PaymentQrProvider = defaultProvider
 ): Promise<PaymentInstructions> {
-  return provider.generateInstructions(orderId);
+  return typeof order === 'string'
+    ? provider.generateInstructions(order)
+    : buildPaymentInstructions(order, order.payment.provider);
 }
