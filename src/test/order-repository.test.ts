@@ -142,6 +142,14 @@ test('countViews performs parallel count queries with terminal-state exclusions'
   const attentionQuery = client.queries[1];
   assert.ok(attentionQuery?.filters.some((filter) => filter[0] === 'not' && filter[1] === 'fulfillment_status'));
   assert.ok(attentionQuery?.filters.some((filter) => filter[0] === 'neq' && filter[1] === 'payment_status' && filter[2] === 'cancelled'));
+
+  const paymentQuery = client.queries[2];
+  assert.ok(paymentQuery?.filters.some((filter) => filter[0] === 'not' && filter[1] === 'fulfillment_status'));
+  assert.ok(paymentQuery?.filters.some((filter) => filter[0] === 'neq' && filter[1] === 'payment_status' && filter[2] === 'cancelled'));
+
+  const designReviewQuery = client.queries[3];
+  assert.ok(designReviewQuery?.filters.some((filter) => filter[0] === 'not' && filter[1] === 'fulfillment_status'));
+  assert.ok(designReviewQuery?.filters.some((filter) => filter[0] === 'neq' && filter[1] === 'payment_status' && filter[2] === 'cancelled'));
 });
 
 test('order reads enforce inner joins and reject wrong or expired tokens', async () => {

@@ -224,11 +224,15 @@ export class OrderRepository {
       this.client
         .from('orders')
         .select('*', { count: 'exact', head: true })
-        .eq('payment_status', 'payment_reported'),
+        .eq('payment_status', 'payment_reported')
+        .not('fulfillment_status', 'in', '("cancelled","completed")')
+        .neq('payment_status', 'cancelled'),
       this.client
         .from('orders')
         .select('*', { count: 'exact', head: true })
-        .in('design_status', ['awaiting_review', 'needs_changes']),
+        .in('design_status', ['awaiting_review', 'needs_changes'])
+        .not('fulfillment_status', 'in', '("cancelled","completed")')
+        .neq('payment_status', 'cancelled'),
       this.client
         .from('orders')
         .select('*', { count: 'exact', head: true })
