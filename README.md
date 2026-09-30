@@ -27,20 +27,27 @@ pnpm test
 pnpm build
 ```
 
-### Supabase Migrations & Testing (State 37 & 38)
+### Supabase Migrations & Testing (State 37, 38 & 39)
 
 ```sh
 # Triển khai migrations
 psql "$SUPABASE_DB_URL" -v ON_ERROR_STOP=1 -f supabase/migrations/0001_state37_core.sql
 psql "$SUPABASE_DB_URL" -v ON_ERROR_STOP=1 -f supabase/migrations/0002_state37_storage.sql
 psql "$SUPABASE_DB_URL" -v ON_ERROR_STOP=1 -f supabase/migrations/0003_state38_order_operations.sql
+psql "$SUPABASE_DB_URL" -v ON_ERROR_STOP=1 -f supabase/migrations/0004_state39_design_revisions.sql
 
 # Nạp dữ liệu seed
 psql "$SUPABASE_DB_URL" -v ON_ERROR_STOP=1 -f supabase/seed.sql
+psql "$SUPABASE_DB_URL" -v ON_ERROR_STOP=1 -f supabase/seed_state39.sql
 
-# Chạy kiểm thử RLS & atomic operations
+# Chạy kiểm thử RLS, atomic operations & immutability
 psql "$SUPABASE_DB_URL" -v ON_ERROR_STOP=1 -f supabase/tests/state37_rls.sql
 psql "$SUPABASE_DB_URL" -v ON_ERROR_STOP=1 -f supabase/tests/state38_order_operations.sql
+psql "$SUPABASE_DB_URL" -v ON_ERROR_STOP=1 -f supabase/tests/state39_design_revisions.sql
+
+# Vận hành tác vụ nền State 39
+node --experimental-strip-types scripts/state39-render-jobs.ts --once
+node --experimental-strip-types scripts/state39-asset-gc.ts --dry-run
 ```
 
 Mở <http://localhost:3000/> trên trình duyệt.
