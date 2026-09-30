@@ -183,6 +183,18 @@ test('createPrivilegedSupabaseClient throws if url is blank or missing', () => {
     /url/i,
   );
 });
+test('createPrivilegedSupabaseClient prefers NEXT_PUBLIC_SUPABASE_URL over SUPABASE_URL', () => {
+  resetEnv({
+    NEXT_PUBLIC_SUPABASE_URL: 'https://public-priority.supabase.co',
+    SUPABASE_URL: 'https://server-fallback.supabase.co',
+    SUPABASE_SECRET_KEY: 'sb_secret_primary',
+  });
+
+  const client = createPrivilegedSupabaseClient();
+  assert.ok(client);
+  assert.equal(Reflect.get(client, 'supabaseUrl'), 'https://public-priority.supabase.co');
+});
+
 
 test('treats whitespace or blank variables as missing in getSupabaseConfig', () => {
   resetEnv({

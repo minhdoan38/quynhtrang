@@ -15,8 +15,8 @@ export function createPrivilegedSupabaseClient(): SupabaseClient {
   const config = getSupabaseConfig();
   const url =
     config?.url ||
-    process.env.SUPABASE_URL?.trim() ||
     process.env.NEXT_PUBLIC_SUPABASE_URL?.trim() ||
+    process.env.SUPABASE_URL?.trim() ||
     '';
 
   if (!url) {
