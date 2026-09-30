@@ -94,6 +94,10 @@ test('stale design and preflight integrity are enforced before order creation', 
   assert.match(checkoutSource, /Kiểm tra lại thiết kế/);
   assert.doesNotMatch(checkoutSource, /Cập nhật thiết kế mới/);
   assert.doesNotMatch(checkoutSource, /handleRefreshStaleDraft/);
+  assert.match(shellSource, /requestedMode === 'preflight'/);
+  assert.match(shellSource, /setOverlayMode\('preflight'\)/);
+  assert.match(shellSource, /idempotencyKey:\s*existingDraft\.idempotencyKey/);
+  assert.match(shellSource, /orderId:\s*existingDraft\.orderId/);
 });
 
 test('GSAP transition respects reduced motion and order page uses canonical customer fields', () => {

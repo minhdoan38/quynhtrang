@@ -325,7 +325,12 @@ export function CustomizerShell() {
     const requestedVariant = params.get('variant');
     const requestedTemplate = params.get('template');
     const requestedView = params.get('view') as View | null;
+    const requestedMode = params.get('mode');
     const saved = loadState();
+    if (requestedMode === 'preflight') {
+      setView('editor');
+      setOverlayMode('preflight');
+    }
 
     if (requestedProduct && requestedProduct in PRODUCTS) {
       let initial = createInitialState(requestedProduct);
@@ -336,7 +341,7 @@ export function CustomizerShell() {
         initial = transitionState(initial, { type: 'SET_TEMPLATE', value: requestedTemplate });
       }
       resetHistory(migrateLegacyText(initial));
-      if (requestedView === 'editor' || requestedTemplate) {
+      if (requestedView === 'editor' || requestedTemplate || requestedMode === 'preflight') {
         setView('editor');
       } else if (requestedView === 'template-browser') {
         setView('template-browser');
@@ -352,9 +357,11 @@ export function CustomizerShell() {
         productOptions: { ...base.productOptions, ...(saved.productOptions || {}) },
       } as DesignState;
       resetHistory(migrateLegacyText(merged));
-      if (requestedView === 'editor') {
+      if (requestedView === 'editor' || requestedMode === 'preflight') {
         setView('editor');
       }
+    } else if (requestedView === 'editor' || requestedMode === 'preflight') {
+      setView('editor');
     }
     setRecentProjects(getRecentProjects());
   }, []);
@@ -2331,25 +2338,50 @@ export function CustomizerShell() {
           onContinueToCheckout={() => {
             router.push('/checkout');
             const existingDraft = loadCheckoutDraft();
+            const approvedDesign: DesignState = JSON.parse(JSON.stringify(state));
+            const isDesignUnchanged =
+              Boolean(existingDraft?.design) &&
+              existingDraft!.productId === state.productId &&
+              existingDraft!.variantId === state.variantId &&
+              JSON.stringify(existingDraft!.design.elements || []) === JSON.stringify(approvedDesign.elements || []) &&
+              JSON.stringify(existingDraft!.design.productOptions || {}) === JSON.stringify(approvedDesign.productOptions || {});
+            const designChanged = !isDesignUnchanged;
             const revision = `rev-${Date.now()}`;
-            if (typeof window !== 'undefined') {
-              sessionStorage.removeItem('quynhtrang.pendingOrderId');
-            }
             if (existingDraft) {
-              saveCheckoutDraft({
-                ...existingDraft,
-                design: JSON.parse(JSON.stringify(state)),
-                productId: state.productId,
-                variantId: state.variantId,
-                quantity: state.quantity,
-                idempotencyKey: `checkout-${crypto.randomUUID()}`,
-                orderId: undefined,
-                status: 'editing',
-                designRevision: revision,
-                preflightRevision: revision,
-                preflightAcknowledged: true,
-                updatedAt: new Date().toISOString(),
-              });
+              if (designChanged) {
+                if (typeof window !== 'undefined') {
+                  sessionStorage.removeItem('quynhtrang.pendingOrderId');
+                }
+                saveCheckoutDraft({
+                  ...existingDraft,
+                  design: approvedDesign,
+                  productId: state.productId,
+                  variantId: state.variantId,
+                  quantity: state.quantity,
+                  idempotencyKey: `checkout-${crypto.randomUUID()}`,
+                  orderId: undefined,
+                  status: 'editing',
+                  designRevision: revision,
+                  preflightRevision: revision,
+                  preflightAcknowledged: true,
+                  updatedAt: new Date().toISOString(),
+                });
+              } else {
+                saveCheckoutDraft({
+                  ...existingDraft,
+                  design: approvedDesign,
+                  productId: state.productId,
+                  variantId: state.variantId,
+                  quantity: state.quantity,
+                  idempotencyKey: existingDraft.idempotencyKey,
+                  orderId: existingDraft.orderId,
+                  status: 'editing',
+                  designRevision: revision,
+                  preflightRevision: revision,
+                  preflightAcknowledged: true,
+                  updatedAt: new Date().toISOString(),
+                });
+              }
             } else {
               const draft = createCheckoutDraft(state);
               draft.designRevision = revision;
