@@ -55,7 +55,7 @@ export function OrderDesignCard({
           ) : (
             <div className="flex flex-col items-center justify-center text-neutral-400 p-2 text-center">
               <FileImage className="w-8 h-8 mb-1" />
-              <span className="text-[10px] leading-tight">Chưa có ảnh xem trước</span>
+              <span className="text-xs leading-tight">Chưa có ảnh xem trước</span>
             </div>
           )}
         </div>
@@ -121,7 +121,7 @@ export function OrderDesignCard({
               >
                 <div className="flex items-center gap-2">
                   <span className="font-semibold text-neutral-900">{check.label}</span>
-                  <span className="text-[10px] uppercase tracking-wider text-neutral-500 font-mono px-1.5 py-0.5 rounded bg-neutral-200/60">
+                  <span className="text-xs uppercase tracking-wider text-neutral-500 font-mono px-1.5 py-0.5 rounded bg-neutral-200/60">
                     {check.category}
                   </span>
                 </div>

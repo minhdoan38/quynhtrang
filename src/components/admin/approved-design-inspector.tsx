@@ -82,7 +82,7 @@ export function ApprovedDesignInspector({
               >
                 <div className="flex items-center gap-2">
                   <span className="font-semibold text-neutral-900">{check.label}</span>
-                  <span className="text-[10px] uppercase font-mono px-1.5 py-0.5 rounded bg-neutral-200 text-neutral-600">
+                  <span className="text-xs uppercase font-mono px-1.5 py-0.5 rounded bg-neutral-200 text-neutral-600">
                     {check.category}
                   </span>
                 </div>

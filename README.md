@@ -27,6 +27,22 @@ pnpm test
 pnpm build
 ```
 
+### Supabase Migrations & Testing (State 37 & 38)
+
+```sh
+# Triển khai migrations
+psql "$SUPABASE_DB_URL" -v ON_ERROR_STOP=1 -f supabase/migrations/0001_state37_core.sql
+psql "$SUPABASE_DB_URL" -v ON_ERROR_STOP=1 -f supabase/migrations/0002_state37_storage.sql
+psql "$SUPABASE_DB_URL" -v ON_ERROR_STOP=1 -f supabase/migrations/0003_state38_order_operations.sql
+
+# Nạp dữ liệu seed
+psql "$SUPABASE_DB_URL" -v ON_ERROR_STOP=1 -f supabase/seed.sql
+
+# Chạy kiểm thử RLS & atomic operations
+psql "$SUPABASE_DB_URL" -v ON_ERROR_STOP=1 -f supabase/tests/state37_rls.sql
+psql "$SUPABASE_DB_URL" -v ON_ERROR_STOP=1 -f supabase/tests/state38_order_operations.sql
+```
+
 Mở <http://localhost:3000/> trên trình duyệt.
 
 ## Project Structure (Standard shadcn)

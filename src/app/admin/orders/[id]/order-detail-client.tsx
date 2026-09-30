@@ -263,7 +263,7 @@ export function OrderDetailClient({
               maxLength={500}
               className="text-sm"
             />
-            <div className="flex justify-between text-[11px] text-neutral-400">
+            <div className="flex justify-between text-xs text-neutral-400">
               <span>Từ 3 đến 500 ký tự</span>
               <span>{holdReason.length}/500</span>
             </div>

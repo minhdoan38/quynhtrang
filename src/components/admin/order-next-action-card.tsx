@@ -57,7 +57,7 @@ export function OrderNextActionCard({
             <div className="flex items-center gap-2">
               <span
                 className={cn(
-                  'px-2 py-0.5 rounded text-[11px] font-semibold tracking-wider uppercase border',
+                  'px-2 py-0.5 rounded text-xs font-semibold tracking-wider uppercase border',
                   themeStyles.badge
                 )}
               >

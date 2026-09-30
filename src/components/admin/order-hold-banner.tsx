@@ -25,7 +25,7 @@ export function OrderHoldBanner({
           </div>
           <div className="space-y-1">
             <div className="flex items-center gap-2">
-              <span className="px-2 py-0.5 rounded text-[11px] font-bold tracking-wider uppercase bg-amber-200/80 text-amber-900 border border-amber-300">
+              <span className="px-2 py-0.5 rounded text-xs font-bold tracking-wider uppercase bg-amber-200/80 text-amber-900 border border-amber-300">
                 Đơn đang tạm giữ
               </span>
             </div>
