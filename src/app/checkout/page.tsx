@@ -282,6 +282,7 @@ export default function CheckoutPage() {
             design,
             customer: normalizedCustomer,
             idempotencyKey: draft.idempotencyKey,
+            designRevision: draft.designRevision,
             preflightRevision: draft.preflightRevision ?? 'rev-0',
             preflightAcknowledged: draft.preflightAcknowledged ?? true,
           }),

@@ -42,7 +42,7 @@ export function normalizePhoneForValidation(phone: string): string {
 export function normalizeCustomerInfo(input: CustomerInfoInput): CustomerInfo {
   return {
     fullName: (input.fullName ?? '').trim(),
-    phone: normalizePhoneForValidation(input.phone ?? ''),
+    phone: (input.phone ?? '').trim(),
     shippingAddress: (input.shippingAddress ?? '').trim(),
   };
 }
@@ -56,10 +56,11 @@ export function validateCustomerInfo(input: CustomerInfoInput): CustomerInfoVali
   }
 
   const rawPhone = input.phone ?? '';
-  const digitsOnly = normalized.phone.replace(/\D/g, '');
+  const validationPhone = normalizePhoneForValidation(normalized.phone);
+  const digitsOnly = validationPhone.replace(/\D/g, '');
   const hasInvalidPhoneChars = /[^\d\s().+-]/.test(rawPhone);
-  const validPlusPrefix = !normalized.phone.includes('+') || normalized.phone.startsWith('+');
-  const validPlusCount = (normalized.phone.match(/\+/g) ?? []).length <= 1;
+  const validPlusPrefix = !validationPhone.includes('+') || validationPhone.startsWith('+');
+  const validPlusCount = (validationPhone.match(/\+/g) ?? []).length <= 1;
 
   if (
     hasInvalidPhoneChars ||

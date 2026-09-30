@@ -1,4 +1,16 @@
 import { createHash, randomUUID } from 'node:crypto';
+import {
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  writeFileSync,
+  renameSync,
+  readdirSync,
+  unlinkSync,
+  statSync,
+  rmSync,
+} from 'node:fs';
+import { join } from 'node:path';
 import type { PromotedAsset } from './order-types.ts';
 import type { DesignState } from './product-state.ts';
 
@@ -7,11 +19,80 @@ export interface AssetPromotionResult {
   rewrittenDesign: DesignState;
 }
 
+const MAX_FS_ASSETS = 300;
+const STORAGE_DIR = process.env.ASSET_STORAGE_DIR || join(process.cwd(), 'node_modules', '.cache', 'quynhtrang-assets');
+
+function ensureStorageDir(): boolean {
+  try {
+    if (!existsSync(STORAGE_DIR)) {
+      mkdirSync(STORAGE_DIR, { recursive: true });
+    }
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function getSafeDiskFilename(id: string): string {
+  const cleanId = id.split('?')[0].split('#')[0].replace(/^\/api\/assets\//, '');
+  return cleanId.replace(/[^a-zA-Z0-9_-]/g, '_') + '.json';
+}
+
+function writeAssetToDisk(asset: PromotedAsset): void {
+  try {
+    if (!ensureStorageDir()) return;
+    const filename = getSafeDiskFilename(asset.id);
+    const filepath = join(STORAGE_DIR, filename);
+    const tempPath = filepath + `.tmp.${randomUUID()}`;
+    writeFileSync(tempPath, JSON.stringify(asset), 'utf8');
+    renameSync(tempPath, filepath);
+
+    const files = readdirSync(STORAGE_DIR).filter((f) => f.endsWith('.json'));
+    if (files.length > MAX_FS_ASSETS) {
+      const stats = files.map((file) => {
+        const fp = join(STORAGE_DIR, file);
+        return { fp, mtime: statSync(fp).mtimeMs };
+      });
+      stats.sort((a, b) => a.mtime - b.mtime);
+      for (let i = 0; i < stats.length - MAX_FS_ASSETS; i++) {
+        try { unlinkSync(stats[i].fp); } catch { /* ignore */ }
+      }
+    }
+  } catch {
+    // Graceful fallback: memory cache remains intact
+  }
+}
+
+function readAssetFromDisk(id: string): PromotedAsset | null {
+  try {
+    const filename = getSafeDiskFilename(id);
+    const filepath = join(STORAGE_DIR, filename);
+    if (!existsSync(filepath)) return null;
+    const content = readFileSync(filepath, 'utf8');
+    const asset = JSON.parse(content) as PromotedAsset;
+    if (asset && typeof asset === 'object' && typeof asset.id === 'string') {
+      return asset;
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+function clearDiskAssets(): void {
+  try {
+    if (existsSync(STORAGE_DIR)) {
+      rmSync(STORAGE_DIR, { recursive: true, force: true });
+    }
+  } catch {
+    // Graceful fallback
+  }
+}
+
 const assetRegistryKey = Symbol.for('quynhtrang.serverAssetStore');
 const globalAssetRegistry = globalThis as unknown as { [key: symbol]: Map<string, PromotedAsset> };
 if (!globalAssetRegistry[assetRegistryKey]) globalAssetRegistry[assetRegistryKey] = new Map();
 const assetRegistry = globalAssetRegistry[assetRegistryKey];
-
 function normalizePayload(payload: unknown): string | undefined {
   if (payload === undefined || payload === null) return undefined;
   if (typeof payload === 'string') {
@@ -38,22 +119,39 @@ export function storeAsset(
     ...(normalizedPayload !== undefined ? { payload: normalizedPayload } : {}),
     derivedUrls: asset.derivedUrls ? { ...asset.derivedUrls } : undefined,
   };
-  const idWithoutPrefix = asset.id.replace(/^\/api\/assets\//, '');
-  const idWithPrefix = asset.id.startsWith('/api/assets/') ? asset.id : `/api/assets/${asset.id}`;
+  const cleanId = asset.id.split('?')[0].split('#')[0];
+  const idWithoutPrefix = cleanId.replace(/^\/api\/assets\//, '');
+  const idWithPrefix = cleanId.startsWith('/api/assets/') ? cleanId : `/api/assets/${cleanId}`;
 
   assetRegistry.set(asset.id, copy);
+  assetRegistry.set(cleanId, copy);
   assetRegistry.set(idWithoutPrefix, copy);
   assetRegistry.set(idWithPrefix, copy);
+
+  writeAssetToDisk(copy);
   return copy;
 }
 
 export function getAsset(id: string): PromotedAsset | null {
-  const idWithoutPrefix = id.replace(/^\/api\/assets\//, '');
-  const idWithPrefix = id.startsWith('/api/assets/') ? id : `/api/assets/${id}`;
-  const asset =
+  const cleanId = id.split('?')[0].split('#')[0];
+  const idWithoutPrefix = cleanId.replace(/^\/api\/assets\//, '');
+  const idWithPrefix = cleanId.startsWith('/api/assets/') ? cleanId : `/api/assets/${cleanId}`;
+  let asset =
     assetRegistry.get(id) ??
+    assetRegistry.get(cleanId) ??
     assetRegistry.get(idWithoutPrefix) ??
     assetRegistry.get(idWithPrefix);
+
+  if (!asset) {
+    const fromDisk = readAssetFromDisk(cleanId);
+    if (fromDisk) {
+      asset = fromDisk;
+      assetRegistry.set(fromDisk.id, fromDisk);
+      assetRegistry.set(idWithoutPrefix, fromDisk);
+      assetRegistry.set(idWithPrefix, fromDisk);
+    }
+  }
+
   if (!asset) return null;
   return {
     ...asset,
@@ -63,6 +161,7 @@ export function getAsset(id: string): PromotedAsset | null {
 
 export function clearAssetStore(): void {
   assetRegistry.clear();
+  clearDiskAssets();
 }
 
 function collectPromotedUrls(design: DesignState): string[] {
@@ -281,16 +380,19 @@ export async function promoteDesignAssets(
       existingAssets.find((ea) => ea.id === pUrl || ea.originalUrl === pUrl || ea.sourceKey === pUrl) ??
       getAsset(pUrl);
 
-    if (matched && !seenAssetIds.has(matched.id)) {
-      if (matched.payload !== undefined) {
-        matched.payload = normalizePayload(matched.payload);
+    if (matched) {
+      if (!seenAssetIds.has(matched.id)) {
+        if (matched.payload !== undefined) {
+          matched.payload = normalizePayload(matched.payload);
+        }
+        seenAssetIds.add(matched.id);
+        promotedAssets.push(matched);
+        storeAsset(matched);
       }
-      seenAssetIds.add(matched.id);
-      promotedAssets.push(matched);
-      storeAsset(matched);
+    } else {
+      throw new Error(`Tài nguyên máy chủ không tồn tại: ${pUrl}`);
     }
   }
-
   const rewrittenDesign = replaceStrings(
     JSON.parse(JSON.stringify(design)),
     urlMapping,

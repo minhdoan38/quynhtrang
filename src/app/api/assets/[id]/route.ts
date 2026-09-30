@@ -1,5 +1,25 @@
 import { getAsset } from '../../../../lib/asset-store.ts';
 
+function sanitizeSvg(content: string): string {
+  return content
+    .replace(/<script[\s\S]*?<\/script>/gi, '')
+    .replace(/on\w+\s*=\s*(["'][^"']*["']|[^\s>]+)/gi, '')
+    .replace(/href\s*=\s*["']\s*javascript:[^"']*["']/gi, 'href="#"');
+}
+
+function buildAssetHeaders(contentType: string, byteLength: number): Headers {
+  const headers = new Headers();
+  headers.set('Content-Type', contentType);
+  headers.set('Content-Length', String(byteLength));
+  headers.set('Cache-Control', 'public, max-age=31536000, immutable');
+  headers.set('Content-Security-Policy', "default-src 'none'; sandbox;");
+  headers.set('X-Content-Type-Options', 'nosniff');
+  if (contentType === 'image/svg+xml') {
+    headers.set('Content-Disposition', 'inline; filename="asset.svg"');
+  }
+  return headers;
+}
+
 export async function GET(
   _request: Request,
   props: { params: Promise<{ id: string }> }
@@ -28,27 +48,23 @@ export async function GET(
 
     if (payload !== undefined && payload !== null) {
       if ((payload as unknown) instanceof Uint8Array) {
-        const buffer = Buffer.from(payload as unknown as Uint8Array);
+        let buffer = Buffer.from(payload as unknown as Uint8Array);
+        if (contentType === 'image/svg+xml') {
+          buffer = Buffer.from(sanitizeSvg(buffer.toString('utf8')), 'utf8');
+        }
         return new Response(buffer, {
           status: 200,
-          headers: {
-            'Content-Type': contentType,
-            'Content-Length': String(buffer.byteLength),
-            'Cache-Control': 'public, max-age=31536000, immutable',
-          },
+          headers: buildAssetHeaders(contentType, buffer.byteLength),
         });
       }
       if (typeof payload === 'string' && payload.length > 0) {
         let base64Payload = payload.trim();
         if (base64Payload.startsWith('<') || base64Payload.includes('xmlns')) {
-          const buffer = Buffer.from(payload, 'utf8');
+          const content = sanitizeSvg(base64Payload);
+          const buffer = Buffer.from(content, 'utf8');
           return new Response(buffer, {
             status: 200,
-            headers: {
-              'Content-Type': contentType,
-              'Content-Length': String(buffer.byteLength),
-              'Cache-Control': 'public, max-age=31536000, immutable',
-            },
+            headers: buildAssetHeaders(contentType, buffer.byteLength),
           });
         }
         if (base64Payload.startsWith('data:')) {
@@ -58,14 +74,13 @@ export async function GET(
           }
         }
         const cleaned = base64Payload.replace(/\s+/g, '');
-        const buffer = Buffer.from(cleaned, 'base64');
+        let buffer = Buffer.from(cleaned, 'base64');
+        if (contentType === 'image/svg+xml') {
+          buffer = Buffer.from(sanitizeSvg(buffer.toString('utf8')), 'utf8');
+        }
         return new Response(buffer, {
           status: 200,
-          headers: {
-            'Content-Type': contentType,
-            'Content-Length': String(buffer.byteLength),
-            'Cache-Control': 'public, max-age=31536000, immutable',
-          },
+          headers: buildAssetHeaders(contentType, buffer.byteLength),
         });
       }
     }
@@ -77,11 +92,7 @@ export async function GET(
     );
     return new Response(placeholder, {
       status: 200,
-      headers: {
-        'Content-Type': contentType,
-        'Content-Length': String(placeholder.byteLength),
-        'Cache-Control': 'public, max-age=31536000, immutable',
-      },
+      headers: buildAssetHeaders(contentType, placeholder.byteLength),
     });
   } catch (err) {
     console.error('Lỗi tải tài nguyên:', err);

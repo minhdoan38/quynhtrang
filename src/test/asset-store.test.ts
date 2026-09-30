@@ -310,3 +310,90 @@ test('asset store preserves and serves raw SVG artwork text', async () => {
   assert.equal(dataResponse.headers.get('Content-Type'), 'image/svg+xml');
   assert.equal(await dataResponse.text(), rawSvg);
 });
+
+test('rejects promotion when design references unresolvable server asset URL', async () => {
+  const design = {
+    ...createInitialState('card'),
+    image: {
+      src: '/api/assets/non-existent-asset-12345',
+      name: 'missing.png',
+      type: 'image/png',
+    },
+  };
+
+  await assert.rejects(
+    async () => {
+      await promoteDesignAssets(design);
+    },
+    /không tồn tại|not found|unresolved/i,
+  );
+});
+
+test('persists promoted assets to filesystem and recovers after memory store is cleared', async () => {
+  const testAsset = storeAsset({
+    id: '/api/assets/asset-persistent-test',
+    sourceKey: 'blob:persistent-key',
+    mimeType: 'image/png',
+    byteSize: 10,
+    originalUrl: '/api/assets/asset-persistent-test',
+    data: 'dGVzdA==',
+  });
+
+  assert.equal(getAsset(testAsset.id)?.id, testAsset.id);
+
+  const registryKey = Symbol.for('quynhtrang.serverAssetStore');
+  const scope = globalThis as Record<symbol, Map<string, unknown>>;
+  scope[registryKey]?.clear();
+
+  const recovered = getAsset(testAsset.id);
+  assert.ok(recovered);
+  assert.equal(recovered.id, testAsset.id);
+  assert.equal(recovered.mimeType, 'image/png');
+  assert.equal(recovered.data, 'dGVzdA==');
+});
+
+test('serves assets with security headers and sets inline SVG filename disposition', async () => {
+  const svgContent = '<svg xmlns="http://www.w3.org/2000/svg"><circle cx="10" cy="10" r="5"/></svg>';
+  const id = '/api/assets/asset-security-test-svg';
+  storeAsset({
+    id,
+    sourceKey: 'blob:security-test',
+    mimeType: 'image/svg+xml',
+    byteSize: Buffer.byteLength(svgContent),
+    originalUrl: id,
+    payload: svgContent,
+  });
+
+  const res = await getAssetRoute(
+    new Request(`http://localhost:3000${id}`),
+    { params: Promise.resolve({ id: 'asset-security-test-svg' }) },
+  );
+
+  assert.equal(res.status, 200);
+  assert.equal(res.headers.get('Content-Security-Policy'), "default-src 'none'; sandbox;");
+  assert.equal(res.headers.get('X-Content-Type-Options'), 'nosniff');
+  assert.equal(res.headers.get('Content-Disposition'), 'inline; filename="asset.svg"');
+});
+
+test('sanitizes active SVG scripts while blocking execution via CSP', async () => {
+  const activeSvg = '<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script><circle cx="1" cy="1" r="1"/></svg>';
+  const id = '/api/assets/asset-active-svg';
+  storeAsset({
+    id,
+    sourceKey: 'blob:active-svg',
+    mimeType: 'image/svg+xml',
+    byteSize: Buffer.byteLength(activeSvg),
+    originalUrl: id,
+    payload: activeSvg,
+  });
+
+  const res = await getAssetRoute(
+    new Request(`http://localhost:3000${id}`),
+    { params: Promise.resolve({ id: 'asset-active-svg' }) },
+  );
+
+  assert.equal(res.status, 200);
+  const text = await res.text();
+  assert.equal(text.includes('<script>'), false);
+  assert.equal(res.headers.get('Content-Security-Policy'), "default-src 'none'; sandbox;");
+});

@@ -9,10 +9,10 @@ export interface CreateOrderRequestBody {
   idempotencyKey: string;
   design: DesignState;
   customer: CustomerInfo;
+  designRevision?: string;
   preflightRevision?: string;
   preflightAcknowledged?: boolean;
 }
-
 export interface CreateOrderResponseBody {
   order: PendingOrder;
   paymentData: {
@@ -97,10 +97,24 @@ export async function POST(request: Request) {
         { status: 400 }
       );
     }
-
-    if (body.preflightAcknowledged === false) {
+    if (
+      body.preflightAcknowledged !== true ||
+      typeof body.preflightRevision !== 'string' ||
+      body.preflightRevision.trim().length === 0
+    ) {
       return Response.json(
-        { error: 'Thiết kế chưa được xác nhận kiểm tra in.' },
+        { error: 'Thiết kế cần được xác nhận kiểm tra in trước khi đặt hàng.' },
+        { status: 400 }
+      );
+    }
+
+    if (
+      typeof body.designRevision === 'string' &&
+      body.designRevision.trim().length > 0 &&
+      body.preflightRevision !== body.designRevision
+    ) {
+      return Response.json(
+        { error: 'Thiết kế đã có thay đổi so với bản kiểm tra in. Vui lòng kiểm tra lại thiết kế.' },
         { status: 400 }
       );
     }

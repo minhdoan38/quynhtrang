@@ -25,11 +25,18 @@ const validCustomer = {
   shippingAddress: '  123 Đường Hoa Lan, Quận 1, TP.HCM  ',
 };
 
-function postOrder(body: Record<string, unknown>) {
+function postOrder(body: Record<string, unknown>, options?: { omitPreflightDefaults?: boolean }) {
+  const payload = options?.omitPreflightDefaults
+    ? body
+    : {
+      preflightRevision: 'rev-default',
+      preflightAcknowledged: true,
+      ...body,
+    };
   return POST(new Request('http://localhost/api/orders', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
+    body: JSON.stringify(payload),
   }));
 }
 
@@ -66,7 +73,7 @@ test('POST creates a server-priced order, promotes design assets, and returns pa
   assert.equal(body.order.idempotencyKey, 'orders-api-success');
   assert.deepEqual(body.order.customer, {
     fullName: 'Nguyễn Văn An',
-    phone: '0901234567',
+    phone: '(090) 123-4567',
     shippingAddress: '123 Đường Hoa Lan, Quận 1, TP.HCM',
   });
   assert.equal(body.order.product.quantity, 2);
@@ -171,40 +178,62 @@ test('GET returns the stored order with normalized customer and sanitized snapsh
   assert.doesNotMatch(JSON.stringify(body.order.snapshot), /blob:/);
 });
 
-test('POST rejects submission when preflight is unacknowledged (preflightAcknowledged === false)', async () => {
+test('POST rejects submission when preflight is unacknowledged, missing, or has empty revision', async () => {
+  const design = createInitialState('card');
+
+  const testCases: Array<{ body: Record<string, unknown>; omitDefaults?: boolean }> = [
+    { body: { idempotencyKey: 'preflight-false', design, customer: validCustomer, preflightRevision: 'rev-1', preflightAcknowledged: false } },
+    { body: { idempotencyKey: 'preflight-missing-ack', design, customer: validCustomer, preflightRevision: 'rev-1' }, omitDefaults: true },
+    { body: { idempotencyKey: 'preflight-missing-rev', design, customer: validCustomer, preflightAcknowledged: true }, omitDefaults: true },
+    { body: { idempotencyKey: 'preflight-empty-rev', design, customer: validCustomer, preflightRevision: '   ', preflightAcknowledged: true } },
+  ];
+
+  for (const { body, omitDefaults } of testCases) {
+    const response = await postOrder(body, { omitPreflightDefaults: omitDefaults });
+    assert.equal(response.status, 400);
+    assert.deepEqual(await response.json(), {
+      error: 'Thiết kế cần được xác nhận kiểm tra in trước khi đặt hàng.',
+    });
+  }
+  assert.equal(serverOrderStore.getAllOrders().length, 0);
+});
+
+test('POST rejects submission when design revision mismatches acknowledged preflight revision', async () => {
   const design = createInitialState('card');
   const response = await postOrder({
-    idempotencyKey: 'orders-api-preflight-false',
+    idempotencyKey: 'orders-api-rev-mismatch',
     design,
     customer: validCustomer,
-    preflightRevision: 'rev-unacked',
-    preflightAcknowledged: false,
+    designRevision: 'rev-new',
+    preflightRevision: 'rev-old',
+    preflightAcknowledged: true,
   });
 
   assert.equal(response.status, 400);
   assert.deepEqual(await response.json(), {
-    error: 'Thiết kế chưa được xác nhận kiểm tra in.',
+    error: 'Thiết kế đã có thay đổi so với bản kiểm tra in. Vui lòng kiểm tra lại thiết kế.',
   });
   assert.equal(serverOrderStore.getAllOrders().length, 0);
 });
 
-test('POST creates order successfully when preflight is acknowledged', async () => {
+test('POST creates order successfully when preflight is acknowledged and design revision matches', async () => {
   const design = createInitialState('card');
   const response = await postOrder({
     idempotencyKey: 'orders-api-preflight-ack',
     design,
     customer: validCustomer,
-    preflightRevision: 'rev-acked',
+    designRevision: 'rev-matching',
+    preflightRevision: 'rev-matching',
     preflightAcknowledged: true,
   });
 
   assert.equal(response.status, 201);
   const body = (await response.json()) as OrderResponse;
-  assert.equal(body.order.preflightRevision, 'rev-acked');
+  assert.equal(body.order.preflightRevision, 'rev-matching');
   const version = serverOrderStore.getApprovedDesignVersion(body.order.approvedDesignVersionId);
   assert.ok(version);
   assert.equal(version.preflightAcknowledged, true);
-  assert.equal(version.preflightRevision, 'rev-acked');
+  assert.equal(version.preflightRevision, 'rev-matching');
 });
 
 test('POST generates collision-free UUID idempotency keys when idempotencyKey is omitted', async () => {

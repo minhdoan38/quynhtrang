@@ -22,7 +22,7 @@ test('normalizes customer information without changing meaningful text', () => {
     }),
     {
       fullName: 'Nguyễn Văn A',
-      phone: '0912345678',
+      phone: '(0912) 345.678-',
       shippingAddress: 'Số 12 ngõ 34 Phố Huế',
     },
   );
@@ -69,11 +69,12 @@ test('rejects names outside bounded length', () => {
   );
 });
 
-test('accepts valid Vietnamese phone formats after punctuation normalization', () => {
-  for (const phone of ['0912345678', '+84912345678', '(024) 3825 1234']) {
-    const result = validateCustomerInfo({ ...VALID_INFO, phone });
+test('accepts formatted Vietnamese phones without changing customer-entered formatting', () => {
+  for (const phone of ['0912345678', '+84 912-345-678', '(024) 3825 1234']) {
+    const result = validateCustomerInfo({ ...VALID_INFO, phone: `  ${phone}  ` });
     assert.equal(result.isValid, true, phone);
     assert.equal(result.errors.phone, undefined);
+    assert.equal(result.normalized.phone, phone);
   }
 });
 
