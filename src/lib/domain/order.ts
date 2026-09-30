@@ -32,6 +32,7 @@ export type OrderNextActionKind =
   | 'verify_payment'
   | 'wait_for_payment'
   | 'review_design'
+  | 'continue_design_edit'
   | 'resolve_design_changes'
   | 'ready_for_production'
   | 'production_in_progress'
