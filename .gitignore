@@ -16,3 +16,7 @@ next-env.d.ts
 *.log
 .superpowers/
 skills-lock.json
+
+# Environment
+.env
+.env*.local
