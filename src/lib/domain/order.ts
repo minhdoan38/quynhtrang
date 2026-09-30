@@ -26,6 +26,34 @@ export interface OrderOperationalState {
   fulfillmentStatus: FulfillmentStatus;
   activeHold: ActiveOrderHold | null;
 }
+export type CustomerFacingOrderStatus =
+  | 'waiting_payment'
+  | 'design_review'
+  | 'preparing_production'
+  | 'in_production'
+  | 'production_completed'
+  | 'cancelled'
+  | 'processing';
+
+export function getCustomerFacingStatusText(status: string): string {
+  switch (status) {
+    case 'waiting_payment':
+      return 'Chờ xác nhận thanh toán';
+    case 'design_review':
+      return 'Đang kiểm tra thiết kế';
+    case 'preparing_production':
+      return 'Đang chuẩn bị sản xuất';
+    case 'in_production':
+      return 'Đang sản xuất';
+    case 'production_completed':
+      return 'Sản xuất hoàn tất';
+    case 'cancelled':
+      return 'Đã hủy';
+    default:
+      return 'Đang xử lý';
+  }
+}
+
 
 export type OrderNextActionKind =
   | 'release_hold'
