@@ -27,6 +27,19 @@ begin
     (v_admin_id, 'admin')
   on conflict (user_id) do update set role = excluded.role;
 
+  -- 1.1 Insert test storage fixtures under postgres
+  insert into storage.objects (id, bucket_id, name, owner, metadata)
+  values
+    ('f0000000-0000-4000-8000-000000000001', 'customer-assets', 'fixture-customer-upload.png', null, '{"size": 1024}'::jsonb),
+    ('f0000000-0000-4000-8000-000000000002', 'approved-renders', 'fixture-approved-render.png', null, '{"size": 2048}'::jsonb),
+    ('f0000000-0000-4000-8000-000000000003', 'template-assets', 'fixture-template-preview.png', null, '{"size": 512}'::jsonb)
+  on conflict (id) do nothing;
+
+  select count(*) into v_count from storage.objects where bucket_id in ('customer-assets', 'approved-renders');
+  if v_count < 2 then
+    raise exception 'Assertion failed: expected at least 2 private storage fixture objects, saw %', v_count;
+  end if;
+
   -- 2. Test: Anon cannot select orders (direct grant revoked)
   set local role anon;
   set local "request.jwt.claim.sub" = '';
@@ -139,15 +152,30 @@ begin
   where id = v_order_id;
 
   -- 8. Test: Storage policy assertions
-  -- Anon can read public buckets ('template-assets') but denied for private buckets ('customer-assets')
+  -- Anon cannot read private buckets ('customer-assets', 'approved-renders')
   set local role anon;
   set local "request.jwt.claim.sub" = '';
   set local "request.jwt.claims" = '{"role": "anon"}';
 
-  -- Simulate storage object check for private bucket
-  select count(*) into v_count from storage.objects where bucket_id = 'customer-assets';
+  select count(*) into v_count from storage.objects where bucket_id in ('customer-assets', 'approved-renders');
   if v_count <> 0 then
-    raise exception 'Assertion failed: anon should not see storage objects in customer-assets';
+    raise exception 'Assertion failed: anon should not see storage objects in customer-assets or approved-renders, saw %', v_count;
+  end if;
+
+  -- Anon can read public bucket ('template-assets')
+  select count(*) into v_count from storage.objects where bucket_id = 'template-assets';
+  if v_count < 1 then
+    raise exception 'Assertion failed: anon should be able to read public storage objects in template-assets';
+  end if;
+
+  -- Staff editor can read private storage objects
+  set local role authenticated;
+  set local "request.jwt.claim.sub" = 'a0000000-0000-0000-0000-000000000002';
+  set local "request.jwt.claims" = '{"role": "authenticated", "sub": "a0000000-0000-0000-0000-000000000002"}';
+
+  select count(*) into v_count from storage.objects where bucket_id in ('customer-assets', 'approved-renders');
+  if v_count < 2 then
+    raise exception 'Assertion failed: staff editor should be able to read private storage objects, saw %', v_count;
   end if;
 
   raise notice 'All State 37 RLS and authorization assertions passed successfully.';

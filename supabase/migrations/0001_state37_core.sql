@@ -14,12 +14,10 @@ as $$
 declare
   seq_val bigint;
   date_part text;
-  rand_part text;
 begin
   seq_val := nextval('public.order_code_seq');
   date_part := to_char(clock_timestamp(), 'YYMMDD');
-  rand_part := upper(substr(md5(random()::text || clock_timestamp()::text || seq_val::text), 1, 4));
-  return 'QT' || date_part || rand_part;
+  return 'QT' || date_part || '-' || lpad(seq_val::text, 4, '0');
 end;
 $$;
 

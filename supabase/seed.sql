@@ -162,23 +162,442 @@ on conflict (id) do update set
 
 insert into public.template_versions (template_id, version, design_document)
 values
-  ('blank', 1, jsonb_build_object('text', '', 'color', '#111827', 'backgroundColor', '#ffffff')),
-  ('minimal', 1, jsonb_build_object('text', 'Dành riêng cho bạn', 'color', '#243447', 'backgroundColor', '#f5f1e8')),
-  ('celebrate', 1, jsonb_build_object('text', 'Chúc mừng!', 'color', '#7c2d12', 'backgroundColor', '#fef3c7')),
-  ('card-h-birthday', 1, jsonb_build_object('text', 'Happy Birthday to You', 'color', '#B86C84', 'backgroundColor', '#FFFDF8')),
-  ('card-h-cute', 1, jsonb_build_object('text', 'You are so special!', 'color', '#315F86', 'backgroundColor', '#F8F3E8')),
-  ('card-h-love', 1, jsonb_build_object('text', 'Forever & Always', 'color', '#B3535D', 'backgroundColor', '#FFF8F8')),
-  ('card-v-floral', 1, jsonb_build_object('text', 'Lời chúc yêu thương', 'color', '#2E3338', 'backgroundColor', '#FAF7F0')),
-  ('card-thanks', 1, jsonb_build_object('text', 'Thank you so much', 'color', '#5F7E67', 'backgroundColor', '#F3F6F3')),
-  ('wrapping-a1-cute', 1, jsonb_build_object('text', 'Sweet Gift', 'color', '#315F86', 'backgroundColor', '#F4EAE1')),
-  ('wrapping-a1-floral', 1, jsonb_build_object('text', 'For You', 'color', '#7c2d12', 'backgroundColor', '#F9F4EE')),
-  ('wrapping-a2-minimal', 1, jsonb_build_object('text', 'Simple Joy', 'color', '#2E3338', 'backgroundColor', '#EFECE6')),
-  ('wrapping-birthday-balloons', 1, jsonb_build_object('text', 'Happy Birthday', 'color', '#8C3B2F', 'backgroundColor', '#FFF2EB')),
-  ('sticker-diecut-love', 1, jsonb_build_object('text', 'Love', 'color', '#B3535D', 'backgroundColor', '#FFFFFF')),
-  ('sticker-cute-pack', 1, jsonb_build_object('text', 'Meow', 'color', '#2E3338', 'backgroundColor', '#FFFFFF')),
-  ('sticker-cozy-coffee', 1, jsonb_build_object('text', 'Warm Coffee & Book', 'color', '#5C381E', 'backgroundColor', '#FDF7EE')),
-  ('notebook-floral', 1, jsonb_build_object('text', 'My Daily Journal', 'color', '#2E3338', 'backgroundColor', '#EDE8DF')),
-  ('notebook-minimal', 1, jsonb_build_object('text', 'Thoughts & Ideas', 'color', '#344E66', 'backgroundColor', '#F3F5F7'))
+  (
+    'blank',
+    1,
+    jsonb_build_object(
+      'text', '',
+      'color', '#111827',
+      'backgroundColor', '#ffffff',
+      'elements', '[]'::jsonb,
+      'productOptions', '{}'::jsonb
+    )
+  ),
+  (
+    'minimal',
+    1,
+    jsonb_build_object(
+      'text', 'Dành riêng cho bạn',
+      'color', '#243447',
+      'backgroundColor', '#f5f1e8',
+      'elements', '[]'::jsonb,
+      'productOptions', jsonb_build_object(
+        'wrapping', jsonb_build_object(
+          'mode', 'full-sheet',
+          'patternConfig', jsonb_build_object(
+            'enabled', false,
+            'repeatMode', 'basic',
+            'scale', 90,
+            'spacingX', 0,
+            'spacingY', 0,
+            'rotation', 0,
+            'backgroundColor', '#f5f1e8'
+          ),
+          'repeatStyle', 'regular',
+          'patternScale', 90
+        ),
+        'card', jsonb_build_object('surface', 'front', 'fold', 'half'),
+        'sticker', jsonb_build_object('hasWhiteBorder', true, 'borderWidth', 6),
+        'notebook', jsonb_build_object('finish', 'matte')
+      )
+    )
+  ),
+  (
+    'celebrate',
+    1,
+    jsonb_build_object(
+      'text', 'Chúc mừng!',
+      'color', '#7c2d12',
+      'backgroundColor', '#fef3c7',
+      'elements', '[]'::jsonb,
+      'productOptions', jsonb_build_object(
+        'wrapping', jsonb_build_object(
+          'mode', 'pattern',
+          'patternConfig', jsonb_build_object(
+            'enabled', true,
+            'repeatMode', 'half-brick',
+            'scale', 125,
+            'spacingX', 0,
+            'spacingY', 0,
+            'rotation', 0,
+            'backgroundColor', '#ffffff'
+          ),
+          'repeatStyle', 'brick',
+          'patternScale', 125
+        ),
+        'card', jsonb_build_object('surface', 'inside', 'fold', 'half'),
+        'sticker', jsonb_build_object('hasWhiteBorder', true, 'borderWidth', 10),
+        'notebook', jsonb_build_object('finish', 'glossy')
+      )
+    )
+  ),
+  (
+    'card-h-birthday',
+    1,
+    jsonb_build_object(
+      'text', 'Happy Birthday to You',
+      'color', '#B86C84',
+      'backgroundColor', '#FFFDF8',
+      'productOptions', jsonb_build_object('card', jsonb_build_object('surface', 'front', 'fold', 'half')),
+      'elements', jsonb_build_array(
+        jsonb_build_object(
+          'id', 'card-h-birthday-front-text',
+          'type', 'text',
+          'surface', 'front',
+          'x', 50,
+          'y', 50,
+          'data', jsonb_build_object(
+            'text', 'Happy Birthday to You',
+            'preset', 'heading',
+            'color', '#B86C84',
+            'fontFamily', 'Be Vietnam Pro'
+          )
+        ),
+        jsonb_build_object(
+          'id', 'card-h-birthday-inside-text',
+          'type', 'text',
+          'surface', 'inside',
+          'x', 50,
+          'y', 50,
+          'data', jsonb_build_object(
+            'text', 'Chúc bạn một tuổi mới ngập tràn niềm vui và hạnh phúc!',
+            'preset', 'body',
+            'color', '#2E3338',
+            'fontFamily', 'Be Vietnam Pro'
+          )
+        )
+      )
+    )
+  ),
+  (
+    'card-h-cute',
+    1,
+    jsonb_build_object(
+      'text', 'You are so special!',
+      'color', '#315F86',
+      'backgroundColor', '#F8F3E8',
+      'productOptions', jsonb_build_object('card', jsonb_build_object('surface', 'front', 'fold', 'half')),
+      'elements', jsonb_build_array(
+        jsonb_build_object(
+          'id', 'card-h-cute-front-text',
+          'type', 'text',
+          'surface', 'front',
+          'x', 50,
+          'y', 45,
+          'data', jsonb_build_object(
+            'text', 'You are so special!',
+            'preset', 'heading',
+            'color', '#315F86',
+            'fontFamily', 'Comfortaa'
+          )
+        ),
+        jsonb_build_object(
+          'id', 'card-h-cute-inside-text',
+          'type', 'text',
+          'surface', 'inside',
+          'x', 50,
+          'y', 50,
+          'data', jsonb_build_object(
+            'text', 'Gửi đến bạn những cái ôm ấm áp nhất hôm nay.',
+            'preset', 'body',
+            'color', '#2E3338',
+            'fontFamily', 'Be Vietnam Pro'
+          )
+        )
+      )
+    )
+  ),
+  (
+    'card-h-love',
+    1,
+    jsonb_build_object(
+      'text', 'Forever & Always',
+      'color', '#B3535D',
+      'backgroundColor', '#FFF8F8',
+      'productOptions', jsonb_build_object('card', jsonb_build_object('surface', 'front', 'fold', 'half')),
+      'elements', jsonb_build_array(
+        jsonb_build_object(
+          'id', 'card-h-love-front-text',
+          'type', 'text',
+          'surface', 'front',
+          'x', 50,
+          'y', 48,
+          'data', jsonb_build_object(
+            'text', 'Forever & Always',
+            'preset', 'heading',
+            'color', '#B3535D',
+            'fontFamily', 'Lora'
+          )
+        ),
+        jsonb_build_object(
+          'id', 'card-h-love-inside-text',
+          'type', 'text',
+          'surface', 'inside',
+          'x', 50,
+          'y', 50,
+          'data', jsonb_build_object(
+            'text', 'Cảm ơn vì đã luôn đồng hành và yêu thương.',
+            'preset', 'body',
+            'color', '#2E3338',
+            'fontFamily', 'Be Vietnam Pro'
+          )
+        )
+      )
+    )
+  ),
+  (
+    'card-v-floral',
+    1,
+    jsonb_build_object(
+      'text', 'Lời chúc yêu thương',
+      'color', '#2E3338',
+      'backgroundColor', '#FAF7F0',
+      'productOptions', jsonb_build_object('card', jsonb_build_object('surface', 'front', 'fold', 'half')),
+      'elements', jsonb_build_array(
+        jsonb_build_object(
+          'id', 'card-v-floral-front-text',
+          'type', 'text',
+          'surface', 'front',
+          'x', 50,
+          'y', 42,
+          'data', jsonb_build_object(
+            'text', 'Lời chúc yêu thương',
+            'preset', 'heading',
+            'color', '#2E3338',
+            'fontFamily', 'Playfair Display'
+          )
+        ),
+        jsonb_build_object(
+          'id', 'card-v-floral-inside-text',
+          'type', 'text',
+          'surface', 'inside',
+          'x', 50,
+          'y', 50,
+          'data', jsonb_build_object(
+            'text', 'Mong mỗi ngày của bạn đều dịu dàng như hoa nở.',
+            'preset', 'body',
+            'color', '#2E3338',
+            'fontFamily', 'Lora'
+          )
+        )
+      )
+    )
+  ),
+  (
+    'card-thanks',
+    1,
+    jsonb_build_object(
+      'text', 'Thank you so much',
+      'color', '#5F7E67',
+      'backgroundColor', '#F3F6F3',
+      'productOptions', jsonb_build_object('card', jsonb_build_object('surface', 'front', 'fold', 'half')),
+      'elements', jsonb_build_array(
+        jsonb_build_object(
+          'id', 'card-thanks-front-text',
+          'type', 'text',
+          'surface', 'front',
+          'x', 50,
+          'y', 45,
+          'data', jsonb_build_object(
+            'text', 'Thank you so much',
+            'preset', 'heading',
+            'color', '#5F7E67',
+            'fontFamily', 'Montserrat'
+          )
+        ),
+        jsonb_build_object(
+          'id', 'card-thanks-inside-text',
+          'type', 'text',
+          'surface', 'inside',
+          'x', 50,
+          'y', 50,
+          'data', jsonb_build_object(
+            'text', 'Biết ơn tất cả sự giúp đỡ và quan tâm từ bạn.',
+            'preset', 'body',
+            'color', '#2E3338',
+            'fontFamily', 'Be Vietnam Pro'
+          )
+        )
+      )
+    )
+  ),
+  (
+    'wrapping-a1-cute',
+    1,
+    jsonb_build_object(
+      'text', 'Sweet Gift',
+      'color', '#315F86',
+      'backgroundColor', '#F4EAE1',
+      'elements', '[]'::jsonb,
+      'productOptions', jsonb_build_object(
+        'wrapping', jsonb_build_object(
+          'mode', 'pattern',
+          'patternConfig', jsonb_build_object(
+            'enabled', true,
+            'repeatMode', 'half-drop',
+            'scale', 110,
+            'spacingX', 0,
+            'spacingY', 0,
+            'rotation', 0,
+            'backgroundColor', '#ffffff'
+          ),
+          'repeatStyle', 'half-drop',
+          'patternScale', 110
+        )
+      )
+    )
+  ),
+  (
+    'wrapping-a1-floral',
+    1,
+    jsonb_build_object(
+      'text', 'For You',
+      'color', '#7c2d12',
+      'backgroundColor', '#F9F4EE',
+      'elements', '[]'::jsonb,
+      'productOptions', jsonb_build_object(
+        'wrapping', jsonb_build_object(
+          'mode', 'pattern',
+          'patternConfig', jsonb_build_object(
+            'enabled', true,
+            'repeatMode', 'half-brick',
+            'scale', 130,
+            'spacingX', 0,
+            'spacingY', 0,
+            'rotation', 0,
+            'backgroundColor', '#ffffff'
+          ),
+          'repeatStyle', 'brick',
+          'patternScale', 130
+        )
+      )
+    )
+  ),
+  (
+    'wrapping-a2-minimal',
+    1,
+    jsonb_build_object(
+      'text', 'Simple Joy',
+      'color', '#2E3338',
+      'backgroundColor', '#EFECE6',
+      'elements', '[]'::jsonb,
+      'productOptions', jsonb_build_object(
+        'wrapping', jsonb_build_object(
+          'mode', 'pattern',
+          'patternConfig', jsonb_build_object(
+            'enabled', true,
+            'repeatMode', 'basic',
+            'scale', 85,
+            'spacingX', 0,
+            'spacingY', 0,
+            'rotation', 0,
+            'backgroundColor', '#ffffff'
+          ),
+          'repeatStyle', 'regular',
+          'patternScale', 85
+        )
+      )
+    )
+  ),
+  (
+    'wrapping-birthday-balloons',
+    1,
+    jsonb_build_object(
+      'text', 'Happy Birthday',
+      'color', '#8C3B2F',
+      'backgroundColor', '#FFF2EB',
+      'elements', '[]'::jsonb,
+      'productOptions', jsonb_build_object(
+        'wrapping', jsonb_build_object(
+          'mode', 'pattern',
+          'patternConfig', jsonb_build_object(
+            'enabled', true,
+            'repeatMode', 'half-brick',
+            'scale', 110,
+            'spacingX', 0,
+            'spacingY', 0,
+            'rotation', 0,
+            'backgroundColor', '#ffffff'
+          ),
+          'repeatStyle', 'brick',
+          'patternScale', 110
+        )
+      )
+    )
+  ),
+  (
+    'sticker-diecut-love',
+    1,
+    jsonb_build_object(
+      'text', 'Love',
+      'color', '#B3535D',
+      'backgroundColor', '#FFFFFF',
+      'elements', '[]'::jsonb,
+      'productOptions', jsonb_build_object(
+        'sticker', jsonb_build_object(
+          'hasWhiteBorder', true,
+          'borderWidth', 8,
+          'cutLineMode', 'die-cut'
+        )
+      )
+    )
+  ),
+  (
+    'sticker-cute-pack',
+    1,
+    jsonb_build_object(
+      'text', 'Meow',
+      'color', '#2E3338',
+      'backgroundColor', '#FFFFFF',
+      'elements', '[]'::jsonb,
+      'productOptions', jsonb_build_object(
+        'sticker', jsonb_build_object(
+          'shape', 'circle',
+          'hasWhiteBorder', true,
+          'borderWidth', 6
+        )
+      )
+    )
+  ),
+  (
+    'sticker-cozy-coffee',
+    1,
+    jsonb_build_object(
+      'text', 'Warm Coffee & Book',
+      'color', '#5C381E',
+      'backgroundColor', '#FDF7EE',
+      'elements', '[]'::jsonb,
+      'productOptions', jsonb_build_object(
+        'sticker', jsonb_build_object(
+          'shape', 'rounded-rectangle',
+          'hasWhiteBorder', true,
+          'borderWidth', 5
+        )
+      )
+    )
+  ),
+  (
+    'notebook-floral',
+    1,
+    jsonb_build_object(
+      'text', 'My Daily Journal',
+      'color', '#2E3338',
+      'backgroundColor', '#EDE8DF',
+      'elements', '[]'::jsonb,
+      'productOptions', jsonb_build_object('notebook', jsonb_build_object('finish', 'matte'))
+    )
+  ),
+  (
+    'notebook-minimal',
+    1,
+    jsonb_build_object(
+      'text', 'Thoughts & Ideas',
+      'color', '#344E66',
+      'backgroundColor', '#F3F5F7',
+      'elements', '[]'::jsonb,
+      'productOptions', jsonb_build_object('notebook', jsonb_build_object('finish', 'matte'))
+    )
+  )
 on conflict (template_id, version) do update set
   design_document = excluded.design_document;
 
