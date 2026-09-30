@@ -1,4 +1,5 @@
-import type { CustomerInfo, OrderPayment, PendingOrder } from '../order-types.ts';
+import type { CustomerInfo, OrderPayment, PaymentStatus, PendingOrder } from '../order-types.ts';
+export type { PaymentStatus } from '../order-types.ts';
 import type { ProductId } from '../product-state.ts';
 
 export type StaffRole = 'admin' | 'editor';
@@ -10,6 +11,43 @@ export interface StaffIdentity {
 
 export type DesignStatus = 'awaiting_review' | 'ready' | 'editing' | 'approved' | 'needs_changes';
 export type FulfillmentStatus = 'unprocessed' | 'ready_for_production' | 'in_production' | 'completed' | 'cancelled';
+
+export interface ActiveOrderHold {
+  id: string;
+  reason: string;
+  heldAt: string;
+  heldBy: { userId: string; displayName: string; role: StaffRole };
+}
+
+export interface OrderOperationalState {
+  paymentStatus: PaymentStatus;
+  designStatus: DesignStatus;
+  fulfillmentStatus: FulfillmentStatus;
+  activeHold: ActiveOrderHold | null;
+}
+
+export type OrderNextActionKind =
+  | 'release_hold'
+  | 'verify_payment'
+  | 'wait_for_payment'
+  | 'review_design'
+  | 'resolve_design_changes'
+  | 'ready_for_production'
+  | 'production_in_progress'
+  | 'none';
+
+export interface OrderNextAction {
+  kind: OrderNextActionKind;
+  eyebrow: 'CẦN XỬ LÝ' | 'ĐANG CHỜ' | 'SẴN SÀNG' | 'TRẠNG THÁI';
+  title: string;
+  description: string;
+  intent: 'attention' | 'waiting' | 'ready' | 'neutral';
+  cta: null | {
+    label: string;
+    type: 'confirm_payment' | 'release_hold' | 'navigate';
+    href?: string;
+  };
+}
 
 export type AttentionReason =
   | 'PAYMENT_REPORTED'
