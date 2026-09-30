@@ -1,7 +1,7 @@
 import type { DesignState } from './product-state.ts';
 import type { DesignReviewMode } from './domain/design-revision.ts';
 
-export type EditorContextType = 'guest' | 'staff';
+export type EditorContextType = 'guest' | 'staff' | 'customer';
 
 export interface GuestEditorContext {
   type?: 'guest';
@@ -23,4 +23,16 @@ export interface StaffEditorContext {
   readOnly?: boolean;
 }
 
-export type CustomizerContext = GuestEditorContext | StaffEditorContext;
+export interface CustomerEditorContext {
+  type: 'customer';
+  projectId: string;
+  initialRevision: number;
+  initialDocument: DesignState;
+  onSave?: (
+    doc: DesignState,
+    expectedRev: number
+  ) => Promise<{ newRevision: number } | { conflict: true; currentRevision: number }>;
+  onExit?: () => void;
+}
+
+export type CustomizerContext = GuestEditorContext | StaffEditorContext | CustomerEditorContext;
