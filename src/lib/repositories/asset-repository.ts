@@ -135,7 +135,25 @@ export class AssetRepository {
     if (error || !data || !Array.isArray(data)) return [];
     return data.map((row) => this.mapRow(row));
   }
+  async attachDraftAsset(params: {
+    draftId: string;
+    assetId: string;
+    kind: string;
+    checksum?: string | null;
+  }): Promise<void> {
+    const { error } = await this.client
+      .from('design_draft_assets')
+      .insert({
+        draft_id: params.draftId,
+        asset_id: params.assetId,
+        kind: params.kind,
+        checksum: params.checksum ?? null,
+      });
 
+    if (error && !error.message.includes('duplicate')) {
+      throw new Error(`Failed to attach draft asset: ${error.message}`);
+    }
+  }
   private mapRow(row: unknown): AssetRecord {
     const r = row as Record<string, unknown>;
     return {
