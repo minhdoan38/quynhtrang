@@ -959,3 +959,346 @@ values
   ('e0000000-0000-4000-8000-000000000004', 'order_created', 'customer', jsonb_build_object('source', 'web_checkout')),
   ('e0000000-0000-4000-8000-000000000004', 'payment_confirmed', 'system', jsonb_build_object('provider', 'vietqr', 'amount', 98000)),
   ('e0000000-0000-4000-8000-000000000004', 'production_started', 'staff', jsonb_build_object('batch', 'batch-2026-09-30-01'));
+
+-- 9. State 38 Operational Order Scenarios (QT3801 - QT3807)
+-- Projects
+insert into public.projects (id, product_id, variant_id, status, current_working_revision)
+values
+  ('00000000-0000-4000-8000-000000003801', 'sticker', 'die-cut', 'approved', 1),
+  ('00000000-0000-4000-8000-000000003802', 'card', 'horizontal', 'approved', 1),
+  ('00000000-0000-4000-8000-000000003803', 'wrapping', 'a2', 'approved', 1),
+  ('00000000-0000-4000-8000-000000003804', 'notebook', 'standard', 'approved', 1),
+  ('00000000-0000-4000-8000-000000003805', 'card', 'horizontal', 'approved', 1),
+  ('00000000-0000-4000-8000-000000003806', 'sticker', 'die-cut', 'approved', 1),
+  ('00000000-0000-4000-8000-000000003807', 'notebook', 'standard', 'approved', 1)
+on conflict (id) do nothing;
+
+-- Design Versions
+insert into public.design_versions (
+  id,
+  project_id,
+  version_number,
+  source,
+  design_document,
+  product_snapshot,
+  preflight_snapshot,
+  approved_thumbnail_path
+)
+values
+  (
+    '00000000-0000-4000-8000-000000003811',
+    '00000000-0000-4000-8000-000000003801',
+    1,
+    'customer_approved',
+    jsonb_build_object('text', 'Sticker QT3801', 'color', '#000000'),
+    jsonb_build_object('productId', 'sticker', 'variantId', 'die-cut'),
+    jsonb_build_object('level', 'pass', 'passCount', 5, 'warningCount', 0, 'errorCount', 0, 'acceptedWarningCount', 0, 'checks', '[]'::jsonb),
+    'approved-renders/preview-3801.png'
+  ),
+  (
+    '00000000-0000-4000-8000-000000003812',
+    '00000000-0000-4000-8000-000000003802',
+    1,
+    'customer_approved',
+    jsonb_build_object('text', 'Thiệp QT3802', 'color', '#B3535D'),
+    jsonb_build_object('productId', 'card', 'variantId', 'horizontal'),
+    jsonb_build_object('level', 'warning', 'passCount', 4, 'warningCount', 1, 'errorCount', 0, 'acceptedWarningCount', 1, 'checks', jsonb_build_array(jsonb_build_object('id', 'safe-area', 'level', 'warning', 'category', 'safe-area', 'label', 'Chữ nằm sát mép cắt', 'description', 'Nội dung cách mép cắt dưới 3mm', 'advice', 'Nên lùi chữ vào trong vùng an toàn'))),
+    'approved-renders/preview-3802.png'
+  ),
+  (
+    '00000000-0000-4000-8000-000000003813',
+    '00000000-0000-4000-8000-000000003803',
+    1,
+    'customer_approved',
+    jsonb_build_object('text', 'Giấy gói QT3803', 'color', '#1E40AF'),
+    jsonb_build_object('productId', 'wrapping', 'variantId', 'a2'),
+    jsonb_build_object('level', 'pass', 'passCount', 5, 'warningCount', 0, 'errorCount', 0, 'acceptedWarningCount', 0, 'checks', '[]'::jsonb),
+    'approved-renders/preview-3803.png'
+  ),
+  (
+    '00000000-0000-4000-8000-000000003814',
+    '00000000-0000-4000-8000-000000003804',
+    1,
+    'customer_approved',
+    jsonb_build_object('text', 'Bìa sổ QT3804', 'color', '#334155'),
+    jsonb_build_object('productId', 'notebook', 'variantId', 'standard'),
+    jsonb_build_object('level', 'pass', 'passCount', 5, 'warningCount', 0, 'errorCount', 0, 'acceptedWarningCount', 0, 'checks', '[]'::jsonb),
+    'approved-renders/preview-3804.png'
+  ),
+  (
+    '00000000-0000-4000-8000-000000003815',
+    '00000000-0000-4000-8000-000000003805',
+    1,
+    'customer_approved',
+    jsonb_build_object('text', 'Thiệp QT3805 Hold', 'color', '#B3535D'),
+    jsonb_build_object('productId', 'card', 'variantId', 'horizontal'),
+    jsonb_build_object('level', 'pass', 'passCount', 5, 'warningCount', 0, 'errorCount', 0, 'acceptedWarningCount', 0, 'checks', '[]'::jsonb),
+    'approved-renders/preview-3805.png'
+  ),
+  (
+    '00000000-0000-4000-8000-000000003816',
+    '00000000-0000-4000-8000-000000003806',
+    1,
+    'customer_approved',
+    jsonb_build_object('text', 'Sticker QT3806', 'color', '#000000'),
+    jsonb_build_object('productId', 'sticker', 'variantId', 'die-cut'),
+    jsonb_build_object('level', 'pass', 'passCount', 5, 'warningCount', 0, 'errorCount', 0, 'acceptedWarningCount', 0, 'checks', '[]'::jsonb),
+    'approved-renders/preview-3806.png'
+  ),
+  (
+    '00000000-0000-4000-8000-000000003817',
+    '00000000-0000-4000-8000-000000003807',
+    1,
+    'customer_approved',
+    jsonb_build_object('text', 'Bìa sổ QT3807', 'color', '#10B981'),
+    jsonb_build_object('productId', 'notebook', 'variantId', 'standard'),
+    jsonb_build_object('level', 'pass', 'passCount', 5, 'warningCount', 0, 'errorCount', 0, 'acceptedWarningCount', 0, 'checks', '[]'::jsonb),
+    'approved-renders/preview-3807.png'
+  )
+on conflict (project_id, version_number) do update set
+  approved_thumbnail_path = excluded.approved_thumbnail_path,
+  preflight_snapshot = excluded.preflight_snapshot;
+
+-- Orders
+insert into public.orders (
+  id,
+  public_order_code,
+  project_id,
+  approved_design_version_id,
+  product_snapshot,
+  variant_snapshot,
+  quantity,
+  unit_price,
+  subtotal,
+  total,
+  currency,
+  customer_full_name,
+  customer_phone,
+  customer_phone_normalized,
+  shipping_address,
+  payment_status,
+  design_status,
+  fulfillment_status,
+  idempotency_key
+)
+values
+  (
+    'e0000000-0000-4000-8000-000000003801',
+    'QT3801',
+    '00000000-0000-4000-8000-000000003801',
+    '00000000-0000-4000-8000-000000003811',
+    jsonb_build_object('id', 'sticker', 'name', 'Sticker dán theo yêu cầu'),
+    jsonb_build_object('id', 'die-cut', 'name', 'Cắt theo hình (Die-cut)', 'price', 19000),
+    10,
+    19000,
+    190000,
+    190000,
+    'VND',
+    'Trần Minh Anh',
+    '0908111222',
+    '+84908111222',
+    '12 Tôn Đức Thắng, Bến Nghé, Quận 1, TP. Hồ Chí Minh',
+    'pending_payment',
+    'awaiting_review',
+    'unprocessed',
+    'seed-order-3801'
+  ),
+  (
+    'e0000000-0000-4000-8000-000000003802',
+    'QT3802',
+    '00000000-0000-4000-8000-000000003802',
+    '00000000-0000-4000-8000-000000003812',
+    jsonb_build_object('id', 'card', 'name', 'Thiệp chúc mừng'),
+    jsonb_build_object('id', 'horizontal', 'name', 'Thiệp ngang', 'price', 29000),
+    10,
+    29000,
+    290000,
+    290000,
+    'VND',
+    'Lê Thu Trang',
+    '0908222333',
+    '+84908222333',
+    '34 Hai Bà Trưng, Phường 6, Quận 3, TP. Hồ Chí Minh',
+    'payment_reported',
+    'awaiting_review',
+    'unprocessed',
+    'seed-order-3802'
+  ),
+  (
+    'e0000000-0000-4000-8000-000000003803',
+    'QT3803',
+    '00000000-0000-4000-8000-000000003803',
+    '00000000-0000-4000-8000-000000003813',
+    jsonb_build_object('id', 'wrapping', 'name', 'Giấy gói quà'),
+    jsonb_build_object('id', 'a2', 'name', 'Khổ A2', 'price', 49000),
+    5,
+    49000,
+    245000,
+    245000,
+    'VND',
+    'Võ Hoàng Nam',
+    '0908333444',
+    '+84908333444',
+    '56 Nguyễn Thị Minh Khai, Phường Đa Kao, Quận 1, TP. Hồ Chí Minh',
+    'paid',
+    'awaiting_review',
+    'unprocessed',
+    'seed-order-3803'
+  ),
+  (
+    'e0000000-0000-4000-8000-000000003804',
+    'QT3804',
+    '00000000-0000-4000-8000-000000003804',
+    '00000000-0000-4000-8000-000000003814',
+    jsonb_build_object('id', 'notebook', 'name', 'Bìa sổ tay cá nhân hóa'),
+    jsonb_build_object('id', 'standard', 'name', 'Khổ A5 tiêu chuẩn', 'price', 49000),
+    10,
+    49000,
+    490000,
+    490000,
+    'VND',
+    'Đặng Thùy Chi',
+    '0908444555',
+    '+84908444555',
+    '78 Pasteur, Bến Nghé, Quận 1, TP. Hồ Chí Minh',
+    'paid',
+    'approved',
+    'ready_for_production',
+    'seed-order-3804'
+  ),
+  (
+    'e0000000-0000-4000-8000-000000003805',
+    'QT3805',
+    '00000000-0000-4000-8000-000000003805',
+    '00000000-0000-4000-8000-000000003815',
+    jsonb_build_object('id', 'card', 'name', 'Thiệp chúc mừng'),
+    jsonb_build_object('id', 'horizontal', 'name', 'Thiệp ngang', 'price', 29000),
+    5,
+    29000,
+    145000,
+    145000,
+    'VND',
+    'Bùi Quốc Anh',
+    '0908555666',
+    '+84908555666',
+    '90 Nam Kỳ Khởi Nghĩa, Bến Nghé, Quận 1, TP. Hồ Chí Minh',
+    'paid',
+    'approved',
+    'ready_for_production',
+    'seed-order-3805'
+  ),
+  (
+    'e0000000-0000-4000-8000-000000003806',
+    'QT3806',
+    '00000000-0000-4000-8000-000000003806',
+    '00000000-0000-4000-8000-000000003816',
+    jsonb_build_object('id', 'sticker', 'name', 'Sticker dán theo yêu cầu'),
+    jsonb_build_object('id', 'die-cut', 'name', 'Cắt theo hình (Die-cut)', 'price', 19000),
+    5,
+    19000,
+    95000,
+    95000,
+    'VND',
+    'Phan Hoàng Yến',
+    '0908666777',
+    '+84908666777',
+    '102 Điện Biên Phủ, Phường 15, Bình Thạnh, TP. Hồ Chí Minh',
+    'paid',
+    'approved',
+    'in_production',
+    'seed-order-3806'
+  ),
+  (
+    'e0000000-0000-4000-8000-000000003807',
+    'QT3807',
+    '00000000-0000-4000-8000-000000003807',
+    '00000000-0000-4000-8000-000000003817',
+    jsonb_build_object('id', 'notebook', 'name', 'Bìa sổ tay cá nhân hóa'),
+    jsonb_build_object('id', 'standard', 'name', 'Khổ A5 tiêu chuẩn', 'price', 49000),
+    4,
+    49000,
+    196000,
+    196000,
+    'VND',
+    'Đỗ Văn Kiên',
+    '0908777888',
+    '+84908777888',
+    '15 Võ Văn Tần, Phường 6, Quận 3, TP. Hồ Chí Minh',
+    'paid',
+    'approved',
+    'completed',
+    'seed-order-3807'
+  )
+on conflict (id) do update set
+  public_order_code = excluded.public_order_code,
+  payment_status = excluded.payment_status,
+  design_status = excluded.design_status,
+  fulfillment_status = excluded.fulfillment_status,
+  updated_at = now();
+
+-- Payments
+insert into public.order_payments (order_id, provider, amount, currency, reference, status, confirmed_at, customer_reported_at)
+values
+  ('e0000000-0000-4000-8000-000000003801', 'vietqr', 190000, 'VND', 'VQR-QT3801', 'pending_payment', null, null),
+  ('e0000000-0000-4000-8000-000000003802', 'vietqr', 290000, 'VND', 'VQR-QT3802', 'payment_reported', null, now() - interval '1 hour'),
+  ('e0000000-0000-4000-8000-000000003803', 'vietqr', 245000, 'VND', 'VQR-QT3803', 'paid', now() - interval '2 hour', now() - interval '3 hour'),
+  ('e0000000-0000-4000-8000-000000003804', 'vietqr', 490000, 'VND', 'VQR-QT3804', 'paid', now() - interval '4 hour', now() - interval '5 hour'),
+  ('e0000000-0000-4000-8000-000000003805', 'vietqr', 145000, 'VND', 'VQR-QT3805', 'paid', now() - interval '6 hour', now() - interval '7 hour'),
+  ('e0000000-0000-4000-8000-000000003806', 'vietqr', 95000, 'VND', 'VQR-QT3806', 'paid', now() - interval '8 hour', now() - interval '9 hour'),
+  ('e0000000-0000-4000-8000-000000003807', 'vietqr', 196000, 'VND', 'VQR-QT3807', 'paid', now() - interval '10 hour', now() - interval '11 hour')
+on conflict (order_id) do update set
+  status = excluded.status,
+  amount = excluded.amount,
+  reference = excluded.reference,
+  confirmed_at = excluded.confirmed_at,
+  customer_reported_at = excluded.customer_reported_at,
+  updated_at = now();
+
+-- Events
+insert into public.order_events (order_id, event_type, actor_role, payload)
+values
+  ('e0000000-0000-4000-8000-000000003801', 'order_created', 'customer', jsonb_build_object('source', 'web_checkout')),
+  ('e0000000-0000-4000-8000-000000003802', 'order_created', 'customer', jsonb_build_object('source', 'web_checkout')),
+  ('e0000000-0000-4000-8000-000000003802', 'payment_reported', 'customer', jsonb_build_object('ref', 'VQR-QT3802')),
+  ('e0000000-0000-4000-8000-000000003803', 'order_created', 'customer', jsonb_build_object('source', 'web_checkout')),
+  ('e0000000-0000-4000-8000-000000003803', 'payment_confirmed', 'admin', jsonb_build_object('amount', 245000)),
+  ('e0000000-0000-4000-8000-000000003804', 'order_created', 'customer', jsonb_build_object('source', 'web_checkout')),
+  ('e0000000-0000-4000-8000-000000003804', 'payment_confirmed', 'admin', jsonb_build_object('amount', 490000)),
+  ('e0000000-0000-4000-8000-000000003804', 'design_approved', 'staff', jsonb_build_object('note', 'File chuẩn in')),
+  ('e0000000-0000-4000-8000-000000003805', 'order_created', 'customer', jsonb_build_object('source', 'web_checkout')),
+  ('e0000000-0000-4000-8000-000000003805', 'payment_confirmed', 'admin', jsonb_build_object('amount', 145000)),
+  ('e0000000-0000-4000-8000-000000003806', 'order_created', 'customer', jsonb_build_object('source', 'web_checkout')),
+  ('e0000000-0000-4000-8000-000000003806', 'payment_confirmed', 'admin', jsonb_build_object('amount', 95000)),
+  ('e0000000-0000-4000-8000-000000003806', 'production_started', 'staff', jsonb_build_object('batch', 'batch-3806')),
+  ('e0000000-0000-4000-8000-000000003807', 'order_created', 'customer', jsonb_build_object('source', 'web_checkout')),
+  ('e0000000-0000-4000-8000-000000003807', 'payment_confirmed', 'admin', jsonb_build_object('amount', 196000)),
+  ('e0000000-0000-4000-8000-000000003807', 'production_completed', 'staff', jsonb_build_object('batch', 'batch-3807'));
+
+-- Holds (attached only if admin user exists)
+do $$
+declare
+  v_admin_id uuid;
+begin
+  select user_id into v_admin_id from public.staff_roles where role = 'admin' limit 1;
+  if v_admin_id is not null then
+    insert into public.order_holds (id, order_id, reason, held_by, held_at)
+    values (
+      '00000000-0000-4000-8000-000000003855',
+      'e0000000-0000-4000-8000-000000003805',
+      'Tạm giữ theo yêu cầu kiểm tra kỹ thuật khuôn in',
+      v_admin_id,
+      now()
+    )
+    on conflict (id) do nothing;
+
+    insert into public.order_events (order_id, event_type, actor_user_id, actor_role, payload)
+    values (
+      'e0000000-0000-4000-8000-000000003805',
+      'order_held',
+      v_admin_id,
+      'admin',
+      jsonb_build_object('hold_id', '00000000-0000-4000-8000-000000003855'::uuid, 'reason', 'Tạm giữ theo yêu cầu kiểm tra kỹ thuật khuôn in')
+    );
+  end if;
+end;
+$$;

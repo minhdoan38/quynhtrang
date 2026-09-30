@@ -260,6 +260,39 @@ begin
     raise exception 'Assertion failed: hold row should be preserved forever, count is %', v_event_count;
   end if;
 
+  -- 12. Seed coherence assertions (if seeded orders exist)
+  if exists (select 1 from public.orders where public_order_code = 'QT3801') then
+    -- 12.1 Payment and order projection match
+    if exists (
+      select 1 from public.orders o
+      join public.order_payments op on op.order_id = o.id
+      where o.public_order_code like 'QT38%'
+        and o.payment_status <> op.status
+    ) then
+      raise exception 'Assertion failed: seeded payment_status mismatch between orders and order_payments';
+    end if;
+
+    -- 12.2 Approved version belongs to the same project
+    if exists (
+      select 1 from public.orders o
+      join public.design_versions dv on dv.id = o.approved_design_version_id
+      where o.public_order_code like 'QT38%'
+        and o.project_id <> dv.project_id
+    ) then
+      raise exception 'Assertion failed: approved_design_version does not belong to order project';
+    end if;
+
+    -- 12.3 No completed order has an active hold
+    if exists (
+      select 1 from public.orders o
+      join public.order_holds oh on oh.order_id = o.id
+      where o.fulfillment_status = 'completed'
+        and oh.released_at is null
+    ) then
+      raise exception 'Assertion failed: completed order has an active hold';
+    end if;
+  end if;
+
   raise notice 'All State 38 operations assertions passed successfully.';
 end;
 $$;
