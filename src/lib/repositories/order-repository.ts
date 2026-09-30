@@ -212,6 +212,10 @@ export class OrderRepository {
       dbQuery = dbQuery.in('fulfillment_status', query.fulfillmentStatus);
     }
 
+    if (query.product) {
+      dbQuery = dbQuery.eq('product_snapshot->>id', query.product);
+    }
+
     if (query.createdFrom) {
       dbQuery = dbQuery.gte('created_at', query.createdFrom);
     }
@@ -222,7 +226,7 @@ export class OrderRepository {
 
     if (query.search && query.search.trim()) {
       const term = query.search.trim();
-      dbQuery = dbQuery.or(`public_order_code.ilike.%${term}%,customer_full_name.ilike.%${term}%,customer_phone.ilike.%${term}%`);
+      dbQuery = dbQuery.or(`public_order_code.ilike.%${term}%,customer_full_name.ilike.%${term}%,customer_phone.ilike.%${term}%,customer_phone_normalized.ilike.%${term}%`);
     }
 
     if (query.sort === 'oldest') {

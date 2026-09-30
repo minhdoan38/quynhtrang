@@ -356,6 +356,7 @@ export interface OrderListQuery {
   designStatus?: DesignStatus[];
   fulfillmentStatus?: FulfillmentStatus[];
   attentionReason?: AttentionReason[];
+  product?: ProductId;
   search?: string;
   createdFrom?: string;
   createdTo?: string;

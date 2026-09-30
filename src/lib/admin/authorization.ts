@@ -70,9 +70,13 @@ export async function requireStaff(
   requiredRole?: StaffRole,
   options?: StaffAuthOptions
 ): Promise<StaffIdentity & { email?: string }> {
-  const supabase = options?.supabaseClient ?? (await createServerSupabaseClient());
+  let supabase: SupabaseClient;
+  try {
+    supabase = options?.supabaseClient ?? (await createServerSupabaseClient());
+  } catch {
+    throw new AuthorizationError('Chưa đăng nhập', 401);
+  }
   const result = await resolveStaffIdentity(supabase);
-
   if (!result.ok) {
     if (result.error === 'UNAUTHENTICATED') {
       throw new AuthorizationError('Chưa đăng nhập', 401);
