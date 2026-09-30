@@ -1,0 +1,78 @@
+import assert from 'node:assert/strict';
+import { test } from 'node:test';
+
+import {
+  mapFontRow,
+  mapProductRow,
+  mapStickerRow,
+  mapTemplateRow,
+  mapVariantRow,
+} from '../lib/domain/catalog.ts';
+import { CatalogRepository } from '../lib/repositories/catalog-repository.ts';
+
+class CatalogClient {
+  readonly results: Record<string, { data: unknown; error: unknown }>;
+
+  constructor(results: Record<string, { data: unknown; error: unknown }>) {
+    this.results = results;
+  }
+
+  from(table: string) {
+    const result = this.results[table] ?? { data: [], error: null };
+    const query = {
+      select: () => query,
+      eq: () => query,
+      order: () => Promise.resolve(result),
+      then: (resolve: (value: unknown) => unknown) => Promise.resolve(result).then(resolve),
+    };
+    return query;
+  }
+}
+
+test('catalog row mappers convert database rows to published models', () => {
+  assert.deepEqual(mapProductRow({
+    id: 'card', slug: 'card', name: 'Thiệp', product_type: 'card', active: true,
+    metadata: { englishName: 'Card', cardTitle: 'Thiệp', variantSummary: '2 kiểu', tagline: 'Tag', description: 'Desc', startingPrice: 29000, capabilities: ['Fold'], paperSpecs: { paperType: 'Ivory', printSurfaces: '3', packaging: 'Envelope' }, tone: { bg: '#fff' } },
+  }), {
+    id: 'card', slug: 'card', name: 'Thiệp', productType: 'card', active: true,
+    englishName: 'Card', cardTitle: 'Thiệp', variantSummary: '2 kiểu', tagline: 'Tag', description: 'Desc', startingPrice: 29000, capabilities: ['Fold'], paperSpecs: { paperType: 'Ivory', printSurfaces: '3', packaging: 'Envelope' }, tone: { bg: '#fff' },
+  });
+  assert.deepEqual(mapVariantRow({ id: 'horizontal', product_id: 'card', name: 'Ngang', price: 29000, active: true, metadata: { dimensions: '15x10', bestFor: 'Ảnh' } }), {
+    id: 'horizontal', productId: 'card', name: 'Ngang', price: 29000, active: true, dimensions: '15x10', bestFor: 'Ảnh',
+  });
+  assert.deepEqual(mapTemplateRow({ id: 'birthday', product_id: 'card', slug: 'birthday', name: 'Sinh nhật', published: true, thumbnail_path: 'templates/a.png', metadata: { category: 'birthday', variantIds: ['horizontal'], previewHint: 'Ấm áp' } }), {
+    id: 'birthday', productId: 'card', slug: 'birthday', name: 'Sinh nhật', thumbnailPath: 'templates/a.png', category: 'birthday', variantIds: ['horizontal'], previewHint: 'Ấm áp', metadata: { category: 'birthday', variantIds: ['horizontal'], previewHint: 'Ấm áp' },
+  });
+  assert.deepEqual(mapFontRow({ id: 'lora', family_name: 'Lora', google_font: 'Lora:wght@500', storage_path: null, published: true, metadata: { family: 'Lora, serif', category: 'serif', sampleText: 'Mẫu' } }), {
+    id: 'lora', name: 'Lora', family: 'Lora, serif', category: 'serif', googleFont: 'Lora:wght@500', storagePath: null, sampleText: 'Mẫu',
+  });
+  assert.deepEqual(mapStickerRow({ id: 'cat', category: 'cute', tags: ['cat'], storage_path: 'stickers/cat.svg', thumbnail_path: null, published: true, metadata: { title: 'Mèo' } }), {
+    id: 'cat', category: 'cute', tags: ['cat'], storagePath: 'stickers/cat.svg', thumbnailPath: null, title: 'Mèo', metadata: { title: 'Mèo' },
+  });
+});
+
+test('catalog repository reads mapped published rows', async () => {
+  const repository = new CatalogRepository(new CatalogClient({
+    products: { data: [{ id: 'card', slug: 'card', name: 'Thiệp', product_type: 'card', active: true, metadata: {} }], error: null },
+    product_variants: { data: [{ id: 'horizontal', product_id: 'card', name: 'Ngang', price: 29000, active: true, metadata: {} }], error: null },
+    templates: { data: [{ id: 'blank', product_id: null, slug: 'blank', name: 'Trống', published: true, thumbnail_path: null, metadata: {} }], error: null },
+    fonts: { data: [{ id: 'lora', family_name: 'Lora', google_font: null, storage_path: null, published: true, metadata: { category: 'serif' } }], error: null },
+    sticker_assets: { data: [{ id: 'cat', category: 'cute', tags: [], storage_path: 'cat.svg', thumbnail_path: null, published: true, metadata: {} }], error: null },
+  }) as never);
+
+  assert.equal((await repository.listProducts())[0]?.productType, 'card');
+  assert.equal((await repository.listVariants('card'))[0]?.productId, 'card');
+  assert.equal((await repository.listTemplates('card'))[0]?.id, 'blank');
+  assert.equal((await repository.listFonts())[0]?.name, 'Lora');
+  assert.equal((await repository.listStickers())[0]?.storagePath, 'cat.svg');
+});
+
+test('catalog repository falls back to static catalog when unconfigured or query fails', async () => {
+  const unconfigured = new CatalogRepository(null);
+  assert.ok((await unconfigured.listProducts()).some((product: { id: string }) => product.id === 'wrapping'));
+  assert.ok((await unconfigured.listTemplates()).some((template: { id: string }) => template.id === 'blank'));
+  assert.ok((await unconfigured.listFonts()).some((font: { id: string }) => font.id === 'be-vietnam-pro'));
+
+  const failing = new CatalogRepository(new CatalogClient({ products: { data: null, error: new Error('offline') } }) as never);
+  assert.ok((await failing.listProducts()).some((product: { id: string }) => product.id === 'card'));
+});
