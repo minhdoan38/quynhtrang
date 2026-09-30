@@ -16,7 +16,7 @@ Hệ thống phân tách nghiêm ngặt giữa biến công khai trên client v�
 ### B. Biến bảo mật Server-only (TUYỆT ĐỐI KHÔNG để lộ ra Client)
 Chỉ được đọc bởi server Next.js (Server Components, Route Handlers, Server Actions):
 - `SUPABASE_URL`: URL nội bộ hoặc URL Supabase (nếu khác với public URL).
-- `SUPABASE_SECRET_KEY`: Service role secret key của Supabase. Cho phép bypass RLS để thực hiện các nghiệp vụ backend (tạo đơn, lưu trữ tài sản đơn hàng). Có thể dùng alias `SERVICE_SUPABASESERVICE_KEY` hoặc `SUPABASE_SERVICE_ROLE_KEY`.
+- `SUPABASE_SECRET_KEY`: Service role secret key của Supabase. Cho phép bypass RLS để thực hiện các nghiệp vụ backend (tạo đơn, lưu trữ tài sản đơn hàng). Có thể dùng alias chuẩn `SUPABASE_SERVICE_ROLE_KEY` (hoặc cấu hình tương đương trong file .env).
 
 > **Cảnh báo bảo mật:** Không bao giờ đặt tiền tố `NEXT_PUBLIC_` cho `SUPABASE_SECRET_KEY`. Ứng dụng sẽ tự động từ chối và ném ngoại lệ nếu phát hiện secret key bị gắn tiền tố public.
 
