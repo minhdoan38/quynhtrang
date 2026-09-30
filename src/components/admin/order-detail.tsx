@@ -18,6 +18,10 @@ export interface OrderDetailProps {
   onConfirmPaymentIntent: () => void;
   onHoldIntent: () => void;
   onReleaseHoldIntent: () => void;
+  onStartProductionIntent?: () => void;
+  onCompleteProductionIntent?: () => void;
+  onCancelOrderIntent?: () => void;
+  canCancel?: boolean;
 }
 
 export function OrderDetail({
@@ -28,6 +32,10 @@ export function OrderDetail({
   onConfirmPaymentIntent,
   onHoldIntent,
   onReleaseHoldIntent,
+  onStartProductionIntent,
+  onCompleteProductionIntent,
+  onCancelOrderIntent,
+  canCancel = false,
 }: OrderDetailProps) {
   const safeReturnTo =
     returnTo && returnTo.startsWith('/admin/orders') ? returnTo : '/admin/orders';
@@ -80,7 +88,12 @@ export function OrderDetail({
           </div>
 
           <div className="flex items-center gap-2 self-start sm:self-center">
-            <OrderMoreMenu canHold={canHold} onHoldIntent={onHoldIntent} />
+            <OrderMoreMenu
+              canHold={canHold}
+              onHoldIntent={onHoldIntent}
+              canCancel={canCancel && !isTerminal}
+              onCancelIntent={onCancelOrderIntent}
+            />
           </div>
         </div>
       </header>
@@ -96,6 +109,8 @@ export function OrderDetail({
             canMutate={canMutate}
             onConfirmPaymentIntent={onConfirmPaymentIntent}
             onReleaseHoldIntent={onReleaseHoldIntent}
+            onStartProductionIntent={onStartProductionIntent}
+            onCompleteProductionIntent={onCompleteProductionIntent}
           />
 
           {/* 2. Active Hold Banner */}

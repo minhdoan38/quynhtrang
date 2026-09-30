@@ -4,15 +4,22 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { MoreHorizontal, PauseCircle } from 'lucide-react';
+import { MoreHorizontal, PauseCircle, XCircle } from 'lucide-react';
 
 export interface OrderMoreMenuProps {
   canHold: boolean;
   onHoldIntent: () => void;
+  canCancel?: boolean;
+  onCancelIntent?: () => void;
 }
 
-export function OrderMoreMenu({ canHold, onHoldIntent }: OrderMoreMenuProps) {
-  if (!canHold) return null;
+export function OrderMoreMenu({
+  canHold,
+  onHoldIntent,
+  canCancel = false,
+  onCancelIntent,
+}: OrderMoreMenuProps) {
+  if (!canHold && !canCancel) return null;
 
   return (
     <DropdownMenu>
@@ -23,13 +30,24 @@ export function OrderMoreMenu({ canHold, onHoldIntent }: OrderMoreMenuProps) {
         <MoreHorizontal className="w-4 h-4" />
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-44">
-        <DropdownMenuItem
-          onClick={onHoldIntent}
-          className="text-amber-700 hover:text-amber-800 hover:bg-amber-50 cursor-pointer"
-        >
-          <PauseCircle className="w-4 h-4 mr-2" />
-          <span>Tạm giữ đơn</span>
-        </DropdownMenuItem>
+        {canHold && (
+          <DropdownMenuItem
+            onClick={onHoldIntent}
+            className="text-amber-700 hover:text-amber-800 hover:bg-amber-50 cursor-pointer"
+          >
+            <PauseCircle className="w-4 h-4 mr-2" />
+            <span>Tạm giữ đơn</span>
+          </DropdownMenuItem>
+        )}
+        {canCancel && onCancelIntent && (
+          <DropdownMenuItem
+            onClick={onCancelIntent}
+            className="text-red-600 hover:text-red-700 hover:bg-red-50 cursor-pointer"
+          >
+            <XCircle className="w-4 h-4 mr-2" />
+            <span>Hủy đơn hàng</span>
+          </DropdownMenuItem>
+        )}
       </DropdownMenuContent>
     </DropdownMenu>
   );

@@ -29,7 +29,15 @@ import {
   confirmPaymentAction,
   holdOrderAction,
   releaseHoldAction,
+  startProductionAction,
+  completeProductionAction,
+  cancelOrderAction,
 } from './actions.ts';
+import {
+  StartProductionDialog,
+  CompleteProductionDialog,
+  CancelOrderDialog,
+} from '@/components/admin/order-fulfillment-dialogs.tsx';
 import { subscribeToOrderDetailChanges } from '@/lib/admin/realtime.ts';
 import { createBrowserSupabaseClient } from '@/lib/supabase/browser.ts';
 
@@ -55,8 +63,11 @@ export function OrderDetailClient({
   const [isHoldDialogOpen, setIsHoldDialogOpen] = useState(false);
   const [holdReason, setHoldReason] = useState('');
   const [holdError, setHoldError] = useState<string | null>(null);
-
   const [noticeMessage, setNoticeMessage] = useState<string | null>(null);
+
+  const [isStartProductionOpen, setIsStartProductionOpen] = useState(false);
+  const [isCompleteProductionOpen, setIsCompleteProductionOpen] = useState(false);
+  const [isCancelOrderOpen, setIsCancelOrderOpen] = useState(false);
 
   const canMutate = staff.role === 'admin';
 
@@ -179,6 +190,66 @@ export function OrderDetailClient({
     setIsSubmitting(false);
   };
 
+  const handleStartProduction = async () => {
+    setIsSubmitting(true);
+    try {
+      const res = await startProductionAction({
+        orderId: detail.id,
+        expectedFulfillmentStatus: detail.fulfillmentStatus,
+      });
+      if (res.ok) {
+        setIsStartProductionOpen(false);
+        setNoticeMessage('Đã chuyển đơn hàng vào sản xuất');
+        await refetchDetail();
+        router.refresh();
+      } else {
+        alert(res.message);
+      }
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleCompleteProduction = async () => {
+    setIsSubmitting(true);
+    try {
+      const res = await completeProductionAction({
+        orderId: detail.id,
+        expectedFulfillmentStatus: detail.fulfillmentStatus,
+      });
+      if (res.ok) {
+        setIsCompleteProductionOpen(false);
+        setNoticeMessage('Đã hoàn tất sản xuất đơn hàng');
+        await refetchDetail();
+        router.refresh();
+      } else {
+        alert(res.message);
+      }
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleCancelOrder = async (reason: string) => {
+    setIsSubmitting(true);
+    try {
+      const res = await cancelOrderAction({
+        orderId: detail.id,
+        reason,
+      });
+      if (res.ok) {
+        setIsCancelOrderOpen(false);
+        setNoticeMessage('Đã hủy đơn hàng');
+        await refetchDetail();
+        router.refresh();
+      } else {
+        alert(res.message);
+      }
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
   return (
     <>
       {noticeMessage && (
@@ -202,6 +273,10 @@ export function OrderDetailClient({
           setIsHoldDialogOpen(true);
         }}
         onReleaseHoldIntent={handleReleaseHold}
+        onStartProductionIntent={() => setIsStartProductionOpen(true)}
+        onCompleteProductionIntent={() => setIsCompleteProductionOpen(true)}
+        onCancelOrderIntent={() => setIsCancelOrderOpen(true)}
+        canCancel={canMutate}
       />
 
       {/* Payment Confirmation AlertDialog */}
@@ -290,6 +365,34 @@ export function OrderDetailClient({
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <StartProductionDialog
+        open={isStartProductionOpen}
+        onOpenChange={setIsStartProductionOpen}
+        orderCode={detail.publicOrderCode}
+        quantity={detail.product.quantity}
+        versionLabel={detail.approvedDesign.label}
+        isSubmitting={isSubmitting}
+        onConfirm={handleStartProduction}
+      />
+
+      <CompleteProductionDialog
+        open={isCompleteProductionOpen}
+        onOpenChange={setIsCompleteProductionOpen}
+        orderCode={detail.publicOrderCode}
+        customerName={detail.customer.fullName}
+        shippingAddress={detail.delivery.shippingAddress}
+        isSubmitting={isSubmitting}
+        onConfirm={handleCompleteProduction}
+      />
+
+      <CancelOrderDialog
+        open={isCancelOrderOpen}
+        onOpenChange={setIsCancelOrderOpen}
+        orderCode={detail.publicOrderCode}
+        isSubmitting={isSubmitting}
+        onConfirm={handleCancelOrder}
+      />
     </>
   );
 }

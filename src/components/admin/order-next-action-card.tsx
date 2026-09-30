@@ -11,6 +11,8 @@ export interface OrderNextActionCardProps {
   canMutate?: boolean;
   onConfirmPaymentIntent?: () => void;
   onReleaseHoldIntent?: () => void;
+  onStartProductionIntent?: () => void;
+  onCompleteProductionIntent?: () => void;
   className?: string;
 }
 
@@ -20,6 +22,8 @@ export function OrderNextActionCard({
   canMutate = false,
   onConfirmPaymentIntent,
   onReleaseHoldIntent,
+  onStartProductionIntent,
+  onCompleteProductionIntent,
   className,
 }: OrderNextActionCardProps) {
   let themeStyles = {
@@ -93,7 +97,23 @@ export function OrderNextActionCard({
                 {nextAction.cta.label}
               </Button>
             )}
+            {nextAction.cta.type === 'start_production' && canMutate && (
+              <Button
+                onClick={onStartProductionIntent}
+                className="w-full sm:w-auto h-11 px-5 bg-[#315F86] hover:bg-[#244A69] text-white font-medium shadow-xs"
+              >
+                {nextAction.cta.label}
+              </Button>
+            )}
 
+            {nextAction.cta.type === 'complete_production' && canMutate && (
+              <Button
+                onClick={onCompleteProductionIntent}
+                className="w-full sm:w-auto h-11 px-5 bg-[#4A7251] hover:bg-[#3D5E43] text-white font-medium shadow-xs"
+              >
+                {nextAction.cta.label}
+              </Button>
+            )}
             {nextAction.cta.type === 'navigate' && (
               <Link
                 href={nextAction.cta.href || `/admin/orders/${orderId}/design`}
