@@ -1,0 +1,27 @@
+import { NextResponse } from 'next/server';
+import { serverOrderStore } from '@/lib/server-order-store';
+
+export async function POST(
+  _request: Request,
+  props: { params: Promise<{ id: string }> }
+) {
+  try {
+    const { id } = await props.params;
+    if (!id) {
+      return NextResponse.json({ error: 'Thiếu mã đơn hàng.' }, { status: 400 });
+    }
+
+    const order = serverOrderStore.reportPayment(id);
+    if (!order) {
+      return NextResponse.json({ error: 'Không tìm thấy đơn hàng.' }, { status: 404 });
+    }
+
+    return NextResponse.json({ order });
+  } catch (err) {
+    console.error('Lỗi ghi nhận chuyển khoản:', err);
+    return NextResponse.json(
+      { error: 'Có lỗi xảy ra khi ghi nhận thanh toán.' },
+      { status: 500 }
+    );
+  }
+}
