@@ -76,3 +76,15 @@ test('catalog repository falls back to static catalog when unconfigured or query
   const failing = new CatalogRepository(new CatalogClient({ products: { data: null, error: new Error('offline') } }) as never);
   assert.ok((await failing.listProducts()).some((product: { id: string }) => product.id === 'card'));
 });
+
+test('catalog repository preserves successful empty queries and returns empty sticker fallback', async () => {
+  const emptyRepo = new CatalogRepository(new CatalogClient({
+    products: { data: [], error: null },
+    templates: { data: [], error: null },
+  }) as never);
+  assert.deepEqual(await emptyRepo.listProducts(), []);
+  assert.deepEqual(await emptyRepo.listTemplates(), []);
+
+  const unconfigured = new CatalogRepository(null);
+  assert.deepEqual(await unconfigured.listStickers(), []);
+});

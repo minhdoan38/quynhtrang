@@ -21,23 +21,6 @@ import { FONT_REGISTRY } from '../fonts.ts';
 import { CATALOG_PRODUCTS } from '../product-catalog.ts';
 import { type ProductId, TEMPLATES } from '../product-state.ts';
 
-const STATIC_STICKERS: PublishedSticker[] = [
-  {
-    id: 'sticker-heart',
-    category: 'love',
-    tags: ['heart', 'love'],
-    storagePath: 'stickers/heart.svg',
-    title: 'Trái tim',
-  },
-  {
-    id: 'sticker-star',
-    category: 'cute',
-    tags: ['star', 'sparkle'],
-    storagePath: 'stickers/star.svg',
-    title: 'Ngôi sao',
-  },
-];
-
 export class CatalogRepository {
   private readonly client: SupabaseClient | null;
 
@@ -53,7 +36,7 @@ export class CatalogRepository {
         .select('*')
         .eq('active', true)
         .order('id');
-      if (error || !data || data.length === 0) return this.getStaticProducts();
+      if (error || data === null || data === undefined) return this.getStaticProducts();
       return (data as DatabaseProductRow[]).map(mapProductRow);
     } catch {
       return this.getStaticProducts();
@@ -72,7 +55,7 @@ export class CatalogRepository {
         query = query.eq('product_id', productId);
       }
       const { data, error } = await query;
-      if (error || !data || data.length === 0) return this.getStaticVariants(productId);
+      if (error || data === null || data === undefined) return this.getStaticVariants(productId);
       return (data as DatabaseVariantRow[]).map(mapVariantRow);
     } catch {
       return this.getStaticVariants(productId);
@@ -87,7 +70,7 @@ export class CatalogRepository {
         .select('*')
         .eq('published', true)
         .order('id');
-      if (error || !data || data.length === 0) return this.getStaticTemplates(productId);
+      if (error || data === null || data === undefined) return this.getStaticTemplates(productId);
       const rows = (data as DatabaseTemplateRow[]).map(mapTemplateRow);
       if (!productId) return rows;
       return rows.filter((tpl) => !tpl.productId || tpl.productId === productId);
@@ -104,7 +87,7 @@ export class CatalogRepository {
         .select('*')
         .eq('published', true)
         .order('id');
-      if (error || !data || data.length === 0) return this.getStaticFonts();
+      if (error || data === null || data === undefined) return this.getStaticFonts();
       return (data as DatabaseFontRow[]).map(mapFontRow);
     } catch {
       return this.getStaticFonts();
@@ -112,7 +95,7 @@ export class CatalogRepository {
   }
 
   async listStickers(category?: string): Promise<PublishedSticker[]> {
-    if (!this.client) return this.getStaticStickers(category);
+    if (!this.client) return [];
     try {
       let query = this.client
         .from('sticker_assets')
@@ -123,10 +106,10 @@ export class CatalogRepository {
         query = query.eq('category', category);
       }
       const { data, error } = await query;
-      if (error || !data || data.length === 0) return this.getStaticStickers(category);
+      if (error || data === null || data === undefined) return [];
       return (data as DatabaseStickerRow[]).map(mapStickerRow);
     } catch {
-      return this.getStaticStickers(category);
+      return [];
     }
   }
 
@@ -200,10 +183,5 @@ export class CatalogRepository {
       storagePath: null,
       sampleText: f.sampleText,
     }));
-  }
-
-  private getStaticStickers(category?: string): PublishedSticker[] {
-    if (!category) return STATIC_STICKERS;
-    return STATIC_STICKERS.filter((s) => s.category === category);
   }
 }

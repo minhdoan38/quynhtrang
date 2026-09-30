@@ -102,6 +102,7 @@ export interface OrderInboxRow {
 }
 
 export interface OrderListQuery {
+  view?: 'all' | 'attention' | 'payment' | 'production';
   status?: string[];
   paymentStatus?: string[];
   designStatus?: DesignStatus[];
@@ -138,9 +139,7 @@ export function deriveAttentionReasons(
     reasons.push('DESIGN_CHANGES');
   }
 
-  const canProduce = paymentStatus === 'paid' || paymentStatus === 'payment_reported';
-  const designReady = designStatus === 'approved' || designStatus === 'ready';
-  if (canProduce && designReady && (fulfillmentStatus === 'unprocessed' || fulfillmentStatus === 'ready_for_production')) {
+  if (paymentStatus === 'paid' && designStatus === 'approved' && fulfillmentStatus === 'ready_for_production') {
     reasons.push('READY_FOR_PRODUCTION');
   }
 
@@ -195,7 +194,17 @@ function normalizeFulfillmentStatus(status: string): FulfillmentStatus {
 export function mapOrderInboxRow(raw: RawDatabaseOrderJoin): OrderInboxRow {
   const paymentRow = normalizeFirst(raw.order_payments);
   const designVersionRow = normalizeFirst(raw.design_versions);
-  const eventRow = normalizeFirst(raw.order_events);
+  let eventRow: Record<string, unknown> | null = null;
+  if (Array.isArray(raw.order_events) && raw.order_events.length > 0) {
+    const sortedEvents = [...raw.order_events].sort((a, b) => {
+      const timeA = typeof a.created_at === 'string' ? new Date(a.created_at).getTime() : 0;
+      const timeB = typeof b.created_at === 'string' ? new Date(b.created_at).getTime() : 0;
+      return timeB - timeA;
+    });
+    eventRow = sortedEvents[0] ?? null;
+  } else if (raw.order_events && typeof raw.order_events === 'object') {
+    eventRow = raw.order_events as Record<string, unknown>;
+  }
 
   const productSnap = (raw.product_snapshot ?? {}) as { id?: string; name?: string };
   const variantSnap = (raw.variant_snapshot ?? {}) as { id?: string; name?: string; price?: number };

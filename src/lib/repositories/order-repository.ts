@@ -2,7 +2,6 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 
 import {
   type CreatePendingOrderInput,
-  deriveAttentionReasons,
   type InboxCounts,
   mapOrderInboxRow,
   type OrderAccess,
@@ -10,11 +9,12 @@ import {
   type OrderListQuery,
   type StaffIdentity,
 } from '../domain/order.ts';
-import type { CustomerInfo, OrderPayment, PendingOrder } from '../order-types.ts';
-import type { ProductId } from '../product-state.ts';
+import type { ApprovedDesignSnapshot, CustomerInfo, OrderPayment, PendingOrder } from '../order-types.ts';
+import type { DesignState, DesignSummary, ProductId } from '../product-state.ts';
 
 interface QueryFilterable {
   eq(column: string, value: unknown): QueryFilterable;
+  gt(column: string, value: unknown): QueryFilterable;
 }
 
 export class OrderRepository {
@@ -74,16 +74,22 @@ export class OrderRepository {
       confirmed_at: input.payment.confirmedAt ?? null,
     };
 
-    await this.client.from('order_payments').insert(paymentPayload);
+    const { error: paymentError } = await this.client.from('order_payments').insert(paymentPayload);
+    if (paymentError) {
+      await this.client.from('orders').delete().eq('id', createdOrderId);
+      throw new Error(`Failed to create order payment: ${paymentError.message}`);
+    }
 
     return this.mapToPendingOrder(orderData, input);
   }
 
   async getById(id: string, access: OrderAccess): Promise<PendingOrder | null> {
     this.assertAccessValid(access);
+    const selectQuery = this.buildSelectForAccess(access);
+
     let query = this.client
       .from('orders')
-      .select('*, order_payments(*), design_versions(*), projects(*), guest_order_access(*)')
+      .select(selectQuery)
       .eq('id', id);
 
     query = this.applyAccessFilter(query, access);
@@ -95,9 +101,11 @@ export class OrderRepository {
 
   async getByPublicCode(code: string, access: OrderAccess): Promise<PendingOrder | null> {
     this.assertAccessValid(access);
+    const selectQuery = this.buildSelectForAccess(access);
+
     let query = this.client
       .from('orders')
-      .select('*, order_payments(*), design_versions(*), projects(*), guest_order_access(*)')
+      .select(selectQuery)
       .eq('public_order_code', code);
 
     query = this.applyAccessFilter(query, access);
@@ -121,6 +129,17 @@ export class OrderRepository {
     let dbQuery = this.client
       .from('orders')
       .select('*, order_payments(*), design_versions(*), order_events(*)', { count: 'exact' });
+
+    if (query.view === 'attention') {
+      dbQuery = dbQuery.or('payment_status.eq.payment_reported,design_status.in.(awaiting_review,needs_changes)');
+    } else if (query.view === 'payment') {
+      dbQuery = dbQuery.eq('payment_status', 'pending_payment');
+    } else if (query.view === 'production') {
+      dbQuery = dbQuery
+        .eq('payment_status', 'paid')
+        .eq('design_status', 'approved')
+        .eq('fulfillment_status', 'ready_for_production');
+    }
 
     if (query.paymentStatus && query.paymentStatus.length > 0) {
       dbQuery = dbQuery.in('payment_status', query.paymentStatus);
@@ -175,49 +194,45 @@ export class OrderRepository {
   async countViews(staff: StaffIdentity): Promise<InboxCounts> {
     this.assertStaffIdentity(staff);
 
-    const { data, error } = await this.client
-      .from('orders')
-      .select('payment_status, design_status, fulfillment_status');
-
-    if (error || !data || !Array.isArray(data)) {
-      return {
-        all: 0,
-        needsAttention: 0,
-        paymentReported: 0,
-        designReview: 0,
-        readyForProduction: 0,
-      };
-    }
-
-    let needsAttention = 0;
-    let paymentReported = 0;
-    let designReview = 0;
-    let readyForProduction = 0;
-
-    for (const item of data) {
-      if (!item || typeof item !== 'object') continue;
-      const paymentStatus = 'payment_status' in item && typeof item.payment_status === 'string' ? item.payment_status : '';
-      const designStatus = 'design_status' in item && typeof item.design_status === 'string'
-        ? (item.design_status as Parameters<typeof deriveAttentionReasons>[1])
-        : 'awaiting_review';
-      const fulfillmentStatus = 'fulfillment_status' in item && typeof item.fulfillment_status === 'string'
-        ? (item.fulfillment_status as Parameters<typeof deriveAttentionReasons>[2])
-        : 'unprocessed';
-
-      const reasons = deriveAttentionReasons(paymentStatus, designStatus, fulfillmentStatus);
-      if (reasons.length > 0) needsAttention++;
-      if (reasons.includes('PAYMENT_REPORTED')) paymentReported++;
-      if (reasons.includes('DESIGN_REVIEW')) designReview++;
-      if (reasons.includes('READY_FOR_PRODUCTION')) readyForProduction++;
-    }
+    const [allRes, attentionRes, paymentRes, designReviewRes, readyRes] = await Promise.all([
+      this.client.from('orders').select('*', { count: 'exact', head: true }),
+      this.client
+        .from('orders')
+        .select('*', { count: 'exact', head: true })
+        .or('payment_status.eq.payment_reported,design_status.in.(awaiting_review,needs_changes)'),
+      this.client
+        .from('orders')
+        .select('*', { count: 'exact', head: true })
+        .eq('payment_status', 'payment_reported'),
+      this.client
+        .from('orders')
+        .select('*', { count: 'exact', head: true })
+        .in('design_status', ['awaiting_review', 'needs_changes']),
+      this.client
+        .from('orders')
+        .select('*', { count: 'exact', head: true })
+        .eq('payment_status', 'paid')
+        .eq('design_status', 'approved')
+        .eq('fulfillment_status', 'ready_for_production'),
+    ]);
 
     return {
-      all: data.length,
-      needsAttention,
-      paymentReported,
-      designReview,
-      readyForProduction,
+      all: allRes.count ?? 0,
+      needsAttention: attentionRes.count ?? 0,
+      paymentReported: paymentRes.count ?? 0,
+      designReview: designReviewRes.count ?? 0,
+      readyForProduction: readyRes.count ?? 0,
     };
+  }
+
+  private buildSelectForAccess(access: OrderAccess): string {
+    if (access.kind === 'owner') {
+      return '*, order_payments(*), design_versions(*), projects!inner(*)';
+    }
+    if (access.kind === 'guest') {
+      return '*, order_payments(*), design_versions(*), guest_order_access!inner(token_hash, expires_at)';
+    }
+    return '*, order_payments(*), design_versions(*), projects(*), guest_order_access(*)';
   }
 
   private assertStaffIdentity(staff: StaffIdentity): void {
@@ -245,7 +260,9 @@ export class OrderRepository {
       return query.eq('projects.owner_user_id', access.userId) as T;
     }
     if (access.kind === 'guest') {
-      return query.eq('guest_order_access.token_hash', access.tokenHash) as T;
+      return query
+        .eq('guest_order_access.token_hash', access.tokenHash)
+        .gt('guest_order_access.expires_at', new Date().toISOString()) as T;
     }
     return query;
   }
@@ -289,6 +306,16 @@ export class OrderRepository {
       }
     }
 
+    let designVersionObj: Record<string, unknown> | null = null;
+    if ('design_versions' in rawObj) {
+      const dvVal = rawObj.design_versions;
+      if (Array.isArray(dvVal) && dvVal[0] && typeof dvVal[0] === 'object') {
+        designVersionObj = dvVal[0] as Record<string, unknown>;
+      } else if (dvVal && typeof dvVal === 'object' && !Array.isArray(dvVal)) {
+        designVersionObj = dvVal as Record<string, unknown>;
+      }
+    }
+
     const productSnap = this.extractObjectField(rawObj, 'product_snapshot') ?? {};
     const variantSnap = this.extractObjectField(rawObj, 'variant_snapshot') ?? {};
 
@@ -328,6 +355,33 @@ export class OrderRepository {
     const rawApprovedId = this.extractStringField(rawObj, 'approved_design_version_id');
     const approvedDesignVersionId = rawApprovedId ?? inputFallback?.approvedDesignVersionId ?? '';
 
+    const quantity = this.extractNumberField(rawObj, 'quantity') ?? inputFallback?.quantity ?? 1;
+    const unitPrice = this.extractNumberField(rawObj, 'unit_price') ?? inputFallback?.unitPrice ?? 0;
+    const total = this.extractNumberField(rawObj, 'total') ?? inputFallback?.total ?? (quantity * unitPrice);
+
+    const extractedDesign = this.extractObjectField(designVersionObj, 'design_document');
+    const designDocument: DesignState = (extractedDesign as unknown as DesignState) ??
+      inputFallback?.designSnapshot?.design ??
+      ({} as DesignState);
+
+    const preflightRevision = this.extractStringField(designVersionObj, 'preflight_revision') ?? inputFallback?.preflightRevision ?? '';
+
+    const summary: DesignSummary = {
+      product: String(productSnap.name ?? productSnap.id ?? inputFallback?.productId ?? ''),
+      variant: String(variantSnap.name ?? variantSnap.id ?? inputFallback?.variantId ?? ''),
+      quantity,
+      unitPrice,
+      totalPrice: total,
+      priceLabel: `${total.toLocaleString('vi-VN')} đ`,
+    };
+
+    const snapshot: ApprovedDesignSnapshot = {
+      id: approvedDesignVersionId,
+      design: designDocument,
+      summary,
+      createdAt: this.extractStringField(designVersionObj, 'created_at') ?? this.extractStringField(rawObj, 'created_at') ?? '',
+    };
+
     return {
       id: orderId,
       idempotencyKey: this.extractStringField(rawObj, 'idempotency_key') ?? inputFallback?.idempotencyKey ?? '',
@@ -337,19 +391,14 @@ export class OrderRepository {
       product: {
         productId: (productSnap.id as ProductId) ?? inputFallback?.productId ?? 'card',
         variantId: (variantSnap.id as string) ?? inputFallback?.variantId ?? '',
-        quantity: this.extractNumberField(rawObj, 'quantity') ?? inputFallback?.quantity ?? 1,
-        unitPrice: this.extractNumberField(rawObj, 'unit_price') ?? inputFallback?.unitPrice ?? 0,
+        quantity,
+        unitPrice,
         subtotal: this.extractNumberField(rawObj, 'subtotal') ?? inputFallback?.subtotal ?? 0,
       },
       approvedDesignVersionId,
-      preflightRevision: inputFallback?.preflightRevision ?? '',
+      preflightRevision,
       createdAt: this.extractStringField(rawObj, 'created_at') ?? new Date().toISOString(),
-      snapshot: inputFallback?.designSnapshot ?? {
-        id: approvedDesignVersionId,
-        design: {} as never,
-        summary: {} as never,
-        createdAt: this.extractStringField(rawObj, 'created_at') ?? '',
-      },
+      snapshot,
       payment: orderPayment,
     };
   }
