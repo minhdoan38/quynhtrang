@@ -18,6 +18,15 @@ export function validateOtpFormat(otp: string): boolean {
   return /^\d{6}$/.test(clean);
 }
 
+export function sanitizeRedirectUrl(url?: string | null): string {
+  if (!url || typeof url !== 'string') return '/my-designs';
+  const clean = url.trim();
+  if (clean.startsWith('/') && !clean.startsWith('//') && !clean.includes('://')) {
+    return clean;
+  }
+  return '/my-designs';
+}
+
 export async function requestEmailOtp(
   email: string,
   client?: SupabaseClient

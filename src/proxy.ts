@@ -5,7 +5,11 @@ import { getSupabaseConfig } from './lib/supabase/config.ts';
 export async function proxy(request: NextRequest): Promise<NextResponse> {
   const { pathname, search } = request.nextUrl;
 
-  if (!pathname.startsWith('/admin')) {
+  const isCustomerRoute = pathname.startsWith('/my-designs') || pathname.startsWith('/my-orders');
+  const isCustomerLogin = pathname === '/login';
+  const isAdminRoute = pathname.startsWith('/admin');
+
+  if (!isAdminRoute && !isCustomerRoute && !isCustomerLogin) {
     return NextResponse.next();
   }
 
@@ -57,23 +61,40 @@ export async function proxy(request: NextRequest): Promise<NextResponse> {
     return supabaseResponse;
   }
 
+  if (isCustomerLogin) {
+    if (user) {
+      return NextResponse.redirect(new URL('/my-designs', request.url));
+    }
+    return supabaseResponse;
+  }
+
   if (!user) {
-    const loginUrl = new URL('/admin/login', request.url);
-    loginUrl.searchParams.set('next', `${pathname}${search}`);
-    const redirectResponse = NextResponse.redirect(loginUrl);
-    supabaseResponse.cookies.getAll().forEach((cookie) => {
-      redirectResponse.cookies.set(cookie);
-    });
-    return redirectResponse;
+    if (isAdminRoute) {
+      const loginUrl = new URL('/admin/login', request.url);
+      loginUrl.searchParams.set('next', `${pathname}${search}`);
+      const redirectResponse = NextResponse.redirect(loginUrl);
+      supabaseResponse.cookies.getAll().forEach((cookie) => {
+        redirectResponse.cookies.set(cookie);
+      });
+      return redirectResponse;
+    }
+    if (isCustomerRoute) {
+      const loginUrl = new URL('/login', request.url);
+      loginUrl.searchParams.set('returnUrl', `${pathname}${search}`);
+      const redirectResponse = NextResponse.redirect(loginUrl);
+      supabaseResponse.cookies.getAll().forEach((cookie) => {
+        redirectResponse.cookies.set(cookie);
+      });
+      return redirectResponse;
+    }
   }
 
   return supabaseResponse;
 }
 
 export const config = {
-  matcher: ['/admin/:path*'],
+  matcher: ['/admin/:path*', '/my-designs/:path*', '/my-orders/:path*', '/login'],
 };
-
 export { proxy as middleware };
 export default proxy;
 
