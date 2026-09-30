@@ -1,3 +1,5 @@
+import { CatalogRepository } from '../lib/repositories/catalog-repository.ts';
+
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
@@ -5,6 +7,8 @@ import {
   FONT_REGISTRY,
   DEFAULT_FONT_ID,
   getPublishedFonts,
+  loadPublishedFonts,
+  getPublishedFontsAsync,
   getDefaultFont,
   getFontById,
   findFontByFamily,
@@ -213,4 +217,20 @@ test('font browser closing without changing font adds zero history entries', () 
 
   // Zero history entries
   assert.equal(past.length, 0);
+});
+
+test('loadPublishedFonts queries catalog repository and falls back to FONT_REGISTRY', async () => {
+  const fonts = await loadPublishedFonts();
+  assert.ok(fonts.length >= 8);
+  assert.ok(fonts.every((f) => f.status === 'published'));
+
+  const asyncAlias = await getPublishedFontsAsync();
+  assert.equal(asyncAlias.length, fonts.length);
+
+  const syncCall = getPublishedFonts();
+  assert.equal(syncCall.length, fonts.length);
+
+  const repo = new CatalogRepository(null);
+  const viaRepo = await getPublishedFonts(repo);
+  assert.equal(viaRepo.length, fonts.length);
 });

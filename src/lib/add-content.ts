@@ -1,3 +1,8 @@
+import type { PublishedSticker } from './domain/catalog.ts';
+import { CatalogRepository } from './repositories/catalog-repository.ts';
+
+export type { PublishedSticker };
+
 /**
  * Hợp đồng dữ liệu và workflow cho Add / Insert Menu (Mobile Customizer)
  */
@@ -34,8 +39,8 @@ export const ADD_MENU_ITEMS: readonly AddMenuItemConfig[] = [
 export type ImageSourceType = 'gallery' | 'camera' | 'file';
 
 export type ImageSourceContext =
-  | { mode: 'add' }
-  | { mode: 'replace'; targetElementId: string };
+ | { mode: 'add' }
+ | { mode: 'replace'; targetElementId: string };
 export type TextStylePreset = 'heading' | 'body';
 
 export type ShapePrimitiveType =
@@ -99,6 +104,22 @@ export function getProviderStatus(type: AddContentType): AddProviderStatus {
     available: false,
     message: 'Bộ sinh mã vạch đang được kết nối.',
    };
+ }
+}
+
+/**
+ * Lấy danh sách sticker đã xuất bản từ CatalogRepository.
+ * Trả về mảng rỗng nếu chưa có sticker hoặc offline, tuyệt đối không bịa asset SVG giả.
+ */
+export async function getPublishedStickers(
+ category?: string,
+ repository?: CatalogRepository
+): Promise<PublishedSticker[]> {
+ try {
+  const repo = repository ?? new CatalogRepository();
+  return await repo.listStickers(category);
+ } catch {
+  return [];
  }
 }
 

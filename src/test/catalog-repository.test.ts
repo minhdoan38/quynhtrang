@@ -9,6 +9,9 @@ import {
   mapVariantRow,
 } from '../lib/domain/catalog.ts';
 import { CatalogRepository } from '../lib/repositories/catalog-repository.ts';
+import { getPublishedProducts, getPublishedTemplates } from '../lib/product-catalog.ts';
+import { loadPublishedFonts } from '../lib/fonts.ts';
+import { getPublishedStickers } from '../lib/add-content.ts';
 
 class CatalogClient {
   readonly results: Record<string, { data: unknown; error: unknown }>;
@@ -87,4 +90,99 @@ test('catalog repository preserves successful empty queries and returns empty st
 
   const unconfigured = new CatalogRepository(null);
   assert.deepEqual(await unconfigured.listStickers(), []);
+});
+
+test('catalog repository provides alias methods matching PublishedCatalogRepository', async () => {
+  const repo = new CatalogRepository();
+  const templates = await repo.listPublishedTemplates('card');
+  assert.ok(templates.length > 0);
+  assert.ok(templates.every((t) => !t.productId || t.productId === 'card'));
+
+  const fonts = await repo.listPublishedFonts();
+  assert.ok(fonts.length >= 8);
+
+  const stickers = await repo.listPublishedStickers();
+  assert.deepEqual(stickers, []);
+});
+
+test('published adapters map dynamic database rows when repository has configured client', async () => {
+  const repo = new CatalogRepository(new CatalogClient({
+    products: {
+      data: [{
+        id: 'card',
+        slug: 'card',
+        name: 'Thiệp Custom DB',
+        product_type: 'card',
+        active: true,
+        metadata: { tagline: 'Tagline từ DB' },
+      }],
+      error: null,
+    },
+    product_variants: {
+      data: [{
+        id: 'horizontal',
+        product_id: 'card',
+        name: 'Ngang DB',
+        price: 35000,
+        active: true,
+        metadata: { dimensions: '15x10 cm' },
+      }],
+      error: null,
+    },
+    templates: {
+      data: [{
+        id: 'tpl-db-1',
+        product_id: 'card',
+        slug: 'tpl-db-1',
+        name: 'Mẫu DB',
+        published: true,
+        thumbnail_path: null,
+        metadata: { category: 'birthday' },
+      }],
+      error: null,
+    },
+    fonts: {
+      data: [{
+        id: 'font-db-1',
+        family_name: 'Playfair Display',
+        google_font: 'Playfair+Display',
+        storage_path: null,
+        published: true,
+        metadata: { category: 'serif' },
+      }],
+      error: null,
+    },
+    sticker_assets: {
+      data: [{
+        id: 'sticker-db-1',
+        category: 'vintage',
+        tags: ['flower'],
+        storage_path: 'stickers/flower.svg',
+        thumbnail_path: null,
+        published: true,
+        metadata: { title: 'Hoa vintage' },
+      }],
+      error: null,
+    },
+  }) as never);
+
+  const products = await getPublishedProducts(repo);
+  assert.equal(products.length, 1);
+  assert.equal(products[0]?.name, 'Thiệp Custom DB');
+  assert.equal(products[0]?.tagline, 'Tagline từ DB');
+  assert.equal(products[0]?.variants[0]?.name, 'Ngang DB');
+  assert.equal(products[0]?.variants[0]?.price, 35000);
+
+  const templates = await getPublishedTemplates('card', repo);
+  assert.equal(templates.length, 1);
+  assert.equal(templates[0]?.name, 'Mẫu DB');
+
+  const fonts = await loadPublishedFonts(repo);
+  assert.equal(fonts.length, 1);
+  assert.equal(fonts[0]?.name, 'Playfair Display');
+  assert.equal(fonts[0]?.category, 'serif');
+
+  const stickers = await getPublishedStickers('vintage', repo);
+  assert.equal(stickers.length, 1);
+  assert.equal(stickers[0]?.storagePath, 'stickers/flower.svg');
 });

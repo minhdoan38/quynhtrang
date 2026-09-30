@@ -6,6 +6,8 @@ import {
   getCatalogProduct,
   getCanonicalSlug,
   getAllCatalogProducts,
+  getPublishedProducts,
+  getPublishedTemplates,
   ALL_PRODUCT_SLUGS,
 } from '../lib/product-catalog.ts';
 import { getCompatibleTemplates } from '../lib/product-state.ts';
@@ -102,4 +104,25 @@ test('filters templates by search keywords across name and hints', () => {
   });
   assert.ok(birthdayTemplates.length > 0);
   assert.ok(birthdayTemplates.some((t) => t.template.name.toLowerCase().includes('sinh nhật')));
+});
+
+test('getPublishedProducts falls back to static catalog products with variants and tone', async () => {
+  const products = await getPublishedProducts();
+  assert.equal(products.length, 4);
+  const ids = products.map((p) => p.id);
+  assert.deepEqual(ids, ['wrapping', 'card', 'sticker', 'notebook']);
+  for (const p of products) {
+    assert.ok(p.variants.length > 0);
+    assert.ok(p.tone.badgeVariant);
+    assert.ok(p.startingPrice > 0);
+  }
+});
+
+test('getPublishedTemplates returns published templates and supports productId filtering with offline fallback', async () => {
+  const allTemplates = await getPublishedTemplates();
+  assert.ok(allTemplates.length >= 10);
+
+  const cardTemplates = await getPublishedTemplates('card');
+  assert.ok(cardTemplates.length > 0);
+  assert.ok(cardTemplates.every((t) => !t.productId || t.productId === 'card'));
 });

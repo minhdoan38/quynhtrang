@@ -1,4 +1,8 @@
 import type { ProductId } from './product-state';
+import type { PublishedTemplate } from './domain/catalog.ts';
+import { CatalogRepository } from './repositories/catalog-repository.ts';
+
+export type { PublishedTemplate };
 
 export interface CatalogVariant {
   id: string;
@@ -268,4 +272,92 @@ export function getAllCatalogProducts(): CatalogProduct[] {
     CATALOG_PRODUCTS.sticker,
     CATALOG_PRODUCTS.notebook,
   ];
+}
+
+export async function getPublishedProducts(
+  repository?: CatalogRepository
+): Promise<CatalogProduct[]> {
+  try {
+    const repo = repository ?? new CatalogRepository();
+    const products = await repo.listProducts();
+    if (!products || products.length === 0) {
+      return getAllCatalogProducts();
+    }
+
+    return await Promise.all(
+      products.map(async (pub) => {
+        const base = CATALOG_PRODUCTS[pub.id] ?? CATALOG_PRODUCTS.wrapping;
+        let variants = base.variants;
+
+        if (pub.variants && pub.variants.length > 0) {
+          variants = pub.variants.map((v) => ({
+            id: v.id,
+            name: v.name,
+            dimensions: v.dimensions || '',
+            price: v.price,
+            bestFor: v.bestFor || '',
+          }));
+        } else {
+          try {
+            const fetchedVariants = await repo.listVariants(pub.id);
+            if (fetchedVariants && fetchedVariants.length > 0) {
+              variants = fetchedVariants.map((v) => ({
+                id: v.id,
+                name: v.name,
+                dimensions: v.dimensions || '',
+                price: v.price,
+                bestFor: v.bestFor || '',
+              }));
+            }
+          } catch {
+            // keep base variants
+          }
+        }
+
+        return {
+          ...base,
+          id: pub.id,
+          slug: pub.slug || base.slug,
+          name: pub.name || base.name,
+          cardTitle: pub.cardTitle || base.cardTitle,
+          variantSummary: pub.variantSummary || base.variantSummary,
+          englishName: pub.englishName || base.englishName,
+          tagline: pub.tagline || base.tagline,
+          description: pub.description || base.description,
+          startingPrice: pub.startingPrice ?? base.startingPrice,
+          capabilities: pub.capabilities && pub.capabilities.length > 0 ? pub.capabilities : base.capabilities,
+          paperSpecs: {
+            ...base.paperSpecs,
+            ...(pub.paperSpecs || {}),
+          },
+          tone: {
+            ...base.tone,
+            ...(pub.tone || {}),
+            badgeVariant: pub.tone?.badgeVariant === 'sage' ||
+              pub.tone?.badgeVariant === 'rose' ||
+              pub.tone?.badgeVariant === 'honey' ||
+              pub.tone?.badgeVariant === 'slate'
+              ? pub.tone.badgeVariant
+              : base.tone.badgeVariant,
+          },
+          variants,
+        };
+      })
+    );
+  } catch {
+    return getAllCatalogProducts();
+  }
+}
+
+export async function getPublishedTemplates(
+  productId?: ProductId,
+  repository?: CatalogRepository
+): Promise<PublishedTemplate[]> {
+  try {
+    const repo = repository ?? new CatalogRepository();
+    return await repo.listTemplates(productId);
+  } catch {
+    const repo = new CatalogRepository(null);
+    return repo.listTemplates(productId);
+  }
 }

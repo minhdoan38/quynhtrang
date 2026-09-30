@@ -1,4 +1,5 @@
-import type { SupabaseClient } from '@supabase/supabase-js';
+import { createClient, type SupabaseClient } from '@supabase/supabase-js';
+import { getSupabaseConfig } from '../supabase/config.ts';
 
 import {
   type DatabaseFontRow,
@@ -21,11 +22,40 @@ import { FONT_REGISTRY } from '../fonts.ts';
 import { CATALOG_PRODUCTS } from '../product-catalog.ts';
 import { type ProductId, TEMPLATES } from '../product-state.ts';
 
-export class CatalogRepository {
+export interface PublishedCatalogRepository {
+  listProducts(): Promise<PublishedProduct[]>;
+  listVariants(productId?: ProductId): Promise<PublishedVariant[]>;
+  listTemplates(productId?: ProductId): Promise<PublishedTemplate[]>;
+  listPublishedTemplates(productId?: ProductId): Promise<PublishedTemplate[]>;
+  listFonts(): Promise<PublishedFont[]>;
+  listPublishedFonts(): Promise<PublishedFont[]>;
+  listStickers(category?: string): Promise<PublishedSticker[]>;
+  listPublishedStickers(category?: string): Promise<PublishedSticker[]>;
+}
+
+export class CatalogRepository implements PublishedCatalogRepository {
   private readonly client: SupabaseClient | null;
 
   constructor(client?: SupabaseClient | null) {
-    this.client = client ?? null;
+    if (client !== undefined) {
+      this.client = client;
+    } else {
+      const config = getSupabaseConfig();
+      if (!config) {
+        this.client = null;
+      } else {
+        try {
+          this.client = createClient(config.url, config.publishableKey, {
+            auth: {
+              persistSession: false,
+              autoRefreshToken: false,
+            },
+          });
+        } catch {
+          this.client = null;
+        }
+      }
+    }
   }
 
   async listProducts(): Promise<PublishedProduct[]> {
@@ -49,12 +79,11 @@ export class CatalogRepository {
       let query = this.client
         .from('product_variants')
         .select('*')
-        .eq('active', true)
-        .order('price');
+        .eq('active', true);
       if (productId) {
         query = query.eq('product_id', productId);
       }
-      const { data, error } = await query;
+      const { data, error } = await query.order('price');
       if (error || data === null || data === undefined) return this.getStaticVariants(productId);
       return (data as DatabaseVariantRow[]).map(mapVariantRow);
     } catch {
@@ -100,18 +129,29 @@ export class CatalogRepository {
       let query = this.client
         .from('sticker_assets')
         .select('*')
-        .eq('published', true)
-        .order('id');
+        .eq('published', true);
       if (category) {
         query = query.eq('category', category);
       }
-      const { data, error } = await query;
+      const { data, error } = await query.order('id');
       if (error || data === null || data === undefined) return [];
       return (data as DatabaseStickerRow[]).map(mapStickerRow);
     } catch {
       return [];
     }
   }
+  async listPublishedTemplates(productId?: ProductId): Promise<PublishedTemplate[]> {
+    return this.listTemplates(productId);
+  }
+
+  async listPublishedFonts(): Promise<PublishedFont[]> {
+    return this.listFonts();
+  }
+
+  async listPublishedStickers(category?: string): Promise<PublishedSticker[]> {
+    return this.listStickers(category);
+  }
+
 
   private getStaticProducts(): PublishedProduct[] {
     return Object.values(CATALOG_PRODUCTS).map((p) => ({

@@ -5,6 +5,7 @@ import {
   ADD_MENU_ITEMS,
   SHAPE_DEFINITIONS,
   getProviderStatus,
+  getPublishedStickers,
   calculateCenteredPlacement,
   type AddContentType,
   type ImageSourceContext,
@@ -80,4 +81,12 @@ test('ImageSourceContext supports explicit add and replace modes', () => {
   assert.equal(addCtx.mode, 'add');
   assert.equal(replaceCtx.mode, 'replace');
   assert.equal((replaceCtx as { targetElementId: string }).targetElementId, 'image-1');
+});
+
+test('getPublishedStickers returns empty list when unconfigured and never invents fake sticker SVGs', async () => {
+  const stickers = await getPublishedStickers();
+  assert.deepEqual(stickers, []);
+
+  const categorized = await getPublishedStickers('vintage');
+  assert.deepEqual(categorized, []);
 });

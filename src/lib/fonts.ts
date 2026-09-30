@@ -1,3 +1,5 @@
+import { CatalogRepository } from './repositories/catalog-repository.ts';
+
 export interface FontItem {
   readonly id: string;
   readonly name: string;
@@ -132,9 +134,39 @@ export const DEFAULT_FONT_ID = 'be-vietnam-pro';
 export const RECENT_FONTS_STORAGE_KEY = 'print-customizer-recent-fonts-v1';
 export const MAX_RECENT_FONTS = 6;
 
-export function getPublishedFonts(): FontItem[] {
+export function getPublishedFonts(): FontItem[];
+export function getPublishedFonts(repository: CatalogRepository): Promise<FontItem[]>;
+export function getPublishedFonts(repository?: CatalogRepository): FontItem[] | Promise<FontItem[]> {
+  if (repository) {
+    return loadPublishedFonts(repository);
+  }
   return FONT_REGISTRY.filter((f) => f.status === 'published');
 }
+
+export async function loadPublishedFonts(
+  repository?: CatalogRepository
+): Promise<FontItem[]> {
+  try {
+    const repo = repository ?? new CatalogRepository();
+    const fonts = await repo.listFonts();
+    if (!fonts || fonts.length === 0) {
+      return FONT_REGISTRY.filter((f) => f.status === 'published');
+    }
+    return fonts.map((f) => ({
+      id: f.id,
+      name: f.name,
+      family: f.family,
+      category: f.category,
+      status: 'published' as const,
+      googleFont: f.googleFont ?? undefined,
+      sampleText: f.sampleText,
+    }));
+  } catch {
+    return FONT_REGISTRY.filter((f) => f.status === 'published');
+  }
+}
+
+export const getPublishedFontsAsync = loadPublishedFonts;
 
 export function getDefaultFont(): FontItem {
   const found = FONT_REGISTRY.find((f) => f.id === DEFAULT_FONT_ID);
