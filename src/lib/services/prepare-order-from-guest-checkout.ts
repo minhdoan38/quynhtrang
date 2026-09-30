@@ -179,6 +179,8 @@ export async function prepareOrderFromGuestCheckout(
     customer: structuredClone(input.customer),
     projectId: project.id,
     approvedDesignVersionId: version.id,
+    customerApprovedDesignVersionId: version.id,
+    productionDesignVersionId: version.id,
     preflightRevision: input.preflightRevision.trim(),
     designSnapshot: {
       id: version.id,

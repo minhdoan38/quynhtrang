@@ -37,9 +37,13 @@ export class OrderRepository {
   }
 
   async createPendingOrder(input: CreatePendingOrderInput): Promise<PendingOrder> {
+    const customerApprovedId = input.customerApprovedDesignVersionId ?? input.approvedDesignVersionId;
+    const productionId = input.productionDesignVersionId ?? customerApprovedId;
     const orderPayload = {
       project_id: input.projectId ?? null,
-      approved_design_version_id: input.approvedDesignVersionId,
+      customer_approved_design_version_id: customerApprovedId,
+      production_design_version_id: productionId,
+      approved_design_version_id: customerApprovedId,
       product_snapshot: {
         id: input.productId,
         name: input.productId,
@@ -313,8 +317,17 @@ export class OrderRepository {
     const pageEvents = hasMoreEvents ? rawEvents.slice(0, eventLimit) : rawEvents;
 
     const paymentRow = Array.isArray(data.order_payments) ? data.order_payments[0] : data.order_payments;
-    const designVersionRow = Array.isArray(data.design_versions) ? data.design_versions[0] : data.design_versions;
-
+    const versions = Array.isArray(data.design_versions)
+      ? data.design_versions
+      : data.design_versions
+        ? [data.design_versions]
+        : [];
+    const targetVersionId = (data.production_design_version_id ??
+      data.customer_approved_design_version_id ??
+      data.approved_design_version_id) as string | undefined;
+    const designVersionRow = (targetVersionId
+      ? versions.find((v: Record<string, unknown>) => v && v.id === targetVersionId)
+      : null) ?? versions[0] ?? null;
     const holds = Array.isArray(data.order_holds) ? data.order_holds : [];
     const activeHoldRow = holds.find((h: Record<string, unknown>) => h && h.released_at === null) ?? null;
 
@@ -603,7 +616,9 @@ export class OrderRepository {
     else if (fulfillmentStatus === 'cancelled' || paymentStatus === 'cancelled') status = 'cancelled';
     else if (fulfillmentStatus === 'in_production' || fulfillmentStatus === 'ready_for_production') status = 'processing';
 
-    const rawApprovedId = this.extractStringField(rawObj, 'approved_design_version_id');
+    const customerApprovedId = this.extractStringField(rawObj, 'customer_approved_design_version_id');
+    const productionApprovedId = this.extractStringField(rawObj, 'production_design_version_id');
+    const rawApprovedId = customerApprovedId ?? this.extractStringField(rawObj, 'approved_design_version_id');
     const approvedDesignVersionId = rawApprovedId ?? inputFallback?.approvedDesignVersionId ?? '';
 
     const quantity = this.extractNumberField(rawObj, 'quantity') ?? inputFallback?.quantity ?? 1;

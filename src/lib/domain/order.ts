@@ -289,6 +289,8 @@ export interface CreatePendingOrderInput {
   customer: CustomerInfo;
   projectId?: string;
   approvedDesignVersionId: string;
+  customerApprovedDesignVersionId?: string;
+  productionDesignVersionId?: string;
   preflightRevision?: string;
   designSnapshot: PendingOrder['snapshot'];
   payment: OrderPayment;
@@ -397,6 +399,8 @@ interface RawDatabaseOrderJoin {
   public_order_code: string;
   project_id?: string | null;
   approved_design_version_id?: string | null;
+  customer_approved_design_version_id?: string | null;
+  production_design_version_id?: string | null;
   product_snapshot?: Record<string, unknown> | null;
   variant_snapshot?: Record<string, unknown> | null;
   quantity: number;

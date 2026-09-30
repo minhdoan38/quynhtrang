@@ -121,25 +121,29 @@ export class DesignVersionRepository {
 
     const { data: orderData, error: orderError } = await this.client
       .from('orders')
-      .select('id, public_order_code, approved_design_version_id')
+      .select('id, public_order_code, customer_approved_design_version_id, production_design_version_id, approved_design_version_id')
       .eq('id', orderId)
       .maybeSingle();
 
-    if (orderError || !orderData || !orderData.approved_design_version_id) {
+    const targetVersionId = (orderData?.production_design_version_id ??
+      orderData?.customer_approved_design_version_id ??
+      orderData?.approved_design_version_id) as string | undefined;
+
+    if (orderError || !orderData || !targetVersionId) {
       return null;
     }
 
     const { data: versionData, error: versionError } = await this.client
       .from('design_versions')
       .select('*')
-      .eq('id', orderData.approved_design_version_id)
+      .eq('id', targetVersionId)
       .maybeSingle();
 
     if (versionError || !versionData) {
       return null;
     }
 
-    if (versionData.id !== orderData.approved_design_version_id) {
+    if (versionData.id !== targetVersionId) {
       return null;
     }
 
