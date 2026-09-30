@@ -27,6 +27,10 @@ pnpm test
 pnpm build
 ```
 
+### Supabase Runbook & Operations
+Chi tiết về biến môi trường, thứ tự triển khai SQL, phân quyền tài khoản quản trị viên và cơ chế lưu trữ được tài liệu hóa tại:
+[State 37 Supabase Runbook](docs/superpowers/state37-supabase-runbook.md).
+
 ### Supabase Migrations & Testing (State 37, 38, 39 & 40)
 
 ```sh
