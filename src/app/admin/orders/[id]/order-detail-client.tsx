@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation.js';
 import type { AdminOrderDetail, StaffIdentity } from '@/lib/domain/order.ts';
 import { OrderDetail } from '@/components/admin/order-detail.tsx';
@@ -30,6 +30,8 @@ import {
   holdOrderAction,
   releaseHoldAction,
 } from './actions.ts';
+import { subscribeToOrderDetailChanges } from '@/lib/admin/realtime.ts';
+import { createBrowserSupabaseClient } from '@/lib/supabase/browser.ts';
 
 export interface OrderDetailClientProps {
   initialDetail: AdminOrderDetail;
@@ -73,6 +75,27 @@ export function OrderDetailClient({
     }
     router.refresh();
   };
+
+  useEffect(() => {
+    try {
+      const supabase = createBrowserSupabaseClient();
+      const unsubscribe = subscribeToOrderDetailChanges(
+        supabase,
+        detail.id,
+        () => {
+          refetchDetail();
+        },
+        () => {
+          refetchDetail();
+        }
+      );
+      return () => {
+        unsubscribe();
+      };
+    } catch {
+      // Unconfigured client fallback
+    }
+  }, [detail.id]);
 
   // Payment Confirmation
   const handleConfirmPayment = async () => {
