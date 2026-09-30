@@ -27,6 +27,18 @@ export function sanitizeRedirectUrl(url?: string | null): string {
   return '/my-designs';
 }
 
+export function formatProjectUpdatedDate(timestamp: number, now: number = Date.now()): string {
+  const diffMs = Math.max(0, now - timestamp);
+  const diffMinutes = Math.floor(diffMs / (60 * 1000));
+  if (diffMinutes < 1) return 'Vừa xong';
+  if (diffMinutes < 60) return `${diffMinutes} phút trước`;
+  const diffHours = Math.floor(diffMinutes / 60);
+  if (diffHours < 24) return `${diffHours} giờ trước`;
+  const diffDays = Math.floor(diffHours / 24);
+  if (diffDays < 30) return `${diffDays} ngày trước`;
+  return new Date(timestamp).toLocaleDateString('vi-VN');
+}
+
 export async function requestEmailOtp(
   email: string,
   client?: SupabaseClient
