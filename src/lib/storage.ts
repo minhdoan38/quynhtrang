@@ -18,6 +18,9 @@ export interface RecentProject {
   productOptions: Record<string, unknown>;
   elements?: CanvasElement[];
   updatedAt: number;
+  syncedCloudProjectId?: string;
+  syncedRevision?: number;
+  migratedAt?: number;
 }
 
 export function sanitizeElementsForStorage(elements?: CanvasElement[]): CanvasElement[] | undefined {
@@ -125,7 +128,7 @@ export function loadOrder(): DemoOrder | null {
 }
 
 export function getRecentProjects(now: number = Date.now()): RecentProject[] {
-  if (typeof window === 'undefined') return [];
+  if (typeof window === 'undefined' && typeof localStorage === 'undefined') return [];
   try {
     const raw = localStorage.getItem(RECENT_PROJECTS_KEY);
     if (!raw) return [];
@@ -149,12 +152,14 @@ export function getRecentProjects(now: number = Date.now()): RecentProject[] {
   }
 }
 
-export function saveRecentProject(state: DesignState): boolean {
-  if (typeof window === 'undefined') return true;
+export function saveRecentProject(state: DesignState, explicitId?: string): boolean {
+  if (typeof window === 'undefined' && typeof localStorage === 'undefined') return true;
   try {
     const existing = getRecentProjects();
+    const existingMatch = existing.find((p) => (explicitId ? p.id === explicitId : p.productId === state.productId));
+    const projectId = explicitId ?? existingMatch?.id ?? `${state.productId}-${Date.now()}`;
     const project: RecentProject = {
-      id: `${state.productId}-${Date.now()}`,
+      id: projectId,
       productId: state.productId,
       variantId: state.variantId,
       templateId: state.templateId,
@@ -165,16 +170,44 @@ export function saveRecentProject(state: DesignState): boolean {
       productOptions: sanitizeProductOptionsForStorage(state.productOptions),
       elements: sanitizeElementsForStorage(state.elements),
       updatedAt: Date.now(),
+      syncedCloudProjectId: existingMatch?.syncedCloudProjectId,
+      syncedRevision: existingMatch?.syncedRevision,
+      migratedAt: existingMatch?.migratedAt,
     };
 
-    // Deduplicate same productId so we don't have multiple duplicates of the exact same product type
-    const filtered = existing.filter((p) => p.productId !== state.productId);
+    // Deduplicate same ID or same productId
+    const filtered = existing.filter((p) => p.id !== projectId && (explicitId ? true : p.productId !== state.productId));
     const updated = [project, ...filtered].slice(0, 3);
     localStorage.setItem(RECENT_PROJECTS_KEY, JSON.stringify(updated));
     return true;
   } catch (err) {
     console.error('Failed to save recent project to localStorage:', err);
     return false;
+  }
+}
+
+export function pruneExpiredRecentProjects(now: number = Date.now()): RecentProject[] {
+  return getRecentProjects(now);
+}
+
+export function markProjectMigrated(localId: string, cloudProjectId: string, revision: number): void {
+  if (typeof window === 'undefined' && typeof localStorage === 'undefined') return;
+  try {
+    const existing = getRecentProjects();
+    const updated = existing.map((p) => {
+      if (p.id === localId) {
+        return {
+          ...p,
+          syncedCloudProjectId: cloudProjectId,
+          syncedRevision: revision,
+          migratedAt: Date.now(),
+        };
+      }
+      return p;
+    });
+    localStorage.setItem(RECENT_PROJECTS_KEY, JSON.stringify(updated));
+  } catch (err) {
+    console.error('Failed to mark project migrated in localStorage:', err);
   }
 }
 
@@ -185,7 +218,7 @@ export function flushAutosave(state: DesignState): boolean {
 }
 
 export function removeRecentProject(id: string): void {
-  if (typeof window === 'undefined') return;
+  if (typeof window === 'undefined' && typeof localStorage === 'undefined') return;
   try {
     const existing = getRecentProjects();
     const updated = existing.filter((p) => p.id !== id);
