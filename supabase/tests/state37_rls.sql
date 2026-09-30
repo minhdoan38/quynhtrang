@@ -137,7 +137,7 @@ begin
     raise exception 'Assertion failed: staff editor should be able to read orders';
   end if;
 
-  -- 7. Test: Staff (admin) can read and update orders
+  -- 7. Test: Staff (admin) can read orders, but direct write is revoked in favor of atomic RPCs
   set local role authenticated;
   set local "request.jwt.claim.sub" = 'a0000000-0000-0000-0000-000000000003';
   set local "request.jwt.claims" = '{"role": "authenticated", "sub": "a0000000-0000-0000-0000-000000000003"}';
@@ -147,10 +147,18 @@ begin
     raise exception 'Assertion failed: staff admin should be able to read orders';
   end if;
 
-  update public.orders
-  set fulfillment_status = 'ready_for_production'
-  where id = v_order_id;
-
+  v_denied := false;
+  begin
+    update public.orders
+    set fulfillment_status = 'ready_for_production'
+    where id = v_order_id;
+  exception
+    when insufficient_privilege then
+      v_denied := true;
+  end;
+  if not v_denied then
+    raise exception 'Assertion failed: direct update on public.orders should be denied by revoked grant';
+  end if;
   -- 8. Test: Storage policy assertions
   -- Anon cannot read private buckets ('customer-assets', 'approved-renders')
   set local role anon;
