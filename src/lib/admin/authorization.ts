@@ -54,7 +54,7 @@ export async function getOptionalStaff(
 }
 
 export async function requireStaff(
-  _request?: Request,
+  request?: Request,
   requiredRole?: StaffRole,
   options?: StaffAuthOptions
 ): Promise<StaffIdentity & { email?: string }> {
@@ -65,35 +65,16 @@ export async function requireStaff(
     throw new AuthorizationError('Chưa đăng nhập', 401);
   }
 
-  const userId = authData.user.id;
-  const { data: staffData, error: staffError } = await supabase
-    .from('staff_roles')
-    .select('role')
-    .eq('user_id', userId)
-    .maybeSingle();
-
-  if (staffError || !staffData) {
+  const staff = await getOptionalStaff(request, { supabaseClient: supabase });
+  if (!staff) {
     throw new AuthorizationError('Bạn không có quyền truy cập', 403);
   }
 
-  const role = staffData.role as string;
-  if (role !== 'admin' && role !== 'editor') {
-    throw new AuthorizationError('Bạn không có quyền truy cập', 403);
-  }
-
-  if (requiredRole === 'admin' && role !== 'admin') {
+  if (requiredRole === 'admin' && staff.role !== 'admin') {
     throw new AuthorizationError('Yêu cầu quyền quản trị viên', 403);
   }
 
-  if (requiredRole === 'editor' && role !== 'admin' && role !== 'editor') {
-    throw new AuthorizationError('Yêu cầu quyền biên tập viên', 403);
-  }
-
-  return {
-    userId,
-    role: role as StaffRole,
-    email: authData.user.email,
-  };
+  return staff;
 }
 
 export async function requireCurrentStaff(requiredRole?: StaffRole): Promise<StaffIdentity> {
