@@ -1,0 +1,422 @@
+-- Seed: seed.sql
+-- State 37: Catalog, Fonts, Templates & Deterministic Example Orders
+
+-- 1. Products
+insert into public.products (id, slug, name, product_type, active, metadata)
+values
+  (
+    'card',
+    'card',
+    'Thiệp chúc mừng',
+    'card',
+    true,
+    jsonb_build_object(
+      'englishName', 'Greeting Card',
+      'cardTitle', 'Thiệp',
+      'tagline', 'Lời nhắn gửi chân thành lưu giữ trọn vẹn',
+      'description', 'Thiệp gập đôi cứng cáp, bề mặt giấy mỹ thuật gân nhẹ bắt mực, tặng kèm phong bì kraft xinh xắn.',
+      'startingPrice', 29000,
+      'paperSpecs', jsonb_build_object(
+        'paperType', 'Giấy mỹ thuật gân kem 250gsm cứng cáp',
+        'printSurfaces', 'Tùy biến 3 mặt: Mặt trước, mặt trong, mặt sau',
+        'packaging', 'Kèm 1 phong bì giấy kraft thủ công'
+      ),
+      'capabilities', jsonb_build_array(
+        'Thiết kế cả 3 mặt (trước, trong, sau)',
+        'Tặng kèm phong bì kraft vintage',
+        'Giấy mỹ thuật gân kem chống lem mực'
+      )
+    )
+  ),
+  (
+    'wrapping',
+    'wrapping-paper',
+    'Giấy gói quà',
+    'wrapping',
+    true,
+    jsonb_build_object(
+      'englishName', 'Wrapping Paper',
+      'cardTitle', 'Giấy gói quà',
+      'tagline', 'Gói ghém yêu thương trong từng nếp gấp',
+      'description', 'Giấy mỹ thuật chất lượng cao in sắc nét, hoàn hảo cho hộp quà sinh nhật, ngày lễ và kỷ niệm.',
+      'startingPrice', 49000,
+      'paperSpecs', jsonb_build_object(
+        'paperType', 'Giấy ford mịn 100gsm & kraft mộc mạc',
+        'printSurfaces', 'In tràn viền 1 mặt sắc nét',
+        'packaging', 'Đóng gói cuộn chống gãy nếp'
+      ),
+      'capabilities', jsonb_build_array(
+        'In họa tiết lặp (Repeat Pattern)',
+        'In toàn khổ ảnh đơn (Full-Sheet)',
+        'Chất giấy dai, bắt mực mịn màng'
+      )
+    )
+  ),
+  (
+    'sticker',
+    'sticker',
+    'Sticker dán theo yêu cầu',
+    'sticker',
+    true,
+    jsonb_build_object(
+      'englishName', 'Custom Sticker',
+      'cardTitle', 'Sticker',
+      'tagline', 'Nhãn dán sắc nét, bền bỉ chống thấm nước',
+      'description', 'In decal vinyl cao cấp phủ màng chống trầy xước, dán chắc chắn trên ốp lưng, laptop, bình nước.',
+      'startingPrice', 19000,
+      'paperSpecs', jsonb_build_object(
+        'paperType', 'Decal Vinyl phủ màng laminate chống nước',
+        'printSurfaces', 'Hệ màu in CMYK chuẩn xác',
+        'packaging', 'Cắt bế viền chuẩn xác từng chiếc'
+      ),
+      'capabilities', jsonb_build_array(
+        'Chống nước, chống tia UV không bay màu',
+        'Tùy chỉnh độ dày viền trắng bảo vệ',
+        'Bóc dán dễ dàng, không để lại keo dính'
+      )
+    )
+  ),
+  (
+    'notebook',
+    'notebook-cover',
+    'Bìa sổ tay cá nhân hóa',
+    'notebook',
+    true,
+    jsonb_build_object(
+      'englishName', 'Notebook Cover',
+      'cardTitle', 'Bìa vở',
+      'tagline', 'Ghi chép hành trình mang đậm dấu ấn riêng',
+      'description', 'Bìa cứng ivory 350gsm bồi chắc chắn, bo góc chuẩn mực, cán màng bảo vệ giúp sổ luôn bền đẹp.',
+      'startingPrice', 49000,
+      'paperSpecs', jsonb_build_object(
+        'paperType', 'Giấy Ivory 350gsm bồi cứng, bo tròn 4 góc',
+        'printSurfaces', 'In tràn bìa trước và gáy sổ',
+        'packaging', 'Bọc màng co bảo vệ chống trầy'
+      ),
+      'capabilities', jsonb_build_array(
+        'Cán màng mờ (Matte) hoặc bóng (Glossy)',
+        'Bìa cứng cáp chống quăn mép',
+        'Chuẩn kích thước sổ còng & sổ chỉ A5'
+      )
+    )
+  )
+on conflict (id) do update set
+  slug = excluded.slug,
+  name = excluded.name,
+  product_type = excluded.product_type,
+  active = excluded.active,
+  metadata = excluded.metadata,
+  updated_at = now();
+
+-- 2. Product Variants
+insert into public.product_variants (id, product_id, name, price, metadata, active)
+values
+  -- Wrapping variants
+  ('a1', 'wrapping', 'Khổ A1', 69000, jsonb_build_object('dimensions', '90 × 60 cm', 'bestFor', 'Hộp quà vừa & lớn'), true),
+  ('a2', 'wrapping', 'Khổ A2', 49000, jsonb_build_object('dimensions', '60 × 45 cm', 'bestFor', 'Hộp quà nhỏ & tập sách'), true),
+  -- Card variants
+  ('horizontal', 'card', 'Thiệp ngang', 29000, jsonb_build_object('dimensions', '15 × 10 cm (gập)', 'bestFor', 'Ảnh phong cảnh & lời chúc dài'), true),
+  ('vertical', 'card', 'Thiệp đứng', 29000, jsonb_build_object('dimensions', '10 × 15 cm (gập)', 'bestFor', 'Ảnh chân dung & hoa văn trang nhã'), true),
+  -- Sticker variants
+  ('die-cut', 'sticker', 'Cắt theo hình (Die-cut)', 19000, jsonb_build_object('dimensions', '5 - 7 cm theo đường nét', 'bestFor', 'Logo, linh vật & doodle'), true),
+  ('fixed-shape', 'sticker', 'Hình cố định (Tròn/Vuông)', 19000, jsonb_build_object('dimensions', '5 × 5 cm chuẩn form', 'bestFor', 'Nhãn hộp quà, tem niêm phong'), true),
+  ('phone', 'sticker', 'Sticker dán ốp điện thoại', 25000, jsonb_build_object('dimensions', 'Vừa mặt lưng điện thoại', 'bestFor', 'Trang trí ốp lưng smartphone'), true),
+  -- Notebook variants
+  ('standard', 'notebook', 'Khổ A5 tiêu chuẩn', 49000, jsonb_build_object('dimensions', '14.8 × 21 cm', 'bestFor', 'Sổ tay, bullet journal & sketch'), true)
+on conflict (id) do update set
+  product_id = excluded.product_id,
+  name = excluded.name,
+  price = excluded.price,
+  metadata = excluded.metadata,
+  active = excluded.active,
+  updated_at = now();
+
+-- 3. Templates & Template Versions
+insert into public.templates (id, product_id, slug, name, published, thumbnail_path, metadata)
+values
+  ('blank', null, 'blank', 'Trống', true, null, jsonb_build_object('category', 'minimal', 'previewHint', 'Bắt đầu từ trang trắng')),
+  ('minimal', null, 'minimal', 'Tối giản', true, null, jsonb_build_object('category', 'minimal', 'previewHint', 'Đường nét thanh lịch, gam màu trung tính')),
+  ('celebrate', null, 'celebrate', 'Tiệc tùng', true, null, jsonb_build_object('category', 'birthday', 'previewHint', 'Rực rỡ cho các dịp sinh nhật và kỷ niệm')),
+  ('card-h-birthday', 'card', 'card-h-birthday', 'Sinh nhật ấm áp', true, null, jsonb_build_object('category', 'birthday', 'variantIds', jsonb_build_array('horizontal'))),
+  ('card-h-cute', 'card', 'card-h-cute', 'Gấu con đáng yêu', true, null, jsonb_build_object('category', 'cute', 'variantIds', jsonb_build_array('horizontal'))),
+  ('card-h-love', 'card', 'card-h-love', 'Tình yêu dịu êm', true, null, jsonb_build_object('category', 'love', 'variantIds', jsonb_build_array('horizontal'))),
+  ('card-v-floral', 'card', 'card-v-floral', 'Nhành hoa nhỏ', true, null, jsonb_build_object('category', 'floral', 'variantIds', jsonb_build_array('vertical'))),
+  ('card-thanks', 'card', 'card-thanks', 'Lời cảm ơn', true, null, jsonb_build_object('category', 'thanks')),
+  ('wrapping-a1-cute', 'wrapping', 'wrapping-a1-cute', 'Họa tiết Cute A1', true, null, jsonb_build_object('category', 'cute', 'variantIds', jsonb_build_array('a1'))),
+  ('wrapping-a1-floral', 'wrapping', 'wrapping-a1-floral', 'Vườn hoa Pastel A1', true, null, jsonb_build_object('category', 'floral', 'variantIds', jsonb_build_array('a1'))),
+  ('wrapping-a2-minimal', 'wrapping', 'wrapping-a2-minimal', 'Kẻ sọc Minimal A2', true, null, jsonb_build_object('category', 'minimal', 'variantIds', jsonb_build_array('a2'))),
+  ('wrapping-birthday-balloons', 'wrapping', 'wrapping-birthday-balloons', 'Bóng bay Sinh nhật', true, null, jsonb_build_object('category', 'birthday')),
+  ('sticker-diecut-love', 'sticker', 'sticker-diecut-love', 'Trái tim viền trắng', true, null, jsonb_build_object('category', 'love', 'variantIds', jsonb_build_array('die-cut'))),
+  ('sticker-cute-pack', 'sticker', 'sticker-cute-pack', 'Sticker Mèo con', true, null, jsonb_build_object('category', 'cute')),
+  ('sticker-cozy-coffee', 'sticker', 'sticker-cozy-coffee', 'Tách cà phê Ấm', true, null, jsonb_build_object('category', 'minimal', 'variantIds', jsonb_build_array('fixed-shape', 'die-cut'))),
+  ('notebook-floral', 'notebook', 'notebook-floral', 'Khu vườn bí mật', true, null, jsonb_build_object('category', 'floral')),
+  ('notebook-minimal', 'notebook', 'notebook-minimal', 'Ghi chú Tối giản', true, null, jsonb_build_object('category', 'minimal'))
+on conflict (id) do update set
+  product_id = excluded.product_id,
+  slug = excluded.slug,
+  name = excluded.name,
+  published = excluded.published,
+  thumbnail_path = excluded.thumbnail_path,
+  metadata = excluded.metadata,
+  updated_at = now();
+
+insert into public.template_versions (template_id, version, design_document)
+values
+  ('blank', 1, jsonb_build_object('text', '', 'color', '#111827', 'backgroundColor', '#ffffff')),
+  ('minimal', 1, jsonb_build_object('text', 'Dành riêng cho bạn', 'color', '#243447', 'backgroundColor', '#f5f1e8')),
+  ('celebrate', 1, jsonb_build_object('text', 'Chúc mừng!', 'color', '#7c2d12', 'backgroundColor', '#fef3c7')),
+  ('card-h-birthday', 1, jsonb_build_object('text', 'Happy Birthday to You', 'color', '#B86C84', 'backgroundColor', '#FFFDF8')),
+  ('card-h-cute', 1, jsonb_build_object('text', 'You are so special!', 'color', '#315F86', 'backgroundColor', '#F8F3E8')),
+  ('card-h-love', 1, jsonb_build_object('text', 'Forever & Always', 'color', '#B3535D', 'backgroundColor', '#FFF8F8')),
+  ('card-v-floral', 1, jsonb_build_object('text', 'Lời chúc yêu thương', 'color', '#2E3338', 'backgroundColor', '#FAF7F0')),
+  ('card-thanks', 1, jsonb_build_object('text', 'Thank you so much', 'color', '#5F7E67', 'backgroundColor', '#F3F6F3')),
+  ('wrapping-a1-cute', 1, jsonb_build_object('text', 'Sweet Gift', 'color', '#315F86', 'backgroundColor', '#F4EAE1')),
+  ('wrapping-a1-floral', 1, jsonb_build_object('text', 'For You', 'color', '#7c2d12', 'backgroundColor', '#F9F4EE')),
+  ('wrapping-a2-minimal', 1, jsonb_build_object('text', 'Simple Joy', 'color', '#2E3338', 'backgroundColor', '#EFECE6')),
+  ('wrapping-birthday-balloons', 1, jsonb_build_object('text', 'Happy Birthday', 'color', '#8C3B2F', 'backgroundColor', '#FFF2EB')),
+  ('sticker-diecut-love', 1, jsonb_build_object('text', 'Love', 'color', '#B3535D', 'backgroundColor', '#FFFFFF')),
+  ('sticker-cute-pack', 1, jsonb_build_object('text', 'Meow', 'color', '#2E3338', 'backgroundColor', '#FFFFFF')),
+  ('sticker-cozy-coffee', 1, jsonb_build_object('text', 'Warm Coffee & Book', 'color', '#5C381E', 'backgroundColor', '#FDF7EE')),
+  ('notebook-floral', 1, jsonb_build_object('text', 'My Daily Journal', 'color', '#2E3338', 'backgroundColor', '#EDE8DF')),
+  ('notebook-minimal', 1, jsonb_build_object('text', 'Thoughts & Ideas', 'color', '#344E66', 'backgroundColor', '#F3F5F7'))
+on conflict (template_id, version) do update set
+  design_document = excluded.design_document;
+
+-- 4. Fonts (authoritative matching src/lib/fonts.ts)
+insert into public.fonts (id, family_name, google_font, storage_path, published, metadata)
+values
+  ('be-vietnam-pro', 'Be Vietnam Pro', 'Be+Vietnam+Pro:wght@400;600;700', null, true, jsonb_build_object('category', 'sans', 'family', '"Be Vietnam Pro", system-ui, sans-serif', 'sampleText', 'Cảm ơn Việt Nam')),
+  ('lora', 'Lora', 'Lora:wght@500;600;700', null, true, jsonb_build_object('category', 'serif', 'family', 'Lora, Georgia, serif', 'sampleText', 'Cảm ơn Việt Nam')),
+  ('playfair-display', 'Playfair Display', 'Playfair+Display:wght@600;700', null, true, jsonb_build_object('category', 'display', 'family', '"Playfair Display", serif', 'sampleText', 'Cảm ơn Việt Nam')),
+  ('montserrat', 'Montserrat', 'Montserrat:wght@500;700', null, true, jsonb_build_object('category', 'sans', 'family', 'Montserrat, sans-serif', 'sampleText', 'Cảm ơn Việt Nam')),
+  ('merriweather', 'Merriweather', 'Merriweather:wght@400;700', null, true, jsonb_build_object('category', 'serif', 'family', 'Merriweather, serif', 'sampleText', 'Cảm ơn Việt Nam')),
+  ('comfortaa', 'Comfortaa', 'Comfortaa:wght@600;700', null, true, jsonb_build_object('category', 'display', 'family', 'Comfortaa, cursive', 'sampleText', 'Cảm ơn Việt Nam')),
+  ('dancing-script', 'Dancing Script', 'Dancing+Script:wght@600;700', null, true, jsonb_build_object('category', 'handwriting', 'family', '"Dancing Script", cursive', 'sampleText', 'Cảm ơn Việt Nam')),
+  ('quicksand', 'Quicksand', 'Quicksand:wght@500;700', null, true, jsonb_build_object('category', 'sans', 'family', 'Quicksand, sans-serif', 'sampleText', 'Cảm ơn Việt Nam')),
+  ('pacifico', 'Pacifico', 'Pacifico', null, true, jsonb_build_object('category', 'handwriting', 'family', 'Pacifico, cursive', 'sampleText', 'Cảm ơn Việt Nam')),
+  ('caveat', 'Caveat', 'Caveat:wght@600;700', null, true, jsonb_build_object('category', 'handwriting', 'family', 'Caveat, cursive', 'sampleText', 'Cảm ơn Việt Nam')),
+  ('roboto', 'Roboto', 'Roboto:wght@400;700', null, true, jsonb_build_object('category', 'sans', 'family', 'Roboto, sans-serif', 'sampleText', 'Cảm ơn Việt Nam')),
+  ('old-typewriter', 'Old Typewriter', null, null, false, jsonb_build_object('category', 'display', 'family', '"Courier New", monospace', 'status', 'archived', 'sampleText', 'Cảm ơn Việt Nam')),
+  ('future-display', 'Future Display Draft', null, null, false, jsonb_build_object('category', 'display', 'family', 'sans-serif', 'status', 'draft', 'sampleText', 'Cảm ơn Việt Nam'))
+on conflict (id) do update set
+  family_name = excluded.family_name,
+  google_font = excluded.google_font,
+  storage_path = excluded.storage_path,
+  published = excluded.published,
+  metadata = excluded.metadata,
+  updated_at = now();
+
+-- 5. Deterministic Projects & Design Versions for Inbox Testing
+insert into public.projects (id, owner_user_id, guest_key_hash, product_id, variant_id, status, current_working_revision)
+values
+  ('00000000-0000-4000-8000-000000000001', null, null, 'card', 'horizontal', 'approved', 1),
+  ('00000000-0000-4000-8000-000000000002', null, null, 'wrapping', 'a2', 'editing', 1),
+  ('00000000-0000-4000-8000-000000000003', null, null, 'sticker', 'die-cut', 'ready', 1),
+  ('00000000-0000-4000-8000-000000000004', null, null, 'notebook', 'standard', 'ready', 1)
+on conflict (id) do update set
+  product_id = excluded.product_id,
+  variant_id = excluded.variant_id,
+  status = excluded.status,
+  updated_at = now();
+
+insert into public.design_versions (id, project_id, version_number, source, design_document, product_snapshot, preflight_snapshot)
+values
+  (
+    '00000000-0000-4000-8000-000000000011',
+    '00000000-0000-4000-8000-000000000001',
+    1,
+    'template:card-h-birthday',
+    jsonb_build_object('text', 'Happy Birthday to You', 'color', '#B86C84', 'backgroundColor', '#FFFDF8'),
+    jsonb_build_object('productId', 'card', 'variantId', 'horizontal'),
+    jsonb_build_object('hasErrors', false, 'hasWarnings', false)
+  ),
+  (
+    '00000000-0000-4000-8000-000000000021',
+    '00000000-0000-4000-8000-000000000002',
+    1,
+    'customizer',
+    jsonb_build_object('text', 'Sweet Gift', 'color', '#315F86', 'backgroundColor', '#F4EAE1'),
+    jsonb_build_object('productId', 'wrapping', 'variantId', 'a2'),
+    jsonb_build_object('hasErrors', false, 'hasWarnings', false)
+  ),
+  (
+    '00000000-0000-4000-8000-000000000031',
+    '00000000-0000-4000-8000-000000000003',
+    1,
+    'customizer',
+    jsonb_build_object('text', 'Love', 'color', '#B3535D', 'backgroundColor', '#FFFFFF'),
+    jsonb_build_object('productId', 'sticker', 'variantId', 'die-cut'),
+    jsonb_build_object('hasErrors', false, 'hasWarnings', false)
+  ),
+  (
+    '00000000-0000-4000-8000-000000000041',
+    '00000000-0000-4000-8000-000000000004',
+    1,
+    'template:notebook-floral',
+    jsonb_build_object('text', 'My Daily Journal', 'color', '#2E3338', 'backgroundColor', '#EDE8DF'),
+    jsonb_build_object('productId', 'notebook', 'variantId', 'standard'),
+    jsonb_build_object('hasErrors', false, 'hasWarnings', false)
+  )
+on conflict (project_id, version_number) do update set
+  source = excluded.source,
+  design_document = excluded.design_document,
+  product_snapshot = excluded.product_snapshot,
+  preflight_snapshot = excluded.preflight_snapshot;
+
+-- 6. Deterministic Orders for Inbox Testing
+insert into public.orders (
+  id,
+  public_order_code,
+  project_id,
+  approved_design_version_id,
+  product_snapshot,
+  variant_snapshot,
+  quantity,
+  unit_price,
+  subtotal,
+  total,
+  currency,
+  customer_full_name,
+  customer_phone,
+  customer_phone_normalized,
+  shipping_address,
+  payment_status,
+  design_status,
+  fulfillment_status,
+  idempotency_key
+)
+values
+  (
+    'e0000000-0000-4000-8000-000000000001',
+    'QT2609300001',
+    '00000000-0000-4000-8000-000000000001',
+    '00000000-0000-4000-8000-000000000011',
+    jsonb_build_object('id', 'card', 'name', 'Thiệp chúc mừng'),
+    jsonb_build_object('id', 'horizontal', 'name', 'Thiệp ngang', 'price', 29000),
+    10,
+    29000,
+    290000,
+    290000,
+    'VND',
+    'Nguyễn Văn An',
+    '0901234567',
+    '+84901234567',
+    '123 Lê Lợi, Phường Bến Nghé, Quận 1, TP. Hồ Chí Minh',
+    'paid',
+    'approved',
+    'ready_for_production',
+    'seed-order-1'
+  ),
+  (
+    'e0000000-0000-4000-8000-000000000002',
+    'QT2609300002',
+    '00000000-0000-4000-8000-000000000002',
+    '00000000-0000-4000-8000-000000000021',
+    jsonb_build_object('id', 'wrapping', 'name', 'Giấy gói quà'),
+    jsonb_build_object('id', 'a2', 'name', 'Khổ A2', 'price', 49000),
+    5,
+    49000,
+    245000,
+    245000,
+    'VND',
+    'Trần Thị Bình',
+    '0912345678',
+    '+84912345678',
+    '456 Nguyễn Huệ, Quận 1, TP. Hồ Chí Minh',
+    'pending_payment',
+    'awaiting_review',
+    'unprocessed',
+    'seed-order-2'
+  ),
+  (
+    'e0000000-0000-4000-8000-000000000003',
+    'QT2609300003',
+    '00000000-0000-4000-8000-000000000003',
+    '00000000-0000-4000-8000-000000000031',
+    jsonb_build_object('id', 'sticker', 'name', 'Sticker dán theo yêu cầu'),
+    jsonb_build_object('id', 'die-cut', 'name', 'Cắt theo hình (Die-cut)', 'price', 19000),
+    20,
+    19000,
+    380000,
+    380000,
+    'VND',
+    'Lê Hoàng Cường',
+    '0987654321',
+    '+84987654321',
+    '789 Hoàng Hoa Thám, Ba Đình, Hà Nội',
+    'payment_reported',
+    'editing',
+    'unprocessed',
+    'seed-order-3'
+  ),
+  (
+    'e0000000-0000-4000-8000-000000000004',
+    'QT2609300004',
+    '00000000-0000-4000-8000-000000000004',
+    '00000000-0000-4000-8000-000000000041',
+    jsonb_build_object('id', 'notebook', 'name', 'Bìa sổ tay cá nhân hóa'),
+    jsonb_build_object('id', 'standard', 'name', 'Khổ A5 tiêu chuẩn', 'price', 49000),
+    2,
+    49000,
+    98000,
+    98000,
+    'VND',
+    'Phạm Mai Dung',
+    '0934567890',
+    '+84934567890',
+    '12 Trần Phú, Hải Châu, Đà Nẵng',
+    'paid',
+    'ready',
+    'in_production',
+    'seed-order-4'
+  )
+on conflict (id) do update set
+  public_order_code = excluded.public_order_code,
+  project_id = excluded.project_id,
+  approved_design_version_id = excluded.approved_design_version_id,
+  product_snapshot = excluded.product_snapshot,
+  variant_snapshot = excluded.variant_snapshot,
+  quantity = excluded.quantity,
+  unit_price = excluded.unit_price,
+  subtotal = excluded.subtotal,
+  total = excluded.total,
+  customer_full_name = excluded.customer_full_name,
+  customer_phone = excluded.customer_phone,
+  customer_phone_normalized = excluded.customer_phone_normalized,
+  shipping_address = excluded.shipping_address,
+  payment_status = excluded.payment_status,
+  design_status = excluded.design_status,
+  fulfillment_status = excluded.fulfillment_status,
+  updated_at = now();
+
+-- 7. Order Payments for Deterministic Orders
+insert into public.order_payments (order_id, provider, amount, currency, reference, status, confirmed_at, customer_reported_at)
+values
+  ('e0000000-0000-4000-8000-000000000001', 'vietqr', 290000, 'VND', 'VQR-QT0001', 'paid', now(), now()),
+  ('e0000000-0000-4000-8000-000000000002', 'vietqr', 245000, 'VND', 'VQR-QT0002', 'pending_payment', null, null),
+  ('e0000000-0000-4000-8000-000000000003', 'bank_transfer', 380000, 'VND', 'BT-QT0003', 'payment_reported', null, now()),
+  ('e0000000-0000-4000-8000-000000000004', 'vietqr', 98000, 'VND', 'VQR-QT0004', 'paid', now(), now())
+on conflict (order_id) do update set
+  provider = excluded.provider,
+  amount = excluded.amount,
+  reference = excluded.reference,
+  status = excluded.status,
+  confirmed_at = excluded.confirmed_at,
+  customer_reported_at = excluded.customer_reported_at,
+  updated_at = now();
+
+-- 8. Order Events
+insert into public.order_events (order_id, event_type, actor_role, payload)
+values
+  ('e0000000-0000-4000-8000-000000000001', 'order_created', 'customer', jsonb_build_object('source', 'web_checkout')),
+  ('e0000000-0000-4000-8000-000000000001', 'payment_confirmed', 'system', jsonb_build_object('provider', 'vietqr', 'amount', 290000)),
+  ('e0000000-0000-4000-8000-000000000001', 'design_approved', 'staff', jsonb_build_object('note', 'Design verified for print')),
+
+  ('e0000000-0000-4000-8000-000000000002', 'order_created', 'customer', jsonb_build_object('source', 'web_checkout')),
+
+  ('e0000000-0000-4000-8000-000000000003', 'order_created', 'customer', jsonb_build_object('source', 'web_checkout')),
+  ('e0000000-0000-4000-8000-000000000003', 'payment_reported', 'customer', jsonb_build_object('ref', 'BT-QT0003')),
+
+  ('e0000000-0000-4000-8000-000000000004', 'order_created', 'customer', jsonb_build_object('source', 'web_checkout')),
+  ('e0000000-0000-4000-8000-000000000004', 'payment_confirmed', 'system', jsonb_build_object('provider', 'vietqr', 'amount', 98000)),
+  ('e0000000-0000-4000-8000-000000000004', 'production_started', 'staff', jsonb_build_object('batch', 'batch-2026-09-30-01'));
