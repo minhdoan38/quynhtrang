@@ -171,6 +171,29 @@ test('createPrivilegedSupabaseClient throws if secret key is missing', () => {
     /secret/i,
   );
 });
+test('createPrivilegedSupabaseClient throws if url is blank or missing', () => {
+  resetEnv({
+    NEXT_PUBLIC_SUPABASE_URL: '   ',
+    SUPABASE_URL: '',
+    SUPABASE_SECRET_KEY: 'sb_secret_primary',
+  });
+
+  assert.throws(
+    () => createPrivilegedSupabaseClient(),
+    /url/i,
+  );
+});
+
+test('treats whitespace or blank variables as missing in getSupabaseConfig', () => {
+  resetEnv({
+    NEXT_PUBLIC_SUPABASE_URL: '   ',
+    NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: '\t  \n',
+  });
+
+  assert.equal(getSupabaseConfig(), null);
+  assert.equal(isSupabaseConfigured(), false);
+});
+
 
 test('createBrowserSupabaseClient throws if Supabase is not configured', () => {
   resetEnv();

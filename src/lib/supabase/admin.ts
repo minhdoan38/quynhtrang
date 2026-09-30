@@ -14,9 +14,10 @@ export function createPrivilegedSupabaseClient(): SupabaseClient {
 
   const config = getSupabaseConfig();
   const url =
-    config?.url ??
-    process.env.NEXT_PUBLIC_SUPABASE_URL?.trim() ??
-    process.env.SUPABASE_URL?.trim();
+    config?.url ||
+    process.env.SUPABASE_URL?.trim() ||
+    process.env.NEXT_PUBLIC_SUPABASE_URL?.trim() ||
+    '';
 
   if (!url) {
     throw new Error('Supabase URL is missing. Set NEXT_PUBLIC_SUPABASE_URL or SUPABASE_URL.');

@@ -4,9 +4,9 @@ export interface SupabaseConfig {
   secretKey?: string;
 }
 
-function readEnv(key: string): string | undefined {
-  const value = process.env[key]?.trim();
-  return value && value.length > 0 ? value : undefined;
+function cleanEnv(value: string | undefined): string | undefined {
+  const trimmed = value?.trim();
+  return trimmed && trimmed.length > 0 ? trimmed : undefined;
 }
 
 export function getSupabaseSecretKey(): string | undefined {
@@ -16,17 +16,19 @@ export function getSupabaseSecretKey(): string | undefined {
 
   // Never trust NEXT_PUBLIC-prefixed secrets
   return (
-    readEnv('SUPABASE_SECRET_KEY') ??
-    readEnv('SERVICE_SUPABASESERVICE_KEY') ??
-    readEnv('SUPABASE_SERVICE_ROLE_KEY')
+    cleanEnv(process.env.SUPABASE_SECRET_KEY) ??
+    cleanEnv(process.env.SERVICE_SUPABASESERVICE_KEY) ??
+    cleanEnv(process.env.SUPABASE_SERVICE_ROLE_KEY)
   );
 }
 
 export function getSupabaseConfig(): SupabaseConfig | null {
-  const url = readEnv('NEXT_PUBLIC_SUPABASE_URL') ?? readEnv('SUPABASE_URL');
+  const url =
+    cleanEnv(process.env.NEXT_PUBLIC_SUPABASE_URL) ??
+    cleanEnv(process.env.SUPABASE_URL);
   const publishableKey =
-    readEnv('NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY') ??
-    readEnv('NEXT_PUBLIC_SUPABASE_ANON_KEY');
+    cleanEnv(process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY) ??
+    cleanEnv(process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY);
 
   if (!url || !publishableKey) {
     return null;
@@ -50,11 +52,13 @@ export function getSupabaseConfig(): SupabaseConfig | null {
 }
 
 export function isSupabaseConfigured(): boolean {
-  const url = readEnv('NEXT_PUBLIC_SUPABASE_URL') ?? readEnv('SUPABASE_URL');
+  const url =
+    cleanEnv(process.env.NEXT_PUBLIC_SUPABASE_URL) ??
+    cleanEnv(process.env.SUPABASE_URL);
   const publishableKey =
-    readEnv('NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY') ??
-    readEnv('NEXT_PUBLIC_SUPABASE_ANON_KEY');
+    cleanEnv(process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY) ??
+    cleanEnv(process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY);
   return Boolean(url && publishableKey);
 }
 
-// ponytail: direct process.env reads → skipped: runtime schema parsing (Zod), add when external env validation is needed.
+// ponytail: literal process.env reads → skipped: runtime schema parsing (Zod), add when external env validation is needed.
