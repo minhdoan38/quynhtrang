@@ -4,6 +4,7 @@ import type { DemoOrder } from '@/components/customizer/confirmation-panel';
 const STATE_KEY = 'print-customizer-state-v1';
 const ORDER_KEY = 'print-customizer-order-v1';
 const RECENT_PROJECTS_KEY = 'quynhtrang-recent-projects-v1';
+export const RECENT_PROJECT_RETENTION_MS = 30 * 24 * 60 * 60 * 1000;
 
 export interface RecentProject {
   id: string;
@@ -123,14 +124,25 @@ export function loadOrder(): DemoOrder | null {
   }
 }
 
-export function getRecentProjects(): RecentProject[] {
+export function getRecentProjects(now: number = Date.now()): RecentProject[] {
   if (typeof window === 'undefined') return [];
   try {
     const raw = localStorage.getItem(RECENT_PROJECTS_KEY);
     if (!raw) return [];
     const parsed = JSON.parse(raw);
     if (!Array.isArray(parsed)) return [];
-    return parsed.slice(0, 3);
+    // ponytail: in-memory prune on read; skipped background worker/server sync, add if offline retention sync across devices is required.
+    const pruned = parsed.filter(
+      (p): p is RecentProject =>
+        typeof p === 'object' &&
+        p !== null &&
+        typeof p.updatedAt === 'number' &&
+        now - p.updatedAt <= RECENT_PROJECT_RETENTION_MS
+    );
+    if (pruned.length !== parsed.length) {
+      localStorage.setItem(RECENT_PROJECTS_KEY, JSON.stringify(pruned));
+    }
+    return pruned.slice(0, 3);
   } catch (err) {
     console.error('Failed to load recent projects from localStorage:', err);
     return [];
