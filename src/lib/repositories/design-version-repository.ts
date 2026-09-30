@@ -1,5 +1,10 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 
+import {
+  normalizePreflightSummary,
+  type PreflightSummary,
+  type StaffIdentity,
+} from '../domain/order.ts';
 import type { DesignState } from '../product-state.ts';
 
 export interface DesignVersionRecord {
@@ -95,6 +100,57 @@ export class DesignVersionRepository {
       preflightRevision: (r.preflight_revision as string | null) ?? null,
       createdBy: (r.created_by as string | null) ?? null,
       createdAt: String(r.created_at),
+    };
+  }
+
+  async getApprovedDesignForStaff(
+    orderId: string,
+    staff: StaffIdentity
+  ): Promise<{
+    orderId: string;
+    publicOrderCode: string;
+    versionId: string;
+    versionNumber: number;
+    source: string;
+    designDocument: DesignState;
+    preflight: PreflightSummary;
+  } | null> {
+    if (!staff || !staff.userId || (staff.role !== 'admin' && staff.role !== 'editor')) {
+      return null;
+    }
+
+    const { data: orderData, error: orderError } = await this.client
+      .from('orders')
+      .select('id, public_order_code, approved_design_version_id')
+      .eq('id', orderId)
+      .maybeSingle();
+
+    if (orderError || !orderData || !orderData.approved_design_version_id) {
+      return null;
+    }
+
+    const { data: versionData, error: versionError } = await this.client
+      .from('design_versions')
+      .select('*')
+      .eq('id', orderData.approved_design_version_id)
+      .maybeSingle();
+
+    if (versionError || !versionData) {
+      return null;
+    }
+
+    if (versionData.id !== orderData.approved_design_version_id) {
+      return null;
+    }
+
+    return {
+      orderId: orderData.id,
+      publicOrderCode: orderData.public_order_code,
+      versionId: versionData.id,
+      versionNumber: Number(versionData.version_number ?? 1),
+      source: String(versionData.source ?? 'customizer'),
+      designDocument: (versionData.design_document as DesignState) ?? {},
+      preflight: normalizePreflightSummary(versionData.preflight_snapshot),
     };
   }
 }

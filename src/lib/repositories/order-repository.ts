@@ -1,15 +1,26 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 
 import {
+  type ActiveOrderHold,
+  type AdminOrderDetail,
   type AttentionReason,
   type CreatePendingOrderInput,
+  normalizeDesignStatus,
+  normalizeFulfillmentStatus,
   type InboxCounts,
+  mapOrderActivityItem,
   mapOrderInboxRow,
+  normalizePreflightSummary,
   type OrderAccess,
   type OrderInboxRow,
   type OrderListQuery,
+  type OrderOperationalState,
+  type PaymentStatus,
   type StaffIdentity,
+  type StaffRole,
 } from '../domain/order.ts';
+import { resolveOrderNextAction } from '../admin/order-next-action.ts';
+import { resolveApprovedThumbnailUrl } from '../admin/thumbnail-delivery.ts';
 import type { ApprovedDesignSnapshot, CustomerInfo, OrderPayment, PendingOrder } from '../order-types.ts';
 import type { DesignState, DesignSummary, ProductId } from '../product-state.ts';
 
@@ -268,6 +279,200 @@ export class OrderRepository {
       paymentReported: paymentRes.count ?? 0,
       designReview: designReviewRes.count ?? 0,
       readyForProduction: readyRes.count ?? 0,
+    };
+  }
+
+  async getOrderDetail(
+    orderId: string,
+    staff: StaffIdentity,
+    options?: { eventLimit?: number }
+  ): Promise<AdminOrderDetail | null> {
+    this.assertStaffIdentity(staff);
+
+    const { data, error } = await this.client
+      .from('orders')
+      .select('*, order_payments(*), design_versions(*), order_holds(*)')
+      .eq('id', orderId)
+      .maybeSingle();
+
+    if (error || !data) {
+      return null;
+    }
+
+    const eventLimit = Math.min(50, Math.max(1, options?.eventLimit ?? 20));
+    const { data: eventsData } = await this.client
+      .from('order_events')
+      .select('*')
+      .eq('order_id', orderId)
+      .order('created_at', { ascending: false })
+      .order('id', { ascending: false })
+      .limit(eventLimit + 1);
+
+    const rawEvents = Array.isArray(eventsData) ? eventsData : [];
+    const hasMoreEvents = rawEvents.length > eventLimit;
+    const pageEvents = hasMoreEvents ? rawEvents.slice(0, eventLimit) : rawEvents;
+
+    const paymentRow = Array.isArray(data.order_payments) ? data.order_payments[0] : data.order_payments;
+    const designVersionRow = Array.isArray(data.design_versions) ? data.design_versions[0] : data.design_versions;
+
+    const holds = Array.isArray(data.order_holds) ? data.order_holds : [];
+    const activeHoldRow = holds.find((h: Record<string, unknown>) => h && h.released_at === null) ?? null;
+
+    const staffIdsToLookup = [
+      activeHoldRow?.held_by,
+      paymentRow?.confirmed_by,
+      ...pageEvents.map((e: Record<string, unknown>) => e.actor_user_id),
+    ].filter(Boolean) as string[];
+
+    const staffMap = new Map<string, { displayName: string; role: StaffRole }>();
+    if (staffIdsToLookup.length > 0) {
+      try {
+        const { data: staffData } = await this.client
+          .from('staff_roles')
+          .select('user_id, display_name, role')
+          .in('user_id', staffIdsToLookup);
+        if (staffData && Array.isArray(staffData)) {
+          for (const s of staffData) {
+            staffMap.set(s.user_id, {
+              displayName: s.display_name || 'Nhân viên',
+              role: s.role === 'admin' ? 'admin' : 'editor',
+            });
+          }
+        }
+      } catch {
+        // Fallback gracefully
+      }
+    }
+
+    let activeHold: ActiveOrderHold | null = null;
+    if (activeHoldRow) {
+      const holder = staffMap.get(activeHoldRow.held_by);
+      activeHold = {
+        id: String(activeHoldRow.id),
+        reason: String(activeHoldRow.reason ?? ''),
+        heldAt: String(activeHoldRow.held_at),
+        heldBy: {
+          userId: String(activeHoldRow.held_by),
+          displayName: holder?.displayName || 'Nhân viên',
+          role: holder?.role || 'admin',
+        },
+      };
+    }
+
+    const paymentStatus = ((paymentRow?.status ?? data.payment_status) as PaymentStatus) || 'pending_payment';
+    const confirmer = paymentRow?.confirmed_by ? staffMap.get(paymentRow.confirmed_by) : null;
+
+    const payment = {
+      id: paymentRow ? String(paymentRow.id) : '',
+      status: paymentStatus,
+      amount: Number(paymentRow?.amount ?? data.total ?? 0),
+      currency: String(paymentRow?.currency ?? data.currency ?? 'VND'),
+      reference: String(paymentRow?.reference ?? data.public_order_code ?? ''),
+      customerReportedAt: (paymentRow?.customer_reported_at as string | null) ?? null,
+      confirmedAt: (paymentRow?.confirmed_at as string | null) ?? null,
+      confirmedBy: paymentRow?.confirmed_by
+        ? {
+          userId: String(paymentRow.confirmed_by),
+          displayName: confirmer?.displayName || 'Nhân viên',
+        }
+        : null,
+    };
+
+    const preflight = normalizePreflightSummary(designVersionRow?.preflight_snapshot);
+    const thumbnailUrl = await resolveApprovedThumbnailUrl(
+      this.client,
+      (designVersionRow?.approved_thumbnail_path as string | null) ?? null
+    );
+
+    const versionNum = Number(designVersionRow?.version_number ?? 1);
+    const versionSource = (designVersionRow?.source === 'admin_revision' ? 'admin_revision' : 'customer_approved') as 'customer_approved' | 'admin_revision';
+    const versionLabel = versionSource === 'admin_revision'
+      ? `Bản chỉnh sửa v${versionNum}`
+      : `Phiên bản khách duyệt v${versionNum}`;
+
+    const approvedDesign = {
+      id: designVersionRow ? String(designVersionRow.id) : '',
+      versionNumber: versionNum,
+      source: versionSource,
+      label: versionLabel,
+      thumbnailUrl,
+      preflight,
+      createdAt: designVersionRow ? String(designVersionRow.created_at) : String(data.created_at),
+    };
+
+    const prodSnap = (data.product_snapshot ?? {}) as Record<string, unknown>;
+    const varSnap = (data.variant_snapshot ?? {}) as Record<string, unknown>;
+    const product = {
+      name: String(prodSnap.name ?? data.public_order_code),
+      variant: String(varSnap.name ?? ''),
+      configuration: Array.isArray(prodSnap.configuration) ? (prodSnap.configuration as Array<{ label: string; value: string }>) : [],
+      quantity: Number(data.quantity ?? 1),
+      unitPrice: Number(data.unit_price ?? 0),
+      subtotal: Number(data.subtotal ?? 0),
+      total: Number(data.total ?? 0),
+      currency: String(data.currency ?? 'VND'),
+    };
+
+    const customer = {
+      fullName: String(data.customer_full_name ?? ''),
+      phone: String(data.customer_phone ?? ''),
+    };
+
+    const delivery = {
+      shippingAddress: String(data.shipping_address ?? ''),
+    };
+
+    const operationalState: OrderOperationalState = {
+      paymentStatus: payment.status,
+      designStatus: normalizeDesignStatus(data.design_status),
+      fulfillmentStatus: normalizeFulfillmentStatus(data.fulfillment_status),
+      activeHold,
+    };
+
+    const nextAction = resolveOrderNextAction(operationalState);
+
+    const staffNameMap = new Map<string, string>();
+    for (const [uid, info] of staffMap.entries()) {
+      staffNameMap.set(uid, info.displayName);
+    }
+
+    const recentEvents = pageEvents.map((e: Record<string, unknown>) =>
+      mapOrderActivityItem(
+        {
+          id: String(e.id),
+          event_type: String(e.event_type),
+          actor_user_id: (e.actor_user_id as string | null) ?? null,
+          actor_role: (e.actor_role as string | null) ?? null,
+          payload: (e.payload as Record<string, unknown>) ?? {},
+          created_at: String(e.created_at),
+        },
+        staffNameMap
+      )
+    );
+
+    let nextEventCursor: string | null = null;
+    if (hasMoreEvents && pageEvents.length > 0) {
+      const lastEvent = pageEvents[pageEvents.length - 1];
+      nextEventCursor = Buffer.from(`${lastEvent.created_at}#${lastEvent.id}`).toString('base64');
+    }
+
+    return {
+      id: String(data.id),
+      publicOrderCode: String(data.public_order_code),
+      createdAt: String(data.created_at),
+      updatedAt: String(data.updated_at),
+      paymentStatus: payment.status,
+      designStatus: operationalState.designStatus,
+      fulfillmentStatus: operationalState.fulfillmentStatus,
+      payment,
+      approvedDesign,
+      product,
+      customer,
+      delivery,
+      activeHold,
+      nextAction,
+      recentEvents,
+      nextEventCursor,
     };
   }
 

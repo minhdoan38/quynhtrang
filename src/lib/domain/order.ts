@@ -49,6 +49,212 @@ export interface OrderNextAction {
   };
 }
 
+export interface PreflightSummary {
+  level: 'pass' | 'warning' | 'error';
+  passCount: number;
+  warningCount: number;
+  errorCount: number;
+  acceptedWarningCount: number;
+  checks: Array<{
+    id: string;
+    level: 'warning' | 'error';
+    category: 'image' | 'safe-area' | 'sticker' | 'notebook' | 'card' | 'general';
+    label: string;
+    description: string | null;
+    advice: string | null;
+  }>;
+}
+
+export interface OrderActivityItem {
+  id: string;
+  eventType: string;
+  title: string;
+  description: string | null;
+  actor: { kind: 'customer' | 'system' | 'staff'; displayName: string };
+  createdAt: string;
+}
+
+export interface AdminOrderDetail {
+  id: string;
+  publicOrderCode: string;
+  createdAt: string;
+  updatedAt: string;
+  paymentStatus: PaymentStatus;
+  designStatus: DesignStatus;
+  fulfillmentStatus: FulfillmentStatus;
+  payment: {
+    id: string;
+    status: PaymentStatus;
+    amount: number;
+    currency: string;
+    reference: string;
+    customerReportedAt: string | null;
+    confirmedAt: string | null;
+    confirmedBy: null | { userId: string; displayName: string };
+  };
+  approvedDesign: {
+    id: string;
+    versionNumber: number;
+    source: 'customer_approved' | 'admin_revision';
+    label: string;
+    thumbnailUrl: string | null;
+    preflight: PreflightSummary;
+    createdAt: string;
+  };
+  product: {
+    name: string;
+    variant: string;
+    configuration: Array<{ label: string; value: string }>;
+    quantity: number;
+    unitPrice: number;
+    subtotal: number;
+    total: number;
+    currency: string;
+  };
+  customer: { fullName: string; phone: string };
+  delivery: { shippingAddress: string };
+  activeHold: ActiveOrderHold | null;
+  nextAction: OrderNextAction;
+  recentEvents: OrderActivityItem[];
+  nextEventCursor: string | null;
+}
+
+export interface EventPage {
+  items: OrderActivityItem[];
+  nextCursor: string | null;
+}
+
+export function normalizePreflightSummary(raw: unknown): PreflightSummary {
+  if (raw && typeof raw === 'object') {
+    const r = raw as Record<string, unknown>;
+    const level = r.level === 'error' ? 'error' : r.level === 'warning' ? 'warning' : 'pass';
+    const passCount = typeof r.passCount === 'number' ? r.passCount : 0;
+    const warningCount = typeof r.warningCount === 'number' ? r.warningCount : 0;
+    const errorCount = typeof r.errorCount === 'number' ? r.errorCount : 0;
+    const acceptedWarningCount = typeof r.acceptedWarningCount === 'number' ? r.acceptedWarningCount : 0;
+    const checks: PreflightSummary['checks'] = [];
+    if (Array.isArray(r.checks)) {
+      for (const item of r.checks) {
+        if (item && typeof item === 'object') {
+          const c = item as Record<string, unknown>;
+          checks.push({
+            id: String(c.id ?? ''),
+            level: c.level === 'error' ? 'error' : 'warning',
+            category: (c.category as PreflightSummary['checks'][0]['category']) || 'general',
+            label: String(c.label ?? ''),
+            description: typeof c.description === 'string' ? c.description : null,
+            advice: typeof c.advice === 'string' ? c.advice : null,
+          });
+        }
+      }
+    }
+    return {
+      level,
+      passCount,
+      warningCount,
+      errorCount,
+      acceptedWarningCount,
+      checks,
+    };
+  }
+  return {
+    level: 'pass',
+    passCount: 0,
+    warningCount: 0,
+    errorCount: 0,
+    acceptedWarningCount: 0,
+    checks: [],
+  };
+}
+
+export function mapOrderActivityItem(
+  event: {
+    id: string;
+    event_type: string;
+    actor_user_id?: string | null;
+    actor_role?: string | null;
+    payload?: Record<string, unknown> | null;
+    created_at: string;
+  },
+  staffNames?: Map<string, string>
+): OrderActivityItem {
+  const eventType = event.event_type;
+  const payload = event.payload ?? {};
+  let title = 'Cập nhật đơn hàng';
+  let description: string | null = null;
+  let actorKind: 'customer' | 'system' | 'staff' = 'system';
+  let displayName = 'Hệ thống';
+
+  if (event.actor_role === 'customer' || eventType === 'customer_payment_reported') {
+    actorKind = 'customer';
+    displayName = 'Khách hàng';
+  } else if (event.actor_role === 'admin' || event.actor_role === 'editor' || event.actor_role === 'staff' || event.actor_user_id) {
+    actorKind = 'staff';
+    displayName = (event.actor_user_id && staffNames?.get(event.actor_user_id)) || 'Nhân viên';
+  }
+
+  switch (eventType) {
+    case 'order_created':
+      title = 'Đơn hàng được tạo';
+      actorKind = 'system';
+      displayName = 'Hệ thống';
+      break;
+    case 'customer_payment_reported':
+      title = 'Báo đã chuyển khoản';
+      actorKind = 'customer';
+      displayName = 'Khách hàng';
+      if (typeof payload.ref === 'string') {
+        description = `Mã tham chiếu: ${payload.ref}`;
+      }
+      break;
+    case 'payment_confirmed':
+      title = 'Đã xác nhận thanh toán';
+      actorKind = 'staff';
+      if (typeof payload.amount === 'number') {
+        description = `Đã nhận ${payload.amount.toLocaleString('vi-VN')}đ`;
+      }
+      break;
+    case 'order_held':
+      title = 'Đã tạm giữ đơn';
+      actorKind = 'staff';
+      if (typeof payload.reason === 'string') {
+        description = `Lý do: ${payload.reason}`;
+      }
+      break;
+    case 'order_hold_released':
+      title = 'Đã bỏ tạm giữ';
+      actorKind = 'staff';
+      break;
+    case 'design_approved':
+      title = 'Thiết kế đã được duyệt';
+      break;
+    case 'production_started':
+      title = 'Bắt đầu sản xuất';
+      break;
+    case 'production_completed':
+      title = 'Sản xuất hoàn tất';
+      break;
+    default:
+      title = 'Cập nhật đơn hàng';
+      if (typeof payload.description === 'string') {
+        description = payload.description;
+      }
+      break;
+  }
+
+  return {
+    id: event.id,
+    eventType,
+    title,
+    description,
+    actor: {
+      kind: actorKind,
+      displayName,
+    },
+    createdAt: event.created_at,
+  };
+}
+
 export type AttentionReason =
   | 'PAYMENT_REPORTED'
   | 'PAYMENT_FAILED'
@@ -215,14 +421,14 @@ function normalizeFirst<T>(input: T[] | T | null | undefined): T | null {
   return input;
 }
 
-function normalizeDesignStatus(status: string): DesignStatus {
+export function normalizeDesignStatus(status: string): DesignStatus {
   if (status === 'ready' || status === 'editing' || status === 'approved' || status === 'needs_changes') {
     return status;
   }
   return 'awaiting_review';
 }
 
-function normalizeFulfillmentStatus(status: string): FulfillmentStatus {
+export function normalizeFulfillmentStatus(status: string): FulfillmentStatus {
   if (status === 'ready_for_production' || status === 'in_production' || status === 'completed' || status === 'cancelled') {
     return status;
   }
