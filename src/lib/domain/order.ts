@@ -202,7 +202,7 @@ export function mapOrderInboxRow(raw: RawDatabaseOrderJoin): OrderInboxRow {
       return timeB - timeA;
     });
     eventRow = sortedEvents[0] ?? null;
-  } else if (raw.order_events && typeof raw.order_events === 'object') {
+  } else if (raw.order_events && typeof raw.order_events === 'object' && !Array.isArray(raw.order_events)) {
     eventRow = raw.order_events as Record<string, unknown>;
   }
 

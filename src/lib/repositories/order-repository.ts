@@ -1,6 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 
 import {
+  type AttentionReason,
   type CreatePendingOrderInput,
   type InboxCounts,
   mapOrderInboxRow,
@@ -131,7 +132,10 @@ export class OrderRepository {
       .select('*, order_payments(*), design_versions(*), order_events(*)', { count: 'exact' });
 
     if (query.view === 'attention') {
-      dbQuery = dbQuery.or('payment_status.eq.payment_reported,design_status.in.(awaiting_review,needs_changes)');
+      dbQuery = dbQuery
+        .or('payment_status.eq.payment_reported,design_status.in.(awaiting_review,needs_changes)')
+        .not('fulfillment_status', 'in', '("cancelled","completed")')
+        .neq('payment_status', 'cancelled');
     } else if (query.view === 'payment') {
       dbQuery = dbQuery.eq('payment_status', 'pending_payment');
     } else if (query.view === 'production') {
@@ -139,6 +143,25 @@ export class OrderRepository {
         .eq('payment_status', 'paid')
         .eq('design_status', 'approved')
         .eq('fulfillment_status', 'ready_for_production');
+    }
+
+    if (query.attentionReason && query.attentionReason.length > 0) {
+      const clauses: string[] = [];
+      for (const reason of query.attentionReason) {
+        if (reason === 'PAYMENT_REPORTED') clauses.push('payment_status.eq.payment_reported');
+        else if (reason === 'PAYMENT_FAILED') clauses.push('payment_status.eq.payment_failed');
+        else if (reason === 'DESIGN_REVIEW') clauses.push('design_status.eq.awaiting_review');
+        else if (reason === 'DESIGN_CHANGES') clauses.push('design_status.eq.needs_changes');
+        else if (reason === 'READY_FOR_PRODUCTION') {
+          clauses.push('and(payment_status.eq.paid,design_status.eq.approved,fulfillment_status.eq.ready_for_production)');
+        }
+      }
+      if (clauses.length > 0) {
+        dbQuery = dbQuery
+          .or(clauses.join(','))
+          .not('fulfillment_status', 'in', '("cancelled","completed")')
+          .neq('payment_status', 'cancelled');
+      }
     }
 
     if (query.paymentStatus && query.paymentStatus.length > 0) {
@@ -180,10 +203,6 @@ export class OrderRepository {
     const rawRows = Array.isArray(data) ? data : [];
     let rows = rawRows.map((item) => mapOrderInboxRow(item as Parameters<typeof mapOrderInboxRow>[0]));
 
-    if (query.attentionReason && query.attentionReason.length > 0) {
-      const targetReasons = new Set(query.attentionReason);
-      rows = rows.filter((r) => r.attentionReasons.some((reason) => targetReasons.has(reason)));
-    }
 
     return {
       rows,
@@ -199,7 +218,9 @@ export class OrderRepository {
       this.client
         .from('orders')
         .select('*', { count: 'exact', head: true })
-        .or('payment_status.eq.payment_reported,design_status.in.(awaiting_review,needs_changes)'),
+        .or('payment_status.eq.payment_reported,design_status.in.(awaiting_review,needs_changes)')
+        .not('fulfillment_status', 'in', '("cancelled","completed")')
+        .neq('payment_status', 'cancelled'),
       this.client
         .from('orders')
         .select('*', { count: 'exact', head: true })

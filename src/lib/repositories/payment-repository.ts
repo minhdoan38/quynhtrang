@@ -85,11 +85,14 @@ export class PaymentRepository {
       throw new Error(`Failed to mark payment reported: ${error?.message ?? 'unknown'}`);
     }
 
-    await this.client
+    const { error: orderError } = await this.client
       .from('orders')
       .update({ payment_status: 'payment_reported' })
       .eq('id', orderId);
 
+    if (orderError) {
+      throw orderError;
+    }
     return this.mapRow(data);
   }
 
@@ -109,10 +112,14 @@ export class PaymentRepository {
       throw new Error(`Failed to confirm payment: ${error?.message ?? 'unknown'}`);
     }
 
-    await this.client
+    const { error: orderError } = await this.client
       .from('orders')
       .update({ payment_status: 'paid' })
       .eq('id', orderId);
+
+    if (orderError) {
+      throw orderError;
+    }
 
     return this.mapRow(data);
   }
