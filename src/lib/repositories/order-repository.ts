@@ -67,6 +67,11 @@ export class OrderRepository {
     return this.mapToPendingOrder(orderData, input);
   }
 
+  async deleteById(id: string): Promise<void> {
+    const { error } = await this.client.from('orders').delete().eq('id', id);
+    if (error) throw new Error(`Failed to delete order: ${error.message}`);
+  }
+
   async getByIdempotencyKey(idempotencyKey: string): Promise<PendingOrder | null> {
     const { data, error } = await this.client
       .from('orders')
@@ -74,7 +79,13 @@ export class OrderRepository {
       .eq('idempotency_key', idempotencyKey)
       .maybeSingle();
 
-    if (error || !data) return null;
+    if (error) {
+      const code = typeof error === 'object' && error !== null && 'code' in error ? error.code : undefined;
+      if (code === 'PGRST116') return null;
+      const message = typeof error === 'object' && error !== null && 'message' in error ? String(error.message) : 'unknown error';
+      throw new Error(`Failed to find order by idempotency key: ${message}`);
+    }
+    if (!data) return null;
     return this.mapToPendingOrder(data);
   }
 

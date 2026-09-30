@@ -1,3 +1,10 @@
+import { randomUUID } from 'node:crypto';
+import { storeAsset } from './asset-store.ts';
+import type { PrepareOrderOptions } from './services/prepare-order-from-guest-checkout.ts';
+import type { CreatePendingOrderInput } from './domain/order.ts';
+import type { PromoteAssetInput } from './repositories/asset-repository.ts';
+import type { CreateDesignVersionInput } from './repositories/design-version-repository.ts';
+import type { CreateProjectInput } from './repositories/project-repository.ts';
 import type {
   CustomerInfo,
   PendingOrder,
@@ -168,6 +175,15 @@ export class ServerOrderStore {
     return orderId ? this.getOrder(orderId) : null;
   }
 
+  deleteOrder(id: string): void {
+    const order = this.orders.get(id);
+    if (!order) return;
+    this.orders.delete(id);
+    this.snapshots.delete(order.approvedDesignVersionId);
+    this.approvedVersions.delete(order.approvedDesignVersionId);
+    this.idempotencyMap.delete(order.idempotencyKey);
+  }
+
   getApprovedDesignVersion(id: string): ApprovedDesignVersion | null {
     const version = this.approvedVersions.get(id);
     return version ? JSON.parse(JSON.stringify(version)) : null;
@@ -208,3 +224,123 @@ if (!globalAny[globalStoreKey]) {
 }
 
 export const serverOrderStore: ServerOrderStore = globalAny[globalStoreKey];
+
+export function createServerOrderPreparationOptions(): PrepareOrderOptions {
+  return {
+    projectRepo: {
+      async createProject(input: CreateProjectInput) {
+        const now = new Date().toISOString();
+        return {
+          id: `project-${randomUUID()}`,
+          ownerUserId: input.ownerUserId ?? null,
+          guestKeyHash: input.guestKeyHash ?? null,
+          productId: input.productId,
+          variantId: input.variantId ?? null,
+          status: input.status ?? 'editing',
+          currentWorkingRevision: input.currentWorkingRevision ?? 1,
+          createdAt: now,
+          updatedAt: now,
+        };
+      },
+    },
+    assetRepo: {
+      async promoteAsset(input: PromoteAssetInput) {
+        const id = `asset-${randomUUID().replaceAll('-', '').slice(0, 12)}`;
+        const url = `/api/assets/${id}`;
+        storeAsset({
+          id: url,
+          sourceKey: String(input.metadata?.sourceKey ?? url),
+          mimeType: input.mimeType,
+          byteSize: input.bytes.byteLength,
+          width: input.pixelWidth ?? undefined,
+          height: input.pixelHeight ?? undefined,
+          originalUrl: url,
+          checksum: input.checksum ?? undefined,
+          payload: input.bytes,
+        });
+        return {
+          id,
+          projectId: input.projectId,
+          kind: input.kind,
+          storageBucket: input.storageBucket,
+          storagePath: `${input.projectId}/${id}`,
+          originalName: input.originalName ?? null,
+          mimeType: input.mimeType,
+          byteSize: input.bytes.byteLength,
+          pixelWidth: input.pixelWidth ?? null,
+          pixelHeight: input.pixelHeight ?? null,
+          checksum: input.checksum ?? null,
+          metadata: input.metadata ?? {},
+          createdAt: new Date().toISOString(),
+        };
+      },
+    },
+    designVersionRepo: {
+      async createVersion(input: CreateDesignVersionInput) {
+        return {
+          id: `version-${randomUUID()}`,
+          projectId: input.projectId,
+          versionNumber: input.versionNumber,
+          source: input.source ?? 'customizer',
+          designDocument: structuredClone(input.designDocument),
+          productSnapshot: structuredClone(input.productSnapshot ?? {}),
+          preflightSnapshot: structuredClone(input.preflightSnapshot ?? {}),
+          preflightRevision: input.preflightRevision ?? null,
+          createdBy: input.createdBy ?? null,
+          createdAt: new Date().toISOString(),
+        };
+      },
+    },
+    orderRepo: {
+      async getByIdempotencyKey(idempotencyKey: string) {
+        return serverOrderStore.getOrderByKey(idempotencyKey);
+      },
+      async createPendingOrder(input: CreatePendingOrderInput) {
+        return serverOrderStore.createOrder({
+          idempotencyKey: input.idempotencyKey,
+          design: input.designSnapshot.design,
+          customer: input.customer,
+          preflightRevision: input.preflightRevision,
+          preflightAcknowledged: true,
+        });
+      },
+      async createGuestAccess() { },
+      async deleteById(id: string) {
+        serverOrderStore.deleteOrder(id);
+      },
+    },
+    paymentRepo: {
+      async create(input) {
+        const now = new Date().toISOString();
+        return {
+          id: `payment-${randomUUID()}`,
+          orderId: input.orderId,
+          provider: input.provider,
+          amount: input.amount,
+          currency: input.currency ?? 'VND',
+          reference: input.reference,
+          qrPayload: input.qrPayload ?? null,
+          status: input.status ?? 'pending_payment',
+          customerReportedAt: null,
+          confirmedAt: null,
+          confirmedBy: null,
+          createdAt: now,
+          updatedAt: now,
+        };
+      },
+    },
+    orderEventRepo: {
+      async append(input) {
+        return {
+          id: `event-${randomUUID()}`,
+          orderId: input.orderId,
+          eventType: input.eventType,
+          actorUserId: input.actorUserId ?? null,
+          actorRole: input.actorRole ?? null,
+          payload: input.payload ?? {},
+          createdAt: new Date().toISOString(),
+        };
+      },
+    },
+  };
+}

@@ -6,6 +6,7 @@ import { getAsset, promoteDesignAssets, storeAsset } from '../lib/asset-store.ts
 import { calculatePriceQuote } from '../lib/pricing.ts';
 import { serverOrderStore } from '../lib/server-order-store.ts';
 import { GET as getAssetRoute } from '../app/api/assets/[id]/route.ts';
+import { serveAsset } from '../lib/services/serve-asset.ts';
 import type { CustomerInfo } from '../lib/order-types.ts';
 
 test('promotes blob image URLs with metadata and rewrites every design reference', async () => {
@@ -396,4 +397,60 @@ test('sanitizes active SVG scripts while blocking execution via CSP', async () =
   const text = await res.text();
   assert.equal(text.includes('<script>'), false);
   assert.equal(res.headers.get('Content-Security-Policy'), "default-src 'none'; sandbox;");
+});
+
+test('asset route downloads repository-backed private assets when memory cache misses', async () => {
+  const bytes = Buffer.from('repository-backed-image');
+  const client = {
+    from(table: string) {
+      assert.equal(table, 'assets');
+      return {
+        select() { return this; },
+        eq(column: string, value: unknown) {
+          assert.equal(column, 'id');
+          assert.equal(value, 'repository-only-asset');
+          return this;
+        },
+        async maybeSingle() {
+          return {
+            data: {
+              id: 'repository-only-asset',
+              project_id: 'project-1',
+              kind: 'customer_upload',
+              storage_bucket: 'customer-assets',
+              storage_path: 'project-1/repository-only-asset.png',
+              original_name: 'image.png',
+              mime_type: 'image/png',
+              byte_size: bytes.byteLength,
+              pixel_width: 10,
+              pixel_height: 10,
+              checksum: 'checksum',
+              metadata: {},
+              created_at: '2026-09-30T00:00:00.000Z',
+            },
+            error: null,
+          };
+        },
+      };
+    },
+    storage: {
+      from(bucket: string) {
+        assert.equal(bucket, 'customer-assets');
+        return {
+          async download(path: string) {
+            assert.equal(path, 'project-1/repository-only-asset.png');
+            return { data: new Blob([bytes]), error: null };
+          },
+        };
+      },
+    },
+  };
+
+  const response = await serveAsset(
+    'repository-only-asset',
+    { supabaseClient: client as never },
+  );
+  assert.equal(response.status, 200);
+  assert.equal(response.headers.get('content-type'), 'image/png');
+  assert.deepEqual(Buffer.from(await response.arrayBuffer()), bytes);
 });

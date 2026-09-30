@@ -119,7 +119,6 @@ function validInput(design?: DesignState) {
     preflightRevision: 'revision-7',
     preflightAcknowledged: true,
     preflightSnapshot: { warnings: [], approved: true },
-    guestAccessSeed: 'stable-secret-seed',
   };
 }
 
@@ -200,5 +199,29 @@ test('rejects design and preflight revision mismatch with status 400', async () 
     () => prepareOrderFromGuestCheckout({ ...validInput(), preflightRevision: 'revision-8' }, deps.options),
     (error: unknown) => error instanceof OrderPreparationError && error.status === 400,
   );
+  assert.equal(deps.records.orders.length, 0);
+});
+
+test('deletes a newly created order when a required post-order record fails', async () => {
+  const deps = createDependencies();
+  const options = deps.options as unknown as {
+    orderRepo: { deleteById(id: string): Promise<void> };
+    orderEventRepo: { append(input: Record<string, unknown>): Promise<unknown> };
+  } & Record<string, unknown>;
+  const deleted: string[] = [];
+  options.orderRepo.deleteById = async (id: string) => {
+    deleted.push(id);
+    const index = deps.records.orders.findIndex((order) => order.id === id);
+    if (index >= 0) deps.records.orders.splice(index, 1);
+  };
+  options.orderEventRepo.append = async () => {
+    throw new Error('event insert failed');
+  };
+
+  await assert.rejects(
+    () => prepareOrderFromGuestCheckout(validInput(), options as never),
+    /event insert failed/,
+  );
+  assert.deepEqual(deleted, ['order-1']);
   assert.equal(deps.records.orders.length, 0);
 });

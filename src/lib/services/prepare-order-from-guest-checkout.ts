@@ -1,4 +1,4 @@
-import { createHash, createHmac, randomBytes, randomUUID } from 'node:crypto';
+import { createHash, createHmac, randomUUID } from 'node:crypto';
 import type { SupabaseClient } from '@supabase/supabase-js';
 
 import { promoteDesignAssets } from '../asset-store.ts';
@@ -36,7 +36,7 @@ export interface PreparedOrderResult {
 type ProjectRepo = Pick<ProjectRepository, 'createProject'>;
 type AssetRepo = Pick<AssetRepository, 'promoteAsset'>;
 type DesignVersionRepo = Pick<DesignVersionRepository, 'createVersion'>;
-type OrderRepo = Pick<OrderRepository, 'getByIdempotencyKey' | 'createPendingOrder' | 'createGuestAccess'>;
+type OrderRepo = Pick<OrderRepository, 'getByIdempotencyKey' | 'createPendingOrder' | 'createGuestAccess' | 'deleteById'>;
 type PaymentRepo = Pick<PaymentRepository, 'create'>;
 type OrderEventRepo = Pick<OrderEventRepository, 'append'>;
 
@@ -61,11 +61,11 @@ export class OrderPreparationError extends Error {
 }
 
 function resolveGuestToken(input: PrepareOrderInput): string {
+  const message = `guest-order:${input.idempotencyKey.trim()}`;
   const secret = input.guestAccessSeed?.trim() || getSupabaseSecretKey();
-  if (!secret) return randomBytes(32).toString('base64url');
-  return createHmac('sha256', secret)
-    .update(`guest-order:${input.idempotencyKey.trim()}`)
-    .digest('base64url');
+  return secret
+    ? createHmac('sha256', secret).update(message).digest('base64url')
+    : createHash('sha256').update(message).digest('base64url');
 }
 
 function createRepositories(options: PrepareOrderOptions) {
@@ -207,30 +207,39 @@ export async function prepareOrderFromGuestCheckout(
     },
   };
   const paymentData = await getPaymentInstructions(persistedOrder);
-  await repositories.paymentRepo.create({
-    orderId: order.id,
-    provider: order.payment.provider,
-    amount: quote.subtotal,
-    currency: 'VND',
-    reference: paymentReference,
-    qrPayload: paymentData.qrPayload,
-    status: 'pending_payment',
-  });
-  await repositories.orderRepo.createGuestAccess({
-    orderId: order.id,
-    tokenHash,
-    expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
-  });
-  await repositories.orderEventRepo.append({
-    orderId: order.id,
-    eventType: 'ORDER_CREATED',
-    actorRole: 'customer',
-    payload: {
-      projectId: project.id,
-      approvedDesignVersionId: version.id,
-      paymentReference,
-    },
-  });
+  try {
+    await repositories.paymentRepo.create({
+      orderId: order.id,
+      provider: order.payment.provider,
+      amount: quote.subtotal,
+      currency: 'VND',
+      reference: paymentReference,
+      qrPayload: paymentData.qrPayload,
+      status: 'pending_payment',
+    });
+    await repositories.orderRepo.createGuestAccess({
+      orderId: order.id,
+      tokenHash,
+      expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
+    });
+    await repositories.orderEventRepo.append({
+      orderId: order.id,
+      eventType: 'ORDER_CREATED',
+      actorRole: 'customer',
+      payload: {
+        projectId: project.id,
+        approvedDesignVersionId: version.id,
+        paymentReference,
+      },
+    });
+  } catch (error) {
+    try {
+      await repositories.orderRepo.deleteById(order.id);
+    } catch (rollbackError) {
+      throw new AggregateError([error, rollbackError], 'Order preparation failed and rollback could not delete the order');
+    }
+    throw error;
+  }
 
   return { order: persistedOrder, guestAccessToken, paymentData };
 }

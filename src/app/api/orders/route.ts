@@ -1,9 +1,15 @@
-import { getAsset, promoteDesignAssets } from '../../../lib/asset-store.ts';
 import { validateCustomerInfo } from '../../../lib/customer-info.ts';
 import { DEFAULT_BANK_DETAILS } from '../../../lib/payment-qr-provider.ts';
-import { serverOrderStore } from '../../../lib/server-order-store.ts';
-import type { CustomerInfo, PendingOrder, PromotedAsset } from '../../../lib/order-types.ts';
+import {
+  createServerOrderPreparationOptions,
+} from '../../../lib/server-order-store.ts';
+import type { CustomerInfo, PendingOrder } from '../../../lib/order-types.ts';
 import type { DesignState } from '../../../lib/product-state.ts';
+import {
+  OrderPreparationError,
+  prepareOrderFromGuestCheckout,
+} from '../../../lib/services/prepare-order-from-guest-checkout.ts';
+import { getSupabaseSecretKey } from '../../../lib/supabase/config.ts';
 
 export interface CreateOrderRequestBody {
   idempotencyKey: string;
@@ -24,99 +30,12 @@ export interface CreateOrderResponseBody {
   };
 }
 
-function hasUnpromotedOrInvalidBlob(design: DesignState, rewrittenDesign: DesignState): boolean {
-  if (rewrittenDesign.image?.src?.startsWith('blob:')) {
-    return true;
-  }
-
-  const customBg = (rewrittenDesign.productOptions as { customBackgroundImage?: unknown } | undefined)?.customBackgroundImage;
-  if (typeof customBg === 'string' && customBg.startsWith('blob:')) {
-    return true;
-  }
-
-  if (Array.isArray(rewrittenDesign.elements)) {
-    for (const el of rewrittenDesign.elements) {
-      const data = el.data as Record<string, unknown> | undefined;
-      if (data) {
-        for (const key of ['src', 'url', 'originalSrc', 'removedBackgroundSrc', 'previewSrc']) {
-          const val = data[key];
-          if (typeof val === 'string' && val.startsWith('blob:')) {
-            return true;
-          }
-        }
-        if (data.texture && typeof data.texture === 'object') {
-          const texture = data.texture as Record<string, unknown>;
-          if (typeof texture.url === 'string' && texture.url.startsWith('blob:')) return true;
-          if (typeof texture.src === 'string' && texture.src.startsWith('blob:')) return true;
-        }
-      }
-      const directEl = el as unknown as Record<string, unknown>;
-      if (typeof directEl.src === 'string' && directEl.src.startsWith('blob:')) return true;
-      if (typeof directEl.url === 'string' && directEl.url.startsWith('blob:')) return true;
-    }
-  }
-
-  if (design.image?.src && typeof design.image.src === 'string' && design.image.src.startsWith('blob:')) {
-    const img = design.image as {
-      src: string;
-      type?: string;
-      size?: number;
-      width?: number;
-      height?: number;
-    };
-    if (img.type && !img.type.startsWith('image/')) return true;
-    if (img.size !== undefined && img.size <= 0) return true;
-    if (img.width !== undefined && img.width <= 0) return true;
-    if (img.height !== undefined && img.height <= 0) return true;
-  }
-
-  if (Array.isArray(design.elements)) {
-    for (const el of design.elements) {
-      const data = el.data as Record<string, unknown> | undefined;
-      if (!data) continue;
-      for (const key of ['src', 'url', 'originalSrc', 'removedBackgroundSrc', 'previewSrc']) {
-        const val = data[key];
-        if (typeof val === 'string' && val.startsWith('blob:')) {
-          if (typeof data.type === 'string' && !data.type.startsWith('image/')) return true;
-          if (typeof data.size === 'number' && data.size <= 0) return true;
-        }
-      }
-    }
-  }
-
-  return false;
-}
 
 export async function POST(request: Request) {
   try {
     const body = (await request.json()) as Partial<CreateOrderRequestBody>;
-
     if (!body?.design || !body.design.productId) {
-      return Response.json(
-        { error: 'Dữ liệu thiết kế không hợp lệ.' },
-        { status: 400 }
-      );
-    }
-    if (
-      body.preflightAcknowledged !== true ||
-      typeof body.preflightRevision !== 'string' ||
-      body.preflightRevision.trim().length === 0
-    ) {
-      return Response.json(
-        { error: 'Thiết kế cần được xác nhận kiểm tra in trước khi đặt hàng.' },
-        { status: 400 }
-      );
-    }
-
-    if (
-      typeof body.designRevision === 'string' &&
-      body.designRevision.trim().length > 0 &&
-      body.preflightRevision !== body.designRevision
-    ) {
-      return Response.json(
-        { error: 'Thiết kế đã có thay đổi so với bản kiểm tra in. Vui lòng kiểm tra lại thiết kế.' },
-        { status: 400 }
-      );
+      return Response.json({ error: 'Dữ liệu thiết kế không hợp lệ.' }, { status: 400 });
     }
 
     const validation = validateCustomerInfo(body.customer ?? {});
@@ -129,66 +48,54 @@ export async function POST(request: Request) {
       return Response.json({ error: firstError }, { status: 400 });
     }
 
-    let rewrittenDesign: DesignState;
-    let promotedAssets: PromotedAsset[];
-    try {
-      const promotion = await promoteDesignAssets(body.design);
-      rewrittenDesign = promotion.rewrittenDesign;
-      promotedAssets = promotion.promotedAssets;
-      if (hasUnpromotedOrInvalidBlob(body.design, rewrittenDesign)) {
-        return Response.json(
-          { error: 'Chưa thể chuẩn bị tệp in từ thiết kế. Vui lòng tải lại ảnh và thử lại.' },
-          { status: 400 }
-        );
-      }
-
-      const hasMissingPayload = promotedAssets.some(
-        (asset) => !(asset.payload || asset.data || getAsset(asset.id)?.payload || getAsset(asset.id)?.data)
-      );
-      if (hasMissingPayload) {
-        return Response.json(
-          { error: 'Chưa thể chuẩn bị tệp in từ thiết kế. Vui lòng tải lại ảnh và thử lại.' },
-          { status: 400 }
-        );
-      }
-    } catch {
-      return Response.json(
-        { error: 'Chưa thể chuẩn bị tệp in từ thiết kế. Vui lòng tải lại ảnh và thử lại.' },
-        { status: 400 }
-      );
-    }
-
     const idempotencyKey =
-      typeof body.idempotencyKey === 'string' && body.idempotencyKey.trim().length > 0
+      typeof body.idempotencyKey === 'string' && body.idempotencyKey.trim()
         ? body.idempotencyKey.trim()
         : `order-key-${crypto.randomUUID()}`;
-
-    const order = serverOrderStore.createOrder({
-      idempotencyKey,
-      design: rewrittenDesign,
-      customer: validation.normalized,
-      preflightRevision: body.preflightRevision,
-      preflightAcknowledged: body.preflightAcknowledged,
-      assets: promotedAssets,
-    });
+    const hasSupabaseEnvironment = Boolean(
+      getSupabaseSecretKey() ||
+      process.env.NEXT_PUBLIC_SUPABASE_URL?.trim() ||
+      process.env.SUPABASE_URL?.trim(),
+    );
+    let prepared;
+    try {
+      prepared = await prepareOrderFromGuestCheckout(
+        {
+          idempotencyKey,
+          design: body.design,
+          customer: validation.normalized,
+          designRevision: body.designRevision ?? '',
+          preflightRevision: body.preflightRevision ?? '',
+          preflightAcknowledged: body.preflightAcknowledged === true,
+        },
+        hasSupabaseEnvironment ? undefined : createServerOrderPreparationOptions(),
+      );
+    } catch (error) {
+      if (error instanceof OrderPreparationError) {
+        return Response.json({ error: error.message }, { status: error.status });
+      }
+      if (error instanceof Error && /Tài nguyên/.test(error.message)) {
+        return Response.json(
+          { error: 'Chưa thể chuẩn bị tệp in từ thiết kế. Vui lòng tải lại ảnh và thử lại.' },
+          { status: 400 },
+        );
+      }
+      throw error;
+    }
 
     const responsePayload: CreateOrderResponseBody = {
-      order,
+      order: prepared.order,
       paymentData: {
-        orderId: order.id,
-        amount: order.payment?.amount ?? order.product.subtotal,
-        description: `Thanh toán đơn hàng ${order.id}`,
+        orderId: prepared.order.id,
+        amount: prepared.paymentData.amount,
+        description: `Thanh toán đơn hàng ${prepared.order.id}`,
         accountName: DEFAULT_BANK_DETAILS.accountName,
         bankName: DEFAULT_BANK_DETAILS.bankName,
       },
     };
-
     return Response.json(responsePayload, { status: 201 });
-  } catch (err) {
-    console.error('Lỗi tạo đơn hàng:', err);
-    return Response.json(
-      { error: 'Có lỗi xảy ra khi tạo đơn hàng.' },
-      { status: 500 }
-    );
+  } catch (error) {
+    console.error('Lỗi tạo đơn hàng:', error);
+    return Response.json({ error: 'Có lỗi xảy ra khi tạo đơn hàng.' }, { status: 500 });
   }
 }

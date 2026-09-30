@@ -175,6 +175,17 @@ test('getById rebuilds snapshot design and summary from joined design versions a
   assert.equal(order.preflightRevision, 'pf-3');
 });
 
+test('idempotency lookup returns null only for no rows and throws database errors', async () => {
+  const missingClient = new OrderClient({ data: null, error: { code: 'PGRST116', message: 'no rows' } });
+  assert.equal(await new OrderRepository(missingClient as never).getByIdempotencyKey('missing'), null);
+
+  const failingClient = new OrderClient({ data: null, error: { code: '08006', message: 'connection failed' } });
+  await assert.rejects(
+    () => new OrderRepository(failingClient as never).getByIdempotencyKey('key-1'),
+    /connection failed/,
+  );
+});
+
 class TableClient {
   readonly responses: Record<string, { data: unknown; error: unknown }>;
   constructor(responses: Record<string, { data: unknown; error: unknown }>) {
