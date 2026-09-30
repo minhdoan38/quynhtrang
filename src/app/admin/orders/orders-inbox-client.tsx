@@ -13,6 +13,8 @@ import {
   normalizeSearchTerm,
   type InboxQueryParams,
 } from '@/lib/admin/inbox-query';
+import { subscribeToOrderChanges } from '@/lib/admin/realtime';
+import { createBrowserSupabaseClient } from '@/lib/supabase/browser';
 
 gsap.registerPlugin(useGSAP);
 
@@ -83,6 +85,18 @@ export function OrdersInboxClient({
   React.useEffect(() => {
     setSearchInput(initialQuery.q ?? '');
   }, [initialQuery.q]);
+
+  React.useEffect(() => {
+    try {
+      const supabase = createBrowserSupabaseClient();
+      return subscribeToOrderChanges(supabase, () => {
+        router.refresh();
+      });
+    } catch {
+      // Unconfigured client fallback
+      return undefined;
+    }
+  }, [router]);
 
   const handleSearchChange = (value: string) => {
     setSearchInput(value);

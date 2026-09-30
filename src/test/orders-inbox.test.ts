@@ -17,6 +17,8 @@ import {
   type InboxQueryParams,
 } from '../lib/admin/inbox-query.ts';
 import type { InboxCounts } from '../lib/domain/order.ts';
+import type { SupabaseClient } from '@supabase/supabase-js';
+import * as realtime from '../lib/admin/realtime.ts';
 
 const rootDir = process.cwd();
 
@@ -249,4 +251,129 @@ test('all required Task 9 UI component files exist and satisfy architecture cont
   // 6. Admin Empty State checks
   const emptySource = readFileSync(resolve(rootDir, 'src/components/admin/admin-empty-state.tsx'), 'utf8');
   assert.ok(emptySource.includes('AdminEmptyState') || emptySource.includes('export function'), 'Empty state must export component');
+});
+
+function createRealtimeHarness() {
+  const listeners: Array<{
+    type: string;
+    filter: { event: string; schema: string; table: string };
+    callback: () => void;
+  }> = [];
+  let statusCallback: (status: string) => void = () => { };
+  const removed: unknown[] = [];
+  const channel = {
+    on(type: string, filter: { event: string; schema: string; table: string }, callback: () => void) {
+      listeners.push({ type, filter, callback });
+      return this;
+    },
+    subscribe(callback: (status: string) => void) {
+      statusCallback = callback;
+      return this;
+    },
+  };
+  const client = {
+    channel: () => channel,
+    removeChannel: (value: unknown) => { removed.push(value); },
+  } as unknown as SupabaseClient;
+  return { client, channel, listeners, removed, status: (value: string) => statusCallback(value) };
+}
+
+test('order changes coalesce bursts across orders, payments and holds into one refresh', (t) => {
+  assert.equal(typeof realtime.subscribeToOrderChanges, 'function');
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const harness = createRealtimeHarness();
+  let refreshes = 0;
+  const cleanup = realtime.subscribeToOrderChanges(harness.client, () => { refreshes++; });
+  t.after(cleanup);
+  assert.deepEqual(harness.listeners.map(({ type, filter }) => ({ type, filter })), [
+    { type: 'postgres_changes', filter: { event: '*', schema: 'public', table: 'orders' } },
+    { type: 'postgres_changes', filter: { event: '*', schema: 'public', table: 'order_payments' } },
+    { type: 'postgres_changes', filter: { event: '*', schema: 'public', table: 'order_holds' } },
+  ]);
+  harness.listeners[0].callback();
+  t.mock.timers.tick(100);
+  harness.listeners[1].callback();
+  harness.listeners[2].callback();
+  t.mock.timers.tick(100);
+  assert.equal(refreshes, 0);
+  t.mock.timers.tick(100);
+  assert.equal(refreshes, 1);
+  harness.listeners[2].callback();
+  t.mock.timers.tick(200);
+  assert.equal(refreshes, 2);
+});
+
+test('visible tab refreshes while hidden tab does not; cleanup cancels pending and late signals', (t) => {
+  assert.equal(typeof realtime.subscribeToOrderChanges, 'function');
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const originalDocument = Object.getOwnPropertyDescriptor(globalThis, 'document');
+  const documentTarget = Object.assign(new EventTarget(), { visibilityState: 'hidden' });
+  Object.defineProperty(globalThis, 'document', { configurable: true, value: documentTarget });
+  t.after(() => {
+    if (originalDocument) Object.defineProperty(globalThis, 'document', originalDocument);
+    else Reflect.deleteProperty(globalThis, 'document');
+  });
+  const removeListener = t.mock.method(documentTarget, 'removeEventListener');
+  const harness = createRealtimeHarness();
+  let refreshes = 0;
+  let reconnects = 0;
+  const cleanup = realtime.subscribeToOrderChanges(
+    harness.client,
+    () => { refreshes++; },
+    () => { reconnects++; },
+  );
+  t.after(cleanup);
+  documentTarget.dispatchEvent(new Event('visibilitychange'));
+  t.mock.timers.tick(200);
+  assert.equal(refreshes, 0);
+  documentTarget.visibilityState = 'visible';
+  documentTarget.dispatchEvent(new Event('visibilitychange'));
+  t.mock.timers.tick(200);
+  assert.equal(refreshes, 1);
+  harness.listeners[0].callback();
+  cleanup();
+  cleanup();
+  assert.deepEqual(harness.removed, [harness.channel]);
+  assert.equal(removeListener.mock.callCount(), 1);
+  assert.equal(removeListener.mock.calls[0].arguments[0], 'visibilitychange');
+  t.mock.timers.tick(200);
+  documentTarget.dispatchEvent(new Event('visibilitychange'));
+  harness.listeners[1].callback();
+  harness.status('SUBSCRIBED');
+  t.mock.timers.tick(200);
+  assert.equal(refreshes, 1);
+  assert.equal(reconnects, 0);
+});
+
+test('successful subscription and reconnection refresh even when no database event arrives', (t) => {
+  assert.equal(typeof realtime.subscribeToOrderChanges, 'function');
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const harness = createRealtimeHarness();
+  let refreshes = 0;
+  const cleanup = realtime.subscribeToOrderChanges(harness.client, () => { refreshes++; });
+  t.after(cleanup);
+  harness.status('SUBSCRIBED');
+  t.mock.timers.tick(200);
+  assert.equal(refreshes, 1);
+  harness.status('CHANNEL_ERROR');
+  t.mock.timers.tick(200);
+  assert.equal(refreshes, 1);
+  harness.status('SUBSCRIBED');
+  t.mock.timers.tick(200);
+  assert.equal(refreshes, 2);
+});
+
+test('optional reconnect callback runs only for subscribed status and stops after cleanup', (t) => {
+  assert.equal(typeof realtime.subscribeToOrderChanges, 'function');
+  const harness = createRealtimeHarness();
+  let reconnects = 0;
+  const cleanup = realtime.subscribeToOrderChanges(harness.client, () => { }, () => { reconnects++; });
+  t.after(cleanup);
+  harness.status('SUBSCRIBED');
+  harness.status('TIMED_OUT');
+  harness.status('SUBSCRIBED');
+  assert.equal(reconnects, 2);
+  cleanup();
+  harness.status('SUBSCRIBED');
+  assert.equal(reconnects, 2);
 });
