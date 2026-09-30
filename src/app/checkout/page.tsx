@@ -25,6 +25,7 @@ import {
 import { validateCustomerInfo } from '@/lib/customer-info';
 import { PaymentQrPanel } from '@/components/checkout/payment-qr-panel';
 import { OrderConfirmationPanel } from '@/components/checkout/order-confirmation-panel';
+import { areDesignStatesEqual } from '@/lib/history-transaction';
 export const CHECKOUT_COPY = {
   preparing: 'Đang chuẩn bị đơn hàng...',
   unable: 'Chưa thể chuẩn bị đơn hàng.',
@@ -42,7 +43,8 @@ function isSameCheckoutDesign(a?: Partial<DesignState>, b?: Partial<DesignState>
   if (a.text !== b.text || a.color !== b.color || a.backgroundColor !== b.backgroundColor) return false;
   if (a.image?.src !== b.image?.src) return false;
   if (!(JSON.stringify(a.productOptions || {}) === JSON.stringify(b.productOptions || {}))) return false;
-  return JSON.stringify(a.elements || []) === JSON.stringify(b.elements || []);
+  if (JSON.stringify(a.elements || []) !== JSON.stringify(b.elements || [])) return false;
+  return areDesignStatesEqual(a as DesignState, b as DesignState);
 }
 
 export default function CheckoutPage() {

@@ -45,6 +45,7 @@ import { CropFocusMode } from './crop-focus-mode';
 import { useDesignHistory } from '@/lib/use-design-history';
 import { useEditorShortcuts } from '@/lib/use-editor-shortcuts';
 import type { SelectionSnapshot } from '@/lib/history';
+import { areDesignStatesEqual } from '@/lib/history-transaction';
 import {
   getRecentProjects,
   loadState,
@@ -2341,10 +2342,7 @@ export function CustomizerShell() {
             const approvedDesign: DesignState = JSON.parse(JSON.stringify(state));
             const isDesignUnchanged =
               Boolean(existingDraft?.design) &&
-              existingDraft!.productId === state.productId &&
-              existingDraft!.variantId === state.variantId &&
-              JSON.stringify(existingDraft!.design.elements || []) === JSON.stringify(approvedDesign.elements || []) &&
-              JSON.stringify(existingDraft!.design.productOptions || {}) === JSON.stringify(approvedDesign.productOptions || {});
+              areDesignStatesEqual(existingDraft!.design, approvedDesign);
             const designChanged = !isDesignUnchanged;
             const revision = `rev-${Date.now()}`;
             if (existingDraft) {
