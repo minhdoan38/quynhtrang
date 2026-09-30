@@ -230,6 +230,33 @@ export function mapOrderActivityItem(
     case 'design_approved':
       title = 'Thiết kế đã được duyệt';
       break;
+    case 'design_draft_created':
+      title = 'Tạo bản chỉnh sửa thiết kế';
+      actorKind = 'staff';
+      if (typeof payload.reason === 'string') {
+        description = `Lý do: ${payload.reason}`;
+      }
+      break;
+    case 'design_approved_as_is':
+      title = 'Duyệt thiết kế nguyên bản';
+      actorKind = 'staff';
+      description = 'Sử dụng file khách duyệt làm bản in sản xuất';
+      break;
+    case 'design_revision_approved':
+      title = 'Duyệt bản chỉnh sửa sản xuất';
+      actorKind = 'staff';
+      if (typeof payload.version_number === 'number') {
+        description = `Phiên bản sản xuất v${payload.version_number}`;
+      }
+      break;
+    case 'design_draft_discarded':
+      title = 'Đã hủy bản chỉnh sửa nháp';
+      actorKind = 'staff';
+      break;
+    case 'design_draft_taken_over':
+      title = 'Tiếp quản quyền chỉnh sửa nháp';
+      actorKind = 'staff';
+      break;
     case 'production_started':
       title = 'Bắt đầu sản xuất';
       break;
@@ -384,7 +411,7 @@ export function deriveAttentionReasons(
 
   if (designStatus === 'awaiting_review') {
     reasons.push('DESIGN_REVIEW');
-  } else if (designStatus === 'needs_changes') {
+  } else if (designStatus === 'needs_changes' || designStatus === 'editing') {
     reasons.push('DESIGN_CHANGES');
   }
 

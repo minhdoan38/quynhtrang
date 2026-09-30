@@ -98,7 +98,7 @@ export function OrderDesignCard({
               )}
             >
               <Eye className="w-4 h-4" />
-              <span>Kiểm tra file thiết kế</span>
+              <span>Xem & kiểm tra</span>
             </Link>
           </div>
         </div>

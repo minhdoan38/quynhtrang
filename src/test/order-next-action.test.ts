@@ -93,9 +93,9 @@ describe('resolveOrderNextAction', () => {
       'resolve_design_changes',
     ],
     [
-      'paid editing requires resolving changes',
+      'paid editing resumes active design edit',
       createState({ paymentStatus: 'paid', designStatus: 'editing' }),
-      'resolve_design_changes',
+      'continue_design_edit',
     ],
     [
       'paid approved is production ready with unprocessed fulfillment',

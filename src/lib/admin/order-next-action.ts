@@ -99,8 +99,23 @@ export function resolveOrderNextAction(state: OrderOperationalState): OrderNextA
     };
   }
 
-  // 8. paid + design needs_changes or editing → resolve_design_changes
-  if (state.paymentStatus === 'paid' && (state.designStatus === 'needs_changes' || state.designStatus === 'editing')) {
+  // 8. paid + design editing → continue_design_edit
+  if (state.paymentStatus === 'paid' && state.designStatus === 'editing') {
+    return {
+      kind: 'continue_design_edit',
+      eyebrow: 'CẦN XỬ LÝ',
+      title: 'Đang chỉnh sửa thiết kế',
+      description: 'Đơn hàng đang có bản chỉnh sửa thiết kế dở dang.',
+      intent: 'attention',
+      cta: {
+        label: 'Tiếp tục chỉnh sửa',
+        type: 'navigate',
+      },
+    };
+  }
+
+  // 8b. paid + design needs_changes → resolve_design_changes
+  if (state.paymentStatus === 'paid' && state.designStatus === 'needs_changes') {
     return {
       kind: 'resolve_design_changes',
       eyebrow: 'CẦN XỬ LÝ',
