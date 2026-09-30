@@ -15,6 +15,7 @@ import { getPublishedStickers } from '../lib/add-content.ts';
 
 class CatalogClient {
   readonly results: Record<string, { data: unknown; error: unknown }>;
+  readonly orClauses: string[] = [];
 
   constructor(results: Record<string, { data: unknown; error: unknown }>) {
     this.results = results;
@@ -25,6 +26,10 @@ class CatalogClient {
     const query = {
       select: () => query,
       eq: () => query,
+      or: (clause: string) => {
+        this.orClauses.push(clause);
+        return query;
+      },
       order: () => Promise.resolve(result),
       then: (resolve: (value: unknown) => unknown) => Promise.resolve(result).then(resolve),
     };
@@ -185,4 +190,26 @@ test('published adapters map dynamic database rows when repository has configure
   const stickers = await getPublishedStickers('vintage', repo);
   assert.equal(stickers.length, 1);
   assert.equal(stickers[0]?.storagePath, 'stickers/flower.svg');
+});
+
+test('listTemplates includes global templates when filtering by productId', async () => {
+  const client = new CatalogClient({
+    templates: {
+      data: [
+        { id: 'global-blank', product_id: null, slug: 'global-blank', name: 'Trống chung', published: true, thumbnail_path: null, metadata: {} },
+        { id: 'card-birthday', product_id: 'card', slug: 'card-birthday', name: 'Thiệp sinh nhật', published: true, thumbnail_path: null, metadata: {} },
+        { id: 'notebook-lined', product_id: 'notebook', slug: 'notebook-lined', name: 'Sổ kẻ dòng', published: true, thumbnail_path: null, metadata: {} },
+      ],
+      error: null,
+    },
+  });
+
+  const repository = new CatalogRepository(client as never);
+  const templates = await repository.listTemplates('card');
+
+  assert.ok(client.orClauses.includes('product_id.eq.card,product_id.is.null'));
+  assert.equal(templates.length, 2);
+  assert.ok(templates.some((t) => t.id === 'global-blank'));
+  assert.ok(templates.some((t) => t.id === 'card-birthday'));
+  assert.ok(!templates.some((t) => t.id === 'notebook-lined'));
 });

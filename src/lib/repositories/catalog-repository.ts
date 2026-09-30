@@ -94,11 +94,14 @@ export class CatalogRepository implements PublishedCatalogRepository {
   async listTemplates(productId?: ProductId): Promise<PublishedTemplate[]> {
     if (!this.client) return this.getStaticTemplates(productId);
     try {
-      const { data, error } = await this.client
+      let query = this.client
         .from('templates')
         .select('*')
-        .eq('published', true)
-        .order('id');
+        .eq('published', true);
+      if (productId) {
+        query = query.or(`product_id.eq.${productId},product_id.is.null`);
+      }
+      const { data, error } = await query.order('id');
       if (error || data === null || data === undefined) return this.getStaticTemplates(productId);
       const rows = (data as DatabaseTemplateRow[]).map(mapTemplateRow);
       if (!productId) return rows;
