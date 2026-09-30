@@ -10,9 +10,10 @@ export async function proxy(request: NextRequest): Promise<NextResponse> {
   }
 
   const requestHeaders = new Headers(request.headers);
+  requestHeaders.delete('x-staff-user-id');
+  requestHeaders.delete('x-staff-role');
   requestHeaders.set('x-admin-pathname', pathname);
   requestHeaders.set('x-pathname', pathname);
-
   let supabaseResponse = NextResponse.next({
     request: {
       headers: requestHeaders,

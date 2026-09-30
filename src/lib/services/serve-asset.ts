@@ -12,11 +12,15 @@ function sanitizeSvg(content: string): string {
     .replace(/href\s*=\s*["']\s*javascript:[^"']*["']/gi, 'href="#"');
 }
 
-function buildAssetHeaders(contentType: string, byteLength: number): Headers {
+function buildAssetHeaders(contentType: string, byteLength: number, isPrivate = false): Headers {
   const headers = new Headers();
   headers.set('Content-Type', contentType);
   headers.set('Content-Length', String(byteLength));
-  headers.set('Cache-Control', 'public, max-age=31536000, immutable');
+  if (isPrivate) {
+    headers.set('Cache-Control', 'private, max-age=3600, no-transform');
+  } else {
+    headers.set('Cache-Control', 'public, max-age=31536000, immutable');
+  }
   headers.set('Content-Security-Policy', "default-src 'none'; sandbox;");
   headers.set('X-Content-Type-Options', 'nosniff');
   if (contentType === 'image/svg+xml') {
@@ -25,9 +29,19 @@ function buildAssetHeaders(contentType: string, byteLength: number): Headers {
   return headers;
 }
 
+export type AssetActor =
+  | { kind: 'staff'; userId?: string; role?: string }
+  | { kind: 'customer'; userId: string }
+  | { kind: 'guest'; tokenHash: string };
+
+export interface ServeAssetOptions {
+  supabaseClient?: SupabaseClient;
+  actor?: AssetActor;
+}
+
 export async function serveAsset(
   id: string,
-  options: { supabaseClient?: SupabaseClient } = {},
+  options: ServeAssetOptions = {},
 ): Promise<Response> {
   if (!id) {
     return Response.json({ error: 'Thiếu mã tài nguyên.' }, { status: 400 });
@@ -61,7 +75,7 @@ export async function serveAsset(
     }
     return new Response(buffer, {
       status: 200,
-      headers: buildAssetHeaders(contentType, buffer.byteLength),
+      headers: buildAssetHeaders(contentType, buffer.byteLength, stored.storageBucket === 'customer-assets'),
     });
   }
 
