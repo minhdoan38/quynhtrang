@@ -42,7 +42,7 @@ export function PaymentQrPanel({
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch(`/api/orders/${order.id}/payment`);
+      const res = await fetch(`/api/orders/${order.id}/payment`, { credentials: 'same-origin' });
       const data = await res.json();
       if (!res.ok || !data.instructions) {
         throw new Error(data.error || 'Chưa thể tạo mã thanh toán.');
@@ -110,7 +110,7 @@ export function PaymentQrPanel({
   const handleReportPayment = async () => {
     setReporting(true);
     try {
-      await fetch(`/api/orders/${order.id}/payment/report`, { method: 'POST' });
+      await fetch(`/api/orders/${order.id}/payment/report`, { method: 'POST', credentials: 'same-origin' });
     } catch (err) {
       console.warn('Ghi nhận thanh toán nền gặp lỗi:', err);
     } finally {

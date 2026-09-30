@@ -1,9 +1,19 @@
-import { NextResponse } from 'next/server';
-import { getPaymentInstructions } from '@/lib/payment-qr-provider';
-import { serverOrderStore } from '@/lib/server-order-store';
+import { NextResponse } from 'next/server.js';
+import { getPaymentInstructions } from '../../../../../lib/payment-qr-provider.ts';
+import {
+  getGuestOrderAccessTokenFromRequest,
+  hashGuestOrderAccessToken,
+  verifyGuestOrderAccess,
+  verifyStaffAccess,
+} from '../../../../../lib/guest-order-access.ts';
+import { OrderRepository } from '../../../../../lib/repositories/order-repository.ts';
+import { serverOrderStore } from '../../../../../lib/server-order-store.ts';
+import { createPrivilegedSupabaseClient } from '../../../../../lib/supabase/admin.ts';
+import { getSupabaseSecretKey } from '../../../../../lib/supabase/config.ts';
+import type { PendingOrder } from '../../../../../lib/order-types.ts';
 
 export async function GET(
-  _request: Request,
+  request: Request,
   props: { params: Promise<{ id: string }> }
 ) {
   try {
@@ -12,12 +22,52 @@ export async function GET(
       return NextResponse.json({ error: 'Thiếu mã đơn hàng.' }, { status: 400 });
     }
 
-    const order = serverOrderStore.getOrder(id);
+    const isGuestAuthorized = await verifyGuestOrderAccess(request, id);
+    const staff = !isGuestAuthorized ? await verifyStaffAccess(request) : null;
+
+    if (!isGuestAuthorized && !staff) {
+      return NextResponse.json(
+        { error: 'Không có quyền truy cập đơn hàng.' },
+        { status: 401 }
+      );
+    }
+
+    let order: PendingOrder | null = null;
+    const hasSupabaseEnvironment = Boolean(
+      getSupabaseSecretKey() ||
+      process.env.NEXT_PUBLIC_SUPABASE_URL?.trim() ||
+      process.env.SUPABASE_URL?.trim()
+    );
+
+    if (hasSupabaseEnvironment) {
+      try {
+        const client = createPrivilegedSupabaseClient();
+        const orderRepo = new OrderRepository(client);
+        if (staff) {
+          order = await orderRepo.getById(id, { kind: 'staff', staff });
+        } else {
+          const token = getGuestOrderAccessTokenFromRequest(request, id);
+          if (token) {
+            order = await orderRepo.getById(id, {
+              kind: 'guest',
+              tokenHash: hashGuestOrderAccessToken(token),
+            });
+          }
+        }
+      } catch (err) {
+        console.error('Lỗi truy vấn đơn hàng từ Supabase:', err);
+      }
+    }
+
+    if (!order) {
+      order = serverOrderStore.getOrder(id);
+    }
+
     if (!order) {
       return NextResponse.json({ error: 'Không tìm thấy đơn hàng.' }, { status: 404 });
     }
 
-    const instructions = await getPaymentInstructions(id);
+    const instructions = await getPaymentInstructions(order);
     return NextResponse.json({ instructions, order });
   } catch (err) {
     console.error('Lỗi lấy hướng dẫn thanh toán:', err);

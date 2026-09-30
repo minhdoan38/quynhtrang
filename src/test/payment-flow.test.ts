@@ -7,6 +7,13 @@ import { createInitialState, type DesignState } from '../lib/product-state.ts';
 import { serverOrderStore } from '../lib/server-order-store.ts';
 import type { CustomerInfo } from '../lib/order-types.ts';
 import { getPaymentInstructions } from '../lib/payment-qr-provider.ts';
+import { GET as getPaymentRoute } from '../app/api/orders/[id]/payment/route.ts';
+import { POST as postReportRoute } from '../app/api/orders/[id]/payment/report/route.ts';
+import {
+  createGuestOrderAccessToken,
+  hashGuestOrderAccessToken,
+  GUEST_ORDER_COOKIE_NAME,
+} from '../lib/guest-order-access.ts';
 
 test('Order has server-owned price, payment reference, and pending_payment status', () => {
   serverOrderStore.clear();
@@ -106,7 +113,75 @@ test('payment route handlers are structured correctly', () => {
   assert.match(paymentSource, /export async function GET/);
   assert.match(paymentSource, /getPaymentInstructions/);
   assert.match(paymentSource, /serverOrderStore\.getOrder/);
+  assert.match(paymentSource, /verifyGuestOrderAccess/);
 
   assert.match(reportSource, /export async function POST/);
   assert.match(reportSource, /serverOrderStore\.reportPayment/);
+  assert.match(reportSource, /verifyGuestOrderAccess/);
+  assert.match(reportSource, /PaymentRepository/);
+  assert.match(reportSource, /PAYMENT_REPORTED/);
+});
+
+test('payment route enforces guest authorization', async () => {
+  serverOrderStore.clear();
+  const design = createInitialState('notebook');
+  const customer: CustomerInfo = { fullName: 'User A', phone: '0900000001', shippingAddress: 'Addr' };
+  const order = serverOrderStore.createOrder(design, customer);
+  const rawToken = createGuestOrderAccessToken();
+  serverOrderStore.createGuestAccess(
+    order.id,
+    hashGuestOrderAccessToken(rawToken),
+    new Date(Date.now() + 3600 * 1000).toISOString()
+  );
+
+  // Unauthorized request
+  const unauthRes = await getPaymentRoute(
+    new Request(`http://localhost/api/orders/${order.id}/payment`),
+    { params: Promise.resolve({ id: order.id }) }
+  );
+  assert.equal(unauthRes.status, 401);
+
+  // Authorized request with cookie
+  const authRes = await getPaymentRoute(
+    new Request(`http://localhost/api/orders/${order.id}/payment`, {
+      headers: { cookie: `${GUEST_ORDER_COOKIE_NAME}=${rawToken}` },
+    }),
+    { params: Promise.resolve({ id: order.id }) }
+  );
+  assert.equal(authRes.status, 200);
+  const body = (await authRes.json()) as { instructions: unknown; order: unknown };
+  assert.ok(body.instructions);
+});
+
+test('payment report route enforces guest authorization and sets payment_reported', async () => {
+  serverOrderStore.clear();
+  const design = createInitialState('notebook');
+  const customer: CustomerInfo = { fullName: 'User B', phone: '0900000002', shippingAddress: 'Addr' };
+  const order = serverOrderStore.createOrder(design, customer);
+  const rawToken = createGuestOrderAccessToken();
+  serverOrderStore.createGuestAccess(
+    order.id,
+    hashGuestOrderAccessToken(rawToken),
+    new Date(Date.now() + 3600 * 1000).toISOString()
+  );
+
+  // Unauthorized request
+  const unauthRes = await postReportRoute(
+    new Request(`http://localhost/api/orders/${order.id}/payment/report`, { method: 'POST' }),
+    { params: Promise.resolve({ id: order.id }) }
+  );
+  assert.equal(unauthRes.status, 401);
+
+  // Authorized request
+  const authRes = await postReportRoute(
+    new Request(`http://localhost/api/orders/${order.id}/payment/report`, {
+      method: 'POST',
+      headers: { cookie: `${GUEST_ORDER_COOKIE_NAME}=${rawToken}` },
+    }),
+    { params: Promise.resolve({ id: order.id }) }
+  );
+  assert.equal(authRes.status, 200);
+  const body = (await authRes.json()) as { order: { paymentStatus: string } };
+  assert.equal(body.order.paymentStatus, 'payment_reported');
+  assert.notEqual(body.order.paymentStatus, 'paid');
 });

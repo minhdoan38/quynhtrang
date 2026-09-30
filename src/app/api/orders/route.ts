@@ -1,3 +1,5 @@
+import { NextResponse } from 'next/server.js';
+import { setGuestOrderAccessCookie } from '../../../lib/guest-order-access.ts';
 import { validateCustomerInfo } from '../../../lib/customer-info.ts';
 import { DEFAULT_BANK_DETAILS } from '../../../lib/payment-qr-provider.ts';
 import {
@@ -93,7 +95,9 @@ export async function POST(request: Request) {
         bankName: DEFAULT_BANK_DETAILS.bankName,
       },
     };
-    return Response.json(responsePayload, { status: 201 });
+    const response = NextResponse.json(responsePayload, { status: 201 });
+    setGuestOrderAccessCookie(response, prepared.guestAccessToken, prepared.order.id);
+    return response;
   } catch (error) {
     console.error('Lỗi tạo đơn hàng:', error);
     return Response.json({ error: 'Có lỗi xảy ra khi tạo đơn hàng.' }, { status: 500 });

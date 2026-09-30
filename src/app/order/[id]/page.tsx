@@ -18,7 +18,7 @@ export default function OrderConfirmationPage(props: {
   useEffect(() => {
     async function fetchOrder() {
       try {
-        const res = await fetch(`/api/orders/${params.id}`);
+        const res = await fetch(`/api/orders/${params.id}`, { credentials: 'same-origin' });
         const data = await res.json();
         if (!res.ok || !data.order) {
           throw new Error(data.error || 'Không tìm thấy đơn hàng.');

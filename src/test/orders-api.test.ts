@@ -163,8 +163,11 @@ test('GET returns the stored order with normalized customer and sanitized snapsh
   });
   const created = await createResponse.json() as OrderResponse;
 
+  const cookieHeader = createResponse.headers.get('set-cookie') ?? '';
   const response = await GET(
-    new Request(`http://localhost/api/orders/${created.order.id}`),
+    new Request(`http://localhost/api/orders/${created.order.id}`, {
+      headers: cookieHeader ? { cookie: cookieHeader } : {},
+    }),
     { params: Promise.resolve({ id: created.order.id }) },
   );
   const body = await response.json() as { order: PendingOrder };
@@ -176,6 +179,62 @@ test('GET returns the stored order with normalized customer and sanitized snapsh
   assert.equal(body.order.approvedDesignVersionId, created.order.approvedDesignVersionId);
   assert.match(body.order.snapshot.design.image?.src ?? '', /^\/api\/assets\/asset-/);
   assert.doesNotMatch(JSON.stringify(body.order.snapshot), /blob:/);
+});
+
+test('GET rejects request without guest access cookie or token with 401', async () => {
+  const createResponse = await postOrder({
+    idempotencyKey: 'unauth-order-key',
+    design: createInitialState('sticker'),
+    customer: validCustomer,
+  });
+  const created = (await createResponse.json()) as OrderResponse;
+
+  const unauthorizedResponse = await GET(
+    new Request(`http://localhost/api/orders/${created.order.id}`),
+    { params: Promise.resolve({ id: created.order.id }) },
+  );
+  assert.equal(unauthorizedResponse.status, 401);
+});
+
+test('GET rejects request with invalid guest token with 401', async () => {
+  const createResponse = await postOrder({
+    idempotencyKey: 'wrong-token-order-key',
+    design: createInitialState('sticker'),
+    customer: validCustomer,
+  });
+  const created = (await createResponse.json()) as OrderResponse;
+
+  const wrongTokenResponse = await GET(
+    new Request(`http://localhost/api/orders/${created.order.id}`, {
+      headers: {
+        'x-guest-token': 'completely-wrong-token',
+      },
+    }),
+    { params: Promise.resolve({ id: created.order.id }) },
+  );
+  assert.equal(wrongTokenResponse.status, 401);
+});
+
+test('GET allows access for verified staff member with 200', async () => {
+  const createResponse = await postOrder({
+    idempotencyKey: 'staff-access-order-key',
+    design: createInitialState('sticker'),
+    customer: validCustomer,
+  });
+  const created = (await createResponse.json()) as OrderResponse;
+
+  const staffResponse = await GET(
+    new Request(`http://localhost/api/orders/${created.order.id}`, {
+      headers: {
+        'x-staff-user-id': 'staff-editor-99',
+        'x-staff-role': 'editor',
+      },
+    }),
+    { params: Promise.resolve({ id: created.order.id }) },
+  );
+  assert.equal(staffResponse.status, 200);
+  const body = (await staffResponse.json()) as { order: PendingOrder };
+  assert.equal(body.order.id, created.order.id);
 });
 
 test('POST rejects submission when preflight is unacknowledged, missing, or has empty revision', async () => {

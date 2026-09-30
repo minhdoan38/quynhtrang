@@ -118,7 +118,7 @@ export default function CheckoutPage() {
     if (typeof window !== 'undefined') {
       const savedOrderId = sessionStorage.getItem('quynhtrang.pendingOrderId');
       if (savedOrderId) {
-        fetch(`/api/orders/${savedOrderId}`)
+        fetch(`/api/orders/${savedOrderId}`, { credentials: 'same-origin' })
           .then((res) => (res.ok ? res.json() : null))
           .then((data) => {
             if (data?.order) {
@@ -277,6 +277,7 @@ export default function CheckoutPage() {
 
         const res = await fetch('/api/orders', {
           method: 'POST',
+          credentials: 'same-origin',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             design,

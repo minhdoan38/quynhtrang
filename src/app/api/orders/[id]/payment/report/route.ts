@@ -1,14 +1,58 @@
-import { NextResponse } from 'next/server';
-import { serverOrderStore } from '@/lib/server-order-store';
+import { NextResponse } from 'next/server.js';
+import {
+  verifyGuestOrderAccess,
+  verifyStaffAccess,
+} from '../../../../../../lib/guest-order-access.ts';
+import { OrderEventRepository } from '../../../../../../lib/repositories/order-event-repository.ts';
+import { PaymentRepository } from '../../../../../../lib/repositories/payment-repository.ts';
+import { serverOrderStore } from '../../../../../../lib/server-order-store.ts';
+import { createPrivilegedSupabaseClient } from '../../../../../../lib/supabase/admin.ts';
+import { getSupabaseSecretKey } from '../../../../../../lib/supabase/config.ts';
 
 export async function POST(
-  _request: Request,
+  request: Request,
   props: { params: Promise<{ id: string }> }
 ) {
   try {
     const { id } = await props.params;
     if (!id) {
       return NextResponse.json({ error: 'Thiếu mã đơn hàng.' }, { status: 400 });
+    }
+
+    const isGuestAuthorized = await verifyGuestOrderAccess(request, id);
+    const staff = !isGuestAuthorized ? await verifyStaffAccess(request) : null;
+
+    if (!isGuestAuthorized && !staff) {
+      return NextResponse.json(
+        { error: 'Không có quyền truy cập đơn hàng.' },
+        { status: 401 }
+      );
+    }
+
+    const hasSupabaseEnvironment = Boolean(
+      getSupabaseSecretKey() ||
+      process.env.NEXT_PUBLIC_SUPABASE_URL?.trim() ||
+      process.env.SUPABASE_URL?.trim()
+    );
+
+    if (hasSupabaseEnvironment) {
+      try {
+        const client = createPrivilegedSupabaseClient();
+        const paymentRepo = new PaymentRepository(client);
+        const orderEventRepo = new OrderEventRepository(client);
+
+        await paymentRepo.markCustomerReported(id);
+        await orderEventRepo.append({
+          orderId: id,
+          eventType: 'PAYMENT_REPORTED',
+          actorRole: 'customer',
+          payload: {
+            reportedAt: new Date().toISOString(),
+          },
+        });
+      } catch (err) {
+        console.error('Lỗi cập nhật thanh toán Supabase:', err);
+      }
     }
 
     const order = serverOrderStore.reportPayment(id);

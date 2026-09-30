@@ -41,6 +41,7 @@ export class ServerOrderStore {
   private snapshots: Map<string, ApprovedDesignSnapshot> = new Map();
   private approvedVersions: Map<string, ApprovedDesignVersion> = new Map();
   private idempotencyMap: Map<string, string> = new Map();
+  private guestAccess: Map<string, { tokenHash: string; expiresAt: string }> = new Map();
 
   createOrder(params: CreateOrderParams): PendingOrder;
   createOrder(design: DesignState, customer: CustomerInfo, idempotencyKey?: string): PendingOrder;
@@ -182,6 +183,7 @@ export class ServerOrderStore {
     this.snapshots.delete(order.approvedDesignVersionId);
     this.approvedVersions.delete(order.approvedDesignVersionId);
     this.idempotencyMap.delete(order.idempotencyKey);
+    this.guestAccess.delete(id);
   }
 
   getApprovedDesignVersion(id: string): ApprovedDesignVersion | null {
@@ -206,12 +208,22 @@ export class ServerOrderStore {
     const snapshot = this.snapshots.get(id);
     return snapshot ? JSON.parse(JSON.stringify(snapshot)) : null;
   }
+  createGuestAccess(orderId: string, tokenHash: string, expiresAt: string): void {
+    this.guestAccess.set(orderId, { tokenHash, expiresAt });
+  }
+
+  getGuestAccess(orderId: string): { tokenHash: string; expiresAt: string } | null {
+    const record = this.guestAccess.get(orderId);
+    return record ? { ...record } : null;
+  }
+
 
   clear(): void {
     this.orders.clear();
     this.snapshots.clear();
     this.approvedVersions.clear();
     this.idempotencyMap.clear();
+    this.guestAccess.clear();
   }
 }
 
@@ -304,7 +316,9 @@ export function createServerOrderPreparationOptions(): PrepareOrderOptions {
           preflightAcknowledged: true,
         });
       },
-      async createGuestAccess() { },
+      async createGuestAccess(input: { orderId: string; tokenHash: string; expiresAt: string }) {
+        serverOrderStore.createGuestAccess(input.orderId, input.tokenHash, input.expiresAt);
+      },
       async deleteById(id: string) {
         serverOrderStore.deleteOrder(id);
       },
