@@ -46,7 +46,7 @@ export interface OrderNextAction {
   intent: 'attention' | 'waiting' | 'ready' | 'neutral';
   cta: null | {
     label: string;
-    type: 'confirm_payment' | 'release_hold' | 'navigate';
+    type: 'confirm_payment' | 'release_hold' | 'navigate' | 'start_production' | 'complete_production' | 'cancel_order';
     href?: string;
   };
 }
@@ -124,6 +124,42 @@ export interface AdminOrderDetail {
 export interface EventPage {
   items: OrderActivityItem[];
   nextCursor: string | null;
+}
+
+export function assertProductionStartEligible(order: OrderOperationalState & { productionDesignVersionId?: string | null }): void {
+  if (order.activeHold) {
+    throw new Error('Đơn hàng đang tạm giữ, không thể bắt đầu sản xuất');
+  }
+  if (order.paymentStatus !== 'paid') {
+    throw new Error('Đơn hàng chưa thanh toán, không thể bắt đầu sản xuất');
+  }
+  if (order.designStatus !== 'approved') {
+    throw new Error('Thiết kế chưa được duyệt, không thể bắt đầu sản xuất');
+  }
+  if (order.fulfillmentStatus !== 'unprocessed' && order.fulfillmentStatus !== 'ready_for_production') {
+    throw new Error(`Trạng thái xử lý không hợp lệ để bắt đầu sản xuất: ${order.fulfillmentStatus}`);
+  }
+  if (!order.productionDesignVersionId) {
+    throw new Error('Đơn hàng thiếu phiên bản thiết kế sản xuất');
+  }
+}
+
+export function assertProductionCompleteEligible(order: OrderOperationalState): void {
+  if (order.activeHold) {
+    throw new Error('Đơn hàng đang tạm giữ, không thể hoàn tất sản xuất');
+  }
+  if (order.fulfillmentStatus !== 'in_production') {
+    throw new Error('Đơn hàng chưa ở trạng thái đang sản xuất');
+  }
+}
+
+export function assertOrderCancelEligible(order: OrderOperationalState): void {
+  if (order.fulfillmentStatus === 'completed') {
+    throw new Error('Đơn hàng đã hoàn tất, không thể hủy');
+  }
+  if (order.fulfillmentStatus === 'cancelled' || order.paymentStatus === 'cancelled') {
+    throw new Error('Đơn hàng đã hủy trước đó');
+  }
 }
 
 export function normalizePreflightSummary(raw: unknown): PreflightSummary {

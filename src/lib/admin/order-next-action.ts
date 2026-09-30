@@ -80,7 +80,10 @@ export function resolveOrderNextAction(state: OrderOperationalState): OrderNextA
       title: 'Đang sản xuất',
       description: 'Đơn hàng đang trong quá trình in ấn và gia công.',
       intent: 'neutral',
-      cta: null,
+      cta: {
+        label: 'Hoàn tất sản xuất',
+        type: 'complete_production',
+      },
     };
   }
 
@@ -141,7 +144,10 @@ export function resolveOrderNextAction(state: OrderOperationalState): OrderNextA
       title: 'Sẵn sàng sản xuất',
       description: 'Đã nhận thanh toán và thiết kế đã duyệt. Sẵn sàng đưa vào xưởng in.',
       intent: 'ready',
-      cta: null,
+      cta: {
+        label: 'Bắt đầu sản xuất',
+        type: 'start_production',
+      },
     };
   }
 
