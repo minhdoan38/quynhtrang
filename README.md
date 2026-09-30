@@ -27,7 +27,7 @@ pnpm test
 pnpm build
 ```
 
-### Supabase Migrations & Testing (State 37, 38 & 39)
+### Supabase Migrations & Testing (State 37, 38, 39 & 40)
 
 ```sh
 # Triển khai migrations
@@ -35,16 +35,18 @@ psql "$SUPABASE_DB_URL" -v ON_ERROR_STOP=1 -f supabase/migrations/0001_state37_c
 psql "$SUPABASE_DB_URL" -v ON_ERROR_STOP=1 -f supabase/migrations/0002_state37_storage.sql
 psql "$SUPABASE_DB_URL" -v ON_ERROR_STOP=1 -f supabase/migrations/0003_state38_order_operations.sql
 psql "$SUPABASE_DB_URL" -v ON_ERROR_STOP=1 -f supabase/migrations/0004_state39_design_revisions.sql
+psql "$SUPABASE_DB_URL" -v ON_ERROR_STOP=1 -f supabase/migrations/0005_state40_fulfillment_operations.sql
 
 # Nạp dữ liệu seed
 psql "$SUPABASE_DB_URL" -v ON_ERROR_STOP=1 -f supabase/seed.sql
 psql "$SUPABASE_DB_URL" -v ON_ERROR_STOP=1 -f supabase/seed_state39.sql
+psql "$SUPABASE_DB_URL" -v ON_ERROR_STOP=1 -f supabase/seed_state40.sql
 
-# Chạy kiểm thử RLS, atomic operations & immutability
+# Chạy kiểm thử RLS, atomic operations, immutability & fulfillment
 psql "$SUPABASE_DB_URL" -v ON_ERROR_STOP=1 -f supabase/tests/state37_rls.sql
 psql "$SUPABASE_DB_URL" -v ON_ERROR_STOP=1 -f supabase/tests/state38_order_operations.sql
 psql "$SUPABASE_DB_URL" -v ON_ERROR_STOP=1 -f supabase/tests/state39_design_revisions.sql
-
+psql "$SUPABASE_DB_URL" -v ON_ERROR_STOP=1 -f supabase/tests/state40_fulfillment_operations.sql
 # Vận hành tác vụ nền State 39
 node --experimental-strip-types scripts/state39-render-jobs.ts --once
 node --experimental-strip-types scripts/state39-asset-gc.ts --dry-run
