@@ -12,6 +12,7 @@ import {
   prepareOrderFromGuestCheckout,
 } from '../../../lib/services/prepare-order-from-guest-checkout.ts';
 import { getSupabaseSecretKey } from '../../../lib/supabase/config.ts';
+import { createServerSupabaseClient } from '../../../lib/supabase/server.ts';
 
 export interface CreateOrderRequestBody {
   idempotencyKey: string;
@@ -60,6 +61,17 @@ export async function POST(request: Request) {
       process.env.SUPABASE_URL?.trim(),
     );
     let prepared;
+    let authenticatedUserId: string | undefined;
+    if (hasSupabaseEnvironment) {
+      try {
+        const supabase = await createServerSupabaseClient();
+        const { data: authData } = await supabase.auth.getUser();
+        authenticatedUserId = authData?.user?.id;
+      } catch {
+        // Guest user
+      }
+    }
+
     try {
       prepared = await prepareOrderFromGuestCheckout(
         {
@@ -69,6 +81,7 @@ export async function POST(request: Request) {
           designRevision: body.designRevision ?? '',
           preflightRevision: body.preflightRevision ?? '',
           preflightAcknowledged: body.preflightAcknowledged === true,
+          authenticatedUserId,
         },
         hasSupabaseEnvironment ? undefined : createServerOrderPreparationOptions(),
       );

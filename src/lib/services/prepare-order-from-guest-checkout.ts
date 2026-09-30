@@ -25,6 +25,7 @@ export interface PrepareOrderInput {
   preflightAcknowledged: boolean;
   preflightSnapshot?: Record<string, unknown> | null;
   guestAccessSeed?: string;
+  authenticatedUserId?: string;
 }
 
 export interface PreparedOrderResult {
@@ -127,6 +128,7 @@ export async function prepareOrderFromGuestCheckout(
   const project = await repositories.projectRepo.createProject({
     productId: input.design.productId,
     variantId: input.design.variantId,
+    ownerUserId: input.authenticatedUserId ?? null,
     guestKeyHash: tokenHash,
     status: 'approved',
     currentWorkingRevision: 1,
@@ -178,6 +180,7 @@ export async function prepareOrderFromGuestCheckout(
     currency: 'VND',
     customer: structuredClone(input.customer),
     projectId: project.id,
+    customerUserId: input.authenticatedUserId ?? null,
     approvedDesignVersionId: version.id,
     customerApprovedDesignVersionId: version.id,
     productionDesignVersionId: version.id,

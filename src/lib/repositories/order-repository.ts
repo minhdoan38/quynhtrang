@@ -41,6 +41,7 @@ export class OrderRepository {
     const productionId = input.productionDesignVersionId ?? customerApprovedId;
     const orderPayload = {
       project_id: input.projectId ?? null,
+      customer_user_id: input.customerUserId ?? null,
       customer_approved_design_version_id: customerApprovedId,
       production_design_version_id: productionId,
       approved_design_version_id: customerApprovedId,

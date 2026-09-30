@@ -379,6 +379,7 @@ export interface CreatePendingOrderInput {
   currency?: string;
   customer: CustomerInfo;
   projectId?: string;
+  customerUserId?: string | null;
   approvedDesignVersionId: string;
   customerApprovedDesignVersionId?: string;
   productionDesignVersionId?: string;
