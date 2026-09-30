@@ -7,6 +7,7 @@ export type StaffRole = 'admin' | 'editor';
 export interface StaffIdentity {
   userId: string;
   role: StaffRole;
+  email?: string | null;
 }
 
 export type DesignStatus = 'awaiting_review' | 'ready' | 'editing' | 'approved' | 'needs_changes';
