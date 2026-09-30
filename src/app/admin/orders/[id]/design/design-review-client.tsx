@@ -1,8 +1,9 @@
 'use client';
 
-import React, { useState, useTransition, useCallback } from 'react';
+import React, { useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { DesignReviewView } from '@/components/admin/design-review.tsx';
+import { DesignCompare } from '@/components/admin/design-compare.tsx';
 import { CustomizerShell } from '@/components/customizer/customizer-shell.tsx';
 import { useStaffDraftSession } from '@/lib/use-staff-draft-session.ts';
 import {
@@ -16,12 +17,16 @@ import {
   discardDraftAction,
   takeoverDraftAction,
   approveCustomerAsIsAction,
+  approveDraftAction,
+  runDraftPreflightAction,
+  runCustomerPreflightAction,
 } from './actions.ts';
 import type {
   StaffDraftSummary,
   StaffDesignDraft,
   DesignVersionListItem,
   DesignReviewMode,
+  StaffPreflightAssessment,
 } from '@/lib/domain/design-revision.ts';
 import type { DesignState } from '@/lib/product-state.ts';
 
@@ -64,7 +69,8 @@ export function DesignReviewClient({
   const [currentDraft, setCurrentDraft] = useState<StaffDesignDraft | null>(initialFullDraft);
   const [selectedDocument, setSelectedDocument] = useState<DesignState>(initialSelectedDocument);
   const [selectedVersionNumber, setSelectedVersionNumber] = useState(productionVersionNumber);
-  const [versions, setVersions] = useState<DesignVersionListItem[]>(initialVersions);
+  const [versions] = useState<DesignVersionListItem[]>(initialVersions);
+  const [assessment, setAssessment] = useState<StaffPreflightAssessment | null>(null);
 
   // Dialog controls
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
@@ -204,12 +210,28 @@ export function DesignReviewClient({
     }
 
     startTransition(async () => {
+      const preflightRes = await runCustomerPreflightAction({
+        orderId,
+        expectedCustomerVersionId: custVer.id,
+        expectedProductionVersionId: prodVer.id,
+      });
+
+      if (!preflightRes.ok) {
+        alert(`Kiểm tra trước in thất bại: ${preflightRes.message}`);
+        return;
+      }
+
+      if (preflightRes.value.findings.level === 'error') {
+        alert('Bản thiết kế của khách có lỗi vi phạm tiêu chuẩn in ấn. Không thể duyệt nguyên bản.');
+        return;
+      }
+
       const res = await approveCustomerAsIsAction({
         orderId,
         expectedCustomerVersionId: custVer.id,
         expectedProductionVersionId: prodVer.id,
-        assessmentId: crypto.randomUUID(),
-        acknowledgedWarningIds: [],
+        assessmentId: preflightRes.value.id,
+        acknowledgedWarningIds: preflightRes.value.warningIds,
         requestId: `as-is-${Date.now()}-${crypto.randomUUID()}`,
       });
 
@@ -228,7 +250,46 @@ export function DesignReviewClient({
     }
   };
 
-  // When in staff-edit mode: mount CustomizerShell with staff context
+  // COMPARE & APPROVAL Mode
+  if (mode === 'review-changes' && currentDraft && assessment) {
+    const baseVersion = versions.find((v) => v.versionNumber === selectedVersionNumber) || versions[0];
+    return (
+      <DesignCompare
+        orderId={orderId}
+        publicOrderCode={publicOrderCode}
+        baseVersionNumber={baseVersion.versionNumber}
+        baseDocument={selectedDocument}
+        draftDocument={currentDraft.document}
+        draftReason={currentDraft.reason}
+        assessment={assessment}
+        onBackToEdit={() => setMode('staff-edit')}
+        isApproving={isPending}
+        onApprove={async (acknowledgedWarningIds) => {
+          startTransition(async () => {
+            const prodVer = versions.find((v) => v.isProduction) || versions[0];
+            const res = await approveDraftAction({
+              draftId: currentDraft.id,
+              expectedRevision: draftSession.currentRevision,
+              expectedProductionVersionId: currentDraft.expectedProductionDesignVersionId || prodVer.id,
+              sessionId,
+              epoch: currentDraft.lease?.epoch || 1,
+              assessmentId: assessment.id,
+              acknowledgedWarningIds,
+              requestId: `approve-${Date.now()}-${crypto.randomUUID()}`,
+            });
+
+            if (res.ok) {
+              router.push(`/admin/orders/${orderId}`);
+            } else {
+              alert(`Duyệt thất bại: ${res.message}`);
+            }
+          });
+        }}
+      />
+    );
+  }
+
+  // STAFF-EDIT Mode
   if (mode === 'staff-edit' && currentDraft) {
     return (
       <div className="flex flex-col h-screen w-full bg-[#FFFDF8] overflow-hidden select-none">
@@ -236,7 +297,7 @@ export function DesignReviewClient({
         <div className="h-10 px-4 bg-[#2E3338] text-white flex items-center justify-between text-xs z-30 shrink-0">
           <div className="flex items-center gap-2">
             <span className="font-semibold text-[#DCEBF4]">Bản chỉnh sửa #{publicOrderCode}</span>
-            <span className="text-neutral-400 font-mono text-[11px]">• v{currentDraft.revision}</span>
+            <span className="text-neutral-400 font-mono text-[11px]">• v{draftSession.currentRevision}</span>
           </div>
 
           <div className="flex items-center gap-3">
@@ -274,13 +335,36 @@ export function DesignReviewClient({
               sessionId,
               onSave: async (doc) => {
                 draftSession.enqueueChange(doc);
+                setCurrentDraft((prev) => (prev ? { ...prev, document: doc } : prev));
               },
               onExit: () => {
                 setMode('review');
               },
               onComplete: async () => {
                 await draftSession.flushSave();
-                // Transitions to preflight / compare
+                const prodVersion = versions.find((v) => v.isProduction) || versions[0];
+                const preflightRes = await runDraftPreflightAction({
+                  draftId: currentDraft.id,
+                  expectedRevision: draftSession.currentRevision,
+                  expectedProductionVersionId:
+                    currentDraft.expectedProductionDesignVersionId || prodVersion.id,
+                  lease: {
+                    sessionId,
+                    epoch: currentDraft.lease?.epoch || 1,
+                  },
+                });
+
+                if (!preflightRes.ok) {
+                  alert(`Kiểm tra trước in thất bại: ${preflightRes.message}`);
+                  return;
+                }
+
+                if (preflightRes.value.findings.level === 'error') {
+                  alert('Bản thiết kế còn lỗi vi phạm tiêu chuẩn in ấn. Vui lòng khắc phục.');
+                  return;
+                }
+
+                setAssessment(preflightRes.value);
                 setMode('review-changes');
               },
             }}

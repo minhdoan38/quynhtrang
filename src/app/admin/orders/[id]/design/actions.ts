@@ -1,12 +1,15 @@
 'use server';
 
 import * as service from '@/lib/services/admin-design-revisions.ts';
+import { runDraftPreflight, runCustomerPreflight } from '@/lib/services/staff-design-preflight.ts';
 import type {
   StaffDesignDraft,
   DraftLease,
   RevisionResult,
   SaveStaffDraftInput,
   ApprovedRevisionResult,
+  DraftWriteGuard,
+  StaffPreflightAssessment,
 } from '@/lib/domain/design-revision.ts';
 
 export async function createDraftAction(params: {
@@ -76,4 +79,18 @@ export async function approveCustomerAsIsAction(params: {
   requestId: string;
 }): Promise<RevisionResult<ApprovedRevisionResult>> {
   return service.approveCustomerAsIs(params);
+}
+
+export async function runDraftPreflightAction(
+  guard: DraftWriteGuard
+): Promise<RevisionResult<StaffPreflightAssessment>> {
+  return runDraftPreflight(guard);
+}
+
+export async function runCustomerPreflightAction(params: {
+  orderId: string;
+  expectedCustomerVersionId: string;
+  expectedProductionVersionId: string;
+}): Promise<RevisionResult<StaffPreflightAssessment>> {
+  return runCustomerPreflight(params);
 }
