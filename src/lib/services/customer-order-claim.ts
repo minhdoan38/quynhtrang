@@ -6,6 +6,18 @@ export interface ClaimResult {
   orderId: string;
   projectId: string | null;
 }
+export type ClaimProgressState = 'idle' | 'sending_otp' | 'otp_sent' | 'claiming' | 'migrating' | 'done' | 'error';
+
+export function parseClaimStateMessage(state: 'claiming' | 'migrating' | 'done'): string {
+  switch (state) {
+    case 'claiming':
+      return 'Đang liên kết đơn hàng...';
+    case 'migrating':
+      return 'Đang lưu thiết kế của bạn...';
+    case 'done':
+      return 'Đã lưu đơn hàng và thiết kế vào tài khoản.';
+  }
+}
 
 export class CustomerOrderClaimService {
   private client: SupabaseClient;

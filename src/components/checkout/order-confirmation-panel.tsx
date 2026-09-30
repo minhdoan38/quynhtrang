@@ -18,22 +18,28 @@ import {
 import type { PendingOrder } from '@/lib/order-types';
 import { formatCurrencyVND } from '@/lib/pricing';
 import { DesignCanvas } from '@/components/customizer/design-canvas';
+import { AccountSaveDialog } from './account-save-dialog';
+import { Button } from '@/components/ui/button';
 
 export interface OrderConfirmationPanelProps {
   order: PendingOrder;
+  guestToken?: string;
   onReopenPayment: () => void;
   onNewDesign?: () => void;
 }
 
 export function OrderConfirmationPanel({
   order,
+  guestToken,
   onReopenPayment,
   onNewDesign,
 }: OrderConfirmationPanelProps) {
   const router = useRouter();
   const containerRef = useRef<HTMLDivElement>(null);
   const [copiedCode, setCopiedCode] = useState(false);
-
+  const [isAccountSaveOpen, setIsAccountSaveOpen] = useState(false);
+  const [isSavedToAccount, setIsSavedToAccount] = useState(false);
+  const [isDismissed, setIsDismissed] = useState(false);
   const { snapshot, customer } = order;
 
   // Staggered entrance animation with reduced-motion support
@@ -202,15 +208,54 @@ export function OrderConfirmationPanel({
       </div>
 
       {/* 5. Optional Account Migration Prompt (Non-blocking, secondary) */}
-      <div className="confirmation-section rounded-xl border border-[#ECE6DC] bg-[#FFFDF8] p-3 text-center space-y-1.5 text-xs">
-        <div className="inline-flex items-center gap-1.5 text-[#315F86] font-semibold text-xs">
-          <UserCheck size={14} />
-          <span>Lưu đơn hàng vào tài khoản</span>
+      {!isDismissed && (
+        <div className="confirmation-section rounded-xl border border-[#ECE6DC] bg-[#FFFDF8] p-4 text-center space-y-2.5 text-xs shadow-2xs">
+          {isSavedToAccount ? (
+            <div className="flex items-center justify-center gap-2 text-[#4A7251] font-semibold py-1">
+              <CheckCircle2 size={16} />
+              <span>Đã lưu đơn hàng vào tài khoản của bạn</span>
+            </div>
+          ) : (
+            <>
+              <div className="inline-flex items-center gap-1.5 text-[#315F86] font-semibold text-xs">
+                <UserCheck size={16} />
+                <span>Lưu đơn hàng vào tài khoản</span>
+              </div>
+              <p className="text-xs text-[#666A6D]">
+                Lưu lại để theo dõi tiến độ in ấn và không lo thất lạc bản thiết kế.
+              </p>
+              <div className="flex items-center justify-center gap-2 pt-1">
+                <button
+                  type="button"
+                  onClick={() => setIsDismissed(true)}
+                  className="px-3 py-1.5 text-xs text-[#666A6D] hover:text-[#2E3338] font-medium"
+                >
+                  Để sau
+                </button>
+                <Button
+                  type="button"
+                  size="sm"
+                  onClick={() => setIsAccountSaveOpen(true)}
+                  className="h-8 px-4 bg-[#315F86] hover:bg-[#244A69] text-white text-xs font-semibold rounded-lg"
+                >
+                  Lưu vào tài khoản
+                </Button>
+              </div>
+            </>
+          )}
         </div>
-        <p className="text-xs text-[#666A6D]">
-          Đăng nhập để theo dõi tiến độ in ấn và dễ dàng đặt lại sau này.
-        </p>
-      </div>
+      )}
+
+      <AccountSaveDialog
+        open={isAccountSaveOpen}
+        onOpenChange={setIsAccountSaveOpen}
+        orderId={order.id}
+        guestToken={guestToken || ''}
+        initialEmail=""
+        onSuccess={() => {
+          setIsSavedToAccount(true);
+        }}
+      />
     </div>
   );
 }
