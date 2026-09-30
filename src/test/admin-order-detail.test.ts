@@ -147,7 +147,7 @@ describe('AdminOrderDetail data contracts and permissions', () => {
 
     assert.equal(nextAction.kind, 'ready_for_production');
     assert.equal(nextAction.eyebrow, 'SẴN SÀNG');
-    assert.equal(nextAction.cta, null);
+    assert.equal(nextAction.cta?.type, 'start_production');
     assert.equal(detail.approvedDesign.label, 'Phiên bản khách duyệt v1');
   });
 

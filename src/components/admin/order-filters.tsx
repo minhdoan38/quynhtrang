@@ -12,7 +12,7 @@ import {
 import { cn } from '@/lib/utils';
 import type { InboxQueryParams } from '@/lib/admin/inbox-query';
 import type { ProductId } from '@/lib/product-state';
-import type { PaymentStatus } from '@/lib/domain/order';
+import type { PaymentStatus, DesignStatus, FulfillmentStatus } from '@/lib/domain/order';
 
 export interface OrderFiltersProps {
   query: InboxQueryParams;
@@ -43,6 +43,19 @@ const PAYMENT_OPTIONS: Array<{ value: PaymentStatus | 'all'; label: string }> = 
   { value: 'cancelled', label: 'Đã hủy' },
 ];
 
+const PROCESSING_OPTIONS: Array<{
+  value: DesignStatus | FulfillmentStatus | 'all';
+  label: string;
+}> = [
+    { value: 'all', label: 'Tất cả tiến độ' },
+    { value: 'awaiting_review', label: 'Chờ duyệt thiết kế' },
+    { value: 'needs_changes', label: 'Cần sửa thiết kế' },
+    { value: 'editing', label: 'Đang sửa thiết kế' },
+    { value: 'approved', label: 'Thiết kế đã duyệt' },
+    { value: 'ready_for_production', label: 'Sẵn sàng sản xuất' },
+    { value: 'in_production', label: 'Đang sản xuất' },
+    { value: 'completed', label: 'Hoàn tất' },
+  ];
 const DATE_OPTIONS: Array<{ value: NonNullable<InboxQueryParams['date']> | 'all'; label: string }> = [
   { value: 'all', label: 'Tất cả thời gian' },
   { value: 'today', label: 'Hôm nay' },
@@ -63,6 +76,7 @@ export function OrderFilters({
 }: OrderFiltersProps) {
   const activeProduct = PRODUCT_OPTIONS.find((opt) => opt.value === query.product) ?? PRODUCT_OPTIONS[0];
   const activePayment = PAYMENT_OPTIONS.find((opt) => opt.value === query.payment) ?? PAYMENT_OPTIONS[0];
+  const activeProcessing = PROCESSING_OPTIONS.find((opt) => opt.value === query.processing) ?? PROCESSING_OPTIONS[0];
   const activeDate = DATE_OPTIONS.find((opt) => opt.value === query.date) ?? DATE_OPTIONS[0];
 
   return (
@@ -168,6 +182,43 @@ export function OrderFilters({
               })}
             </DropdownMenuContent>
           </DropdownMenu>
+          {/* Processing Dropdown */}
+          <DropdownMenu>
+            <DropdownMenuTrigger
+              render={
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className={cn(
+                    'h-9 px-2.5 text-xs font-medium border-[#DDD6CC] bg-white text-[#2E3338] hover:bg-[#F8F3E8]',
+                    query.processing && 'border-[#315F86] bg-[#DCEBF4]/40 text-[#244A69] font-semibold'
+                  )}
+                >
+                  <span className="truncate max-w-[130px]">{activeProcessing.label}</span>
+                  <ChevronDown className="w-3.5 h-3.5 ml-1 opacity-60" />
+                </Button>
+              }
+            />
+            <DropdownMenuContent align="start" className="w-52 bg-white border-[#DDD6CC] shadow-md">
+              {PROCESSING_OPTIONS.map((opt) => {
+                const isSelected = (!query.processing && opt.value === 'all') || query.processing === opt.value;
+                return (
+                  <DropdownMenuItem
+                    key={opt.value}
+                    onClick={() => onFilterChange({ processing: opt.value === 'all' ? undefined : opt.value })}
+                    className={cn(
+                      'text-xs flex items-center justify-between cursor-pointer py-1.5',
+                      isSelected ? 'bg-[#DCEBF4]/50 font-semibold text-[#244A69]' : 'text-[#2E3338]'
+                    )}
+                  >
+                    <span>{opt.label}</span>
+                    {isSelected && <Check className="w-3.5 h-3.5 text-[#315F86]" />}
+                  </DropdownMenuItem>
+                );
+              })}
+            </DropdownMenuContent>
+          </DropdownMenu>
+
 
           {/* Date Dropdown */}
           <DropdownMenu>

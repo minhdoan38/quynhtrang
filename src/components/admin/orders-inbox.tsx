@@ -99,7 +99,7 @@ export function OrdersInbox({
                 <span>{tab.label}</span>
                 <span
                   className={cn(
-                    'inline-flex items-center justify-center px-1.5 py-0.2 rounded-full text-xs font-bold',
+                    'inline-flex items-center justify-center px-1.5 py-0.5 rounded-full text-xs font-bold',
                     isActive ? 'bg-white/20 text-white' : 'bg-[#F8F3E8] text-[#244A69] border border-[#DDD6CC]/60'
                   )}
                 >

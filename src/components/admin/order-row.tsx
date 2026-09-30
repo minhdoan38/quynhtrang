@@ -79,7 +79,7 @@ export function OrderRow({ order, currentQuery, className }: OrderRowProps) {
               <span className="font-bold text-sm tracking-tight text-[#2E3338] group-hover:text-[#315F86] transition-colors truncate block">
                 #{order.publicOrderCode}
               </span>
-              <span className="text-xs text-[#666A6D] block">{createdDate}</span>
+              <span className="text-xs text-[#666A6D] block" suppressHydrationWarning>{createdDate}</span>
             </div>
           </div>
           <div className="shrink-0 flex items-center gap-1">
@@ -142,7 +142,7 @@ export function OrderRow({ order, currentQuery, className }: OrderRowProps) {
             <span className="font-bold text-sm tracking-tight text-[#2E3338] group-hover:text-[#315F86] transition-colors truncate block">
               #{order.publicOrderCode}
             </span>
-            <span className="text-xs text-[#666A6D] block mt-0.5">{createdDate}</span>
+            <span className="text-xs text-[#666A6D] block mt-0.5" suppressHydrationWarning>{createdDate}</span>
           </div>
         </div>
 
@@ -176,6 +176,7 @@ export function OrderRow({ order, currentQuery, className }: OrderRowProps) {
             <div className="flex flex-wrap items-center gap-1">
               <OrderStatusChip type="payment" status={order.paymentStatus} />
               <OrderStatusChip type="design" status={order.designStatus} />
+              <OrderStatusChip type="fulfillment" status={order.fulfillmentStatus} />
             </div>
 
             {order.attentionReasons.length > 0 && (
