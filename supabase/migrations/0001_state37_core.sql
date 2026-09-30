@@ -17,7 +17,7 @@ declare
 begin
   seq_val := nextval('public.order_code_seq');
   date_part := to_char(clock_timestamp(), 'YYMMDD');
-  return 'QT' || date_part || '-' || lpad(seq_val::text, 4, '0');
+  return 'QT' || date_part || '-' || (case when seq_val < 10000 then lpad(seq_val::text, 4, '0') else seq_val::text end);
 end;
 $$;
 

@@ -243,27 +243,51 @@ values
         jsonb_build_object(
           'id', 'card-h-birthday-front-text',
           'type', 'text',
-          'surface', 'front',
+          'name', 'Happy Birthday to You',
           'x', 50,
           'y', 50,
+          'width', 70,
+          'height', 16,
+          'rotation', 0,
+          'locked', false,
+          'zIndex', 1,
+          'surface', 'front',
           'data', jsonb_build_object(
             'text', 'Happy Birthday to You',
-            'preset', 'heading',
             'color', '#B86C84',
-            'fontFamily', 'Be Vietnam Pro'
+            'fontFamily', 'Be Vietnam Pro',
+            'fontSize', 28,
+            'fontWeight', 'bold',
+            'fontStyle', 'normal',
+            'align', 'center',
+            'lineHeight', 1.2,
+            'letterSpacing', 0,
+            'placeholder', false
           )
         ),
         jsonb_build_object(
           'id', 'card-h-birthday-inside-text',
           'type', 'text',
-          'surface', 'inside',
+          'name', 'Chúc bạn một tuổi mới ngập tràn',
           'x', 50,
           'y', 50,
+          'width', 70,
+          'height', 14,
+          'rotation', 0,
+          'locked', false,
+          'zIndex', 1,
+          'surface', 'inside',
           'data', jsonb_build_object(
             'text', 'Chúc bạn một tuổi mới ngập tràn niềm vui và hạnh phúc!',
-            'preset', 'body',
             'color', '#2E3338',
-            'fontFamily', 'Be Vietnam Pro'
+            'fontFamily', 'Be Vietnam Pro',
+            'fontSize', 20,
+            'fontWeight', 'regular',
+            'fontStyle', 'normal',
+            'align', 'center',
+            'lineHeight', 1.4,
+            'letterSpacing', 0,
+            'placeholder', false
           )
         )
       )
@@ -281,27 +305,51 @@ values
         jsonb_build_object(
           'id', 'card-h-cute-front-text',
           'type', 'text',
-          'surface', 'front',
+          'name', 'You are so special!',
           'x', 50,
           'y', 45,
+          'width', 70,
+          'height', 16,
+          'rotation', 0,
+          'locked', false,
+          'zIndex', 1,
+          'surface', 'front',
           'data', jsonb_build_object(
             'text', 'You are so special!',
-            'preset', 'heading',
             'color', '#315F86',
-            'fontFamily', 'Comfortaa'
+            'fontFamily', 'Be Vietnam Pro',
+            'fontSize', 28,
+            'fontWeight', 'bold',
+            'fontStyle', 'normal',
+            'align', 'center',
+            'lineHeight', 1.2,
+            'letterSpacing', 0,
+            'placeholder', false
           )
         ),
         jsonb_build_object(
           'id', 'card-h-cute-inside-text',
           'type', 'text',
-          'surface', 'inside',
+          'name', 'Gửi đến bạn những cái ôm ấm áp',
           'x', 50,
           'y', 50,
+          'width', 70,
+          'height', 14,
+          'rotation', 0,
+          'locked', false,
+          'zIndex', 1,
+          'surface', 'inside',
           'data', jsonb_build_object(
             'text', 'Gửi đến bạn những cái ôm ấm áp nhất hôm nay.',
-            'preset', 'body',
             'color', '#2E3338',
-            'fontFamily', 'Be Vietnam Pro'
+            'fontFamily', 'Be Vietnam Pro',
+            'fontSize', 20,
+            'fontWeight', 'regular',
+            'fontStyle', 'normal',
+            'align', 'center',
+            'lineHeight', 1.4,
+            'letterSpacing', 0,
+            'placeholder', false
           )
         )
       )
@@ -319,27 +367,51 @@ values
         jsonb_build_object(
           'id', 'card-h-love-front-text',
           'type', 'text',
-          'surface', 'front',
+          'name', 'Forever & Always',
           'x', 50,
           'y', 48,
+          'width', 70,
+          'height', 16,
+          'rotation', 0,
+          'locked', false,
+          'zIndex', 1,
+          'surface', 'front',
           'data', jsonb_build_object(
             'text', 'Forever & Always',
-            'preset', 'heading',
             'color', '#B3535D',
-            'fontFamily', 'Lora'
+            'fontFamily', 'Be Vietnam Pro',
+            'fontSize', 28,
+            'fontWeight', 'bold',
+            'fontStyle', 'normal',
+            'align', 'center',
+            'lineHeight', 1.2,
+            'letterSpacing', 0,
+            'placeholder', false
           )
         ),
         jsonb_build_object(
           'id', 'card-h-love-inside-text',
           'type', 'text',
-          'surface', 'inside',
+          'name', 'Cảm ơn vì đã luôn đồng hành và',
           'x', 50,
           'y', 50,
+          'width', 70,
+          'height', 14,
+          'rotation', 0,
+          'locked', false,
+          'zIndex', 1,
+          'surface', 'inside',
           'data', jsonb_build_object(
             'text', 'Cảm ơn vì đã luôn đồng hành và yêu thương.',
-            'preset', 'body',
             'color', '#2E3338',
-            'fontFamily', 'Be Vietnam Pro'
+            'fontFamily', 'Be Vietnam Pro',
+            'fontSize', 20,
+            'fontWeight', 'regular',
+            'fontStyle', 'normal',
+            'align', 'center',
+            'lineHeight', 1.4,
+            'letterSpacing', 0,
+            'placeholder', false
           )
         )
       )
@@ -357,27 +429,51 @@ values
         jsonb_build_object(
           'id', 'card-v-floral-front-text',
           'type', 'text',
-          'surface', 'front',
+          'name', 'Lời chúc yêu thương',
           'x', 50,
           'y', 42,
+          'width', 70,
+          'height', 16,
+          'rotation', 0,
+          'locked', false,
+          'zIndex', 1,
+          'surface', 'front',
           'data', jsonb_build_object(
             'text', 'Lời chúc yêu thương',
-            'preset', 'heading',
             'color', '#2E3338',
-            'fontFamily', 'Playfair Display'
+            'fontFamily', 'Be Vietnam Pro',
+            'fontSize', 28,
+            'fontWeight', 'bold',
+            'fontStyle', 'normal',
+            'align', 'center',
+            'lineHeight', 1.2,
+            'letterSpacing', 0,
+            'placeholder', false
           )
         ),
         jsonb_build_object(
           'id', 'card-v-floral-inside-text',
           'type', 'text',
-          'surface', 'inside',
+          'name', 'Mong mỗi ngày của bạn đều dịu d',
           'x', 50,
           'y', 50,
+          'width', 70,
+          'height', 14,
+          'rotation', 0,
+          'locked', false,
+          'zIndex', 1,
+          'surface', 'inside',
           'data', jsonb_build_object(
             'text', 'Mong mỗi ngày của bạn đều dịu dàng như hoa nở.',
-            'preset', 'body',
             'color', '#2E3338',
-            'fontFamily', 'Lora'
+            'fontFamily', 'Be Vietnam Pro',
+            'fontSize', 20,
+            'fontWeight', 'regular',
+            'fontStyle', 'normal',
+            'align', 'center',
+            'lineHeight', 1.4,
+            'letterSpacing', 0,
+            'placeholder', false
           )
         )
       )
@@ -395,27 +491,51 @@ values
         jsonb_build_object(
           'id', 'card-thanks-front-text',
           'type', 'text',
-          'surface', 'front',
+          'name', 'Thank you so much',
           'x', 50,
           'y', 45,
+          'width', 70,
+          'height', 16,
+          'rotation', 0,
+          'locked', false,
+          'zIndex', 1,
+          'surface', 'front',
           'data', jsonb_build_object(
             'text', 'Thank you so much',
-            'preset', 'heading',
             'color', '#5F7E67',
-            'fontFamily', 'Montserrat'
+            'fontFamily', 'Be Vietnam Pro',
+            'fontSize', 28,
+            'fontWeight', 'bold',
+            'fontStyle', 'normal',
+            'align', 'center',
+            'lineHeight', 1.2,
+            'letterSpacing', 0,
+            'placeholder', false
           )
         ),
         jsonb_build_object(
           'id', 'card-thanks-inside-text',
           'type', 'text',
-          'surface', 'inside',
+          'name', 'Biết ơn tất cả sự giúp đỡ và qu',
           'x', 50,
           'y', 50,
+          'width', 70,
+          'height', 14,
+          'rotation', 0,
+          'locked', false,
+          'zIndex', 1,
+          'surface', 'inside',
           'data', jsonb_build_object(
             'text', 'Biết ơn tất cả sự giúp đỡ và quan tâm từ bạn.',
-            'preset', 'body',
             'color', '#2E3338',
-            'fontFamily', 'Be Vietnam Pro'
+            'fontFamily', 'Be Vietnam Pro',
+            'fontSize', 20,
+            'fontWeight', 'regular',
+            'fontStyle', 'normal',
+            'align', 'center',
+            'lineHeight', 1.4,
+            'letterSpacing', 0,
+            'placeholder', false
           )
         )
       )
