@@ -1,9 +1,13 @@
 import { NextResponse } from 'next/server.js';
+import type { PendingOrder } from '../../../../../../lib/order-types.ts';
 import {
+  getAllGuestTokensFromRequest,
+  hashGuestOrderAccessToken,
   verifyGuestOrderAccess,
   verifyStaffAccess,
 } from '../../../../../../lib/guest-order-access.ts';
 import { OrderEventRepository } from '../../../../../../lib/repositories/order-event-repository.ts';
+import { OrderRepository } from '../../../../../../lib/repositories/order-repository.ts';
 import { PaymentRepository } from '../../../../../../lib/repositories/payment-repository.ts';
 import { serverOrderStore } from '../../../../../../lib/server-order-store.ts';
 import { createPrivilegedSupabaseClient } from '../../../../../../lib/supabase/admin.ts';
@@ -29,6 +33,7 @@ export async function POST(
       );
     }
 
+    let order: PendingOrder | null = null;
     const hasSupabaseEnvironment = Boolean(
       getSupabaseSecretKey() ||
       process.env.NEXT_PUBLIC_SUPABASE_URL?.trim() ||
@@ -40,6 +45,7 @@ export async function POST(
         const client = createPrivilegedSupabaseClient();
         const paymentRepo = new PaymentRepository(client);
         const orderEventRepo = new OrderEventRepository(client);
+        const orderRepo = new OrderRepository(client);
 
         await paymentRepo.markCustomerReported(id);
         await orderEventRepo.append({
@@ -50,12 +56,31 @@ export async function POST(
             reportedAt: new Date().toISOString(),
           },
         });
+
+        if (staff) {
+          order = await orderRepo.getById(id, { kind: 'staff', staff });
+        } else {
+          const tokens = getAllGuestTokensFromRequest(request, id);
+          for (const token of tokens) {
+            const tokenHash = hashGuestOrderAccessToken(token);
+            order = await orderRepo.getById(id, {
+              kind: 'guest',
+              tokenHash,
+            });
+            if (order) break;
+          }
+        }
       } catch (err) {
         console.error('Lỗi cập nhật thanh toán Supabase:', err);
       }
     }
 
-    const order = serverOrderStore.reportPayment(id);
+    if (!order) {
+      order = serverOrderStore.reportPayment(id);
+    } else {
+      serverOrderStore.reportPayment(id);
+    }
+
     if (!order) {
       return NextResponse.json({ error: 'Không tìm thấy đơn hàng.' }, { status: 404 });
     }

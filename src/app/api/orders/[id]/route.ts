@@ -1,6 +1,6 @@
 import type { PendingOrder } from '../../../../lib/order-types.ts';
 import {
-  getGuestOrderAccessTokenFromRequest,
+  getAllGuestTokensFromRequest,
   hashGuestOrderAccessToken,
   verifyGuestOrderAccess,
   verifyStaffAccess,
@@ -48,12 +48,14 @@ export async function GET(
         if (staff) {
           order = await orderRepo.getById(id, { kind: 'staff', staff });
         } else {
-          const token = getGuestOrderAccessTokenFromRequest(request, id);
-          if (token) {
+          const tokens = getAllGuestTokensFromRequest(request, id);
+          for (const token of tokens) {
+            const tokenHash = hashGuestOrderAccessToken(token);
             order = await orderRepo.getById(id, {
               kind: 'guest',
-              tokenHash: hashGuestOrderAccessToken(token),
+              tokenHash,
             });
+            if (order) break;
           }
         }
       } catch (err) {
