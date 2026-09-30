@@ -88,6 +88,7 @@ import {
 } from '@/lib/text-edit-session';
 import { TextEditOverlay } from './text-edit-overlay';
 import { useRouter } from 'next/navigation';
+import type { CustomizerContext } from '@/lib/editor-context';
 import {
   groupElements,
   ungroupElement,
@@ -109,7 +110,11 @@ type FocusMode = 'text-edit' | 'crop' | 'remove-bg' | 'mask' | null;
 export type SelectionMode = 'default' | 'multi-select' | 'group-edit';
 
 export type TextEditState = ActiveTextEditState | null;
-export function CustomizerShell() {
+export interface CustomizerShellProps {
+  context?: CustomizerContext;
+}
+
+export function CustomizerShell({ context }: CustomizerShellProps = {}) {
   const router = useRouter();
   const containerRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -164,9 +169,10 @@ export function CustomizerShell() {
     redo,
     resetHistory,
   } = useDesignHistory({
-    initialState: createInitialState('wrapping'),
+    initialState: context?.type === 'staff' ? context.initialDocument : createInitialState('wrapping'),
     getSelection: getSelectionSnapshot,
     onRestoreSelection: handleRestoreSelection,
+    mode: context?.type === 'staff' ? context.mode : 'guest',
   });
 
   const imageSourceContextRef = useRef<ImageSourceContext>({ mode: 'add' });
@@ -273,6 +279,10 @@ export function CustomizerShell() {
   }, [activeSheet, closeColorSession, commitActiveTransaction]);
 
   const executeAutosave = useCallback((currentState: DesignState) => {
+    if (context?.type === 'staff') {
+      context.onSave?.(currentState);
+      return true;
+    }
     setSaveStatus('saving');
     const ok = flushAutosave(currentState);
     setSaveStatus(ok ? 'saved' : 'error');
@@ -280,11 +290,17 @@ export function CustomizerShell() {
       setRecentProjects(getRecentProjects());
     }
     return ok;
-  }, []);
+  }, [context]);
 
   // Continuous debounced autosave (400ms) - paused during active transaction
   useEffect(() => {
     if (!mounted || activeTransaction !== null) return;
+    if (context?.type === 'staff') {
+      if (context.mode === 'staff-edit') {
+        context.onSave?.(state);
+      }
+      return;
+    }
     setSaveStatus('saving');
     if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
     saveTimerRef.current = setTimeout(() => {
@@ -293,7 +309,7 @@ export function CustomizerShell() {
     return () => {
       if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
     };
-  }, [state, mounted, executeAutosave, activeTransaction]);
+  }, [state, mounted, executeAutosave, activeTransaction, context]);
 
   // Mobile lifecycle: save on visibility change / backgrounding
   useEffect(() => {
@@ -321,6 +337,11 @@ export function CustomizerShell() {
   // Restore editor data after mount
   useEffect(() => {
     setMounted(true);
+    if (context?.type === 'staff') {
+      resetHistory(context.initialDocument);
+      setView('editor');
+      return;
+    }
     const params = new URLSearchParams(window.location.search);
     const requestedProduct = params.get('product') as ProductId | null;
     const requestedVariant = params.get('variant');
@@ -795,6 +816,10 @@ export function CustomizerShell() {
       case 'LEAVE_EDITOR':
         if (!viewport.isFit) {
           setViewport(resetToFit());
+          return;
+        }
+        if (context?.type === 'staff') {
+          context.onExit?.();
           return;
         }
         handleBackToLauncher();
@@ -2336,6 +2361,17 @@ export function CustomizerShell() {
             if (target) setSelectedTarget(target);
           }}
           onFix={handlePreflightFix}
+          onContinue={
+            context?.type === 'staff'
+              ? context.onComplete
+              : undefined
+          }
+          continueLabel={
+            context?.type === 'staff'
+              ? 'So sánh bản sửa'
+              : 'Tiếp tục đặt in'
+          }
+          readOnly={context?.type === 'staff' && context.mode === 'review'}
           onContinueToCheckout={() => {
             router.push('/checkout');
             const existingDraft = loadCheckoutDraft();

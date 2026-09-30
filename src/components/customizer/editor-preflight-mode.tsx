@@ -23,7 +23,10 @@ export interface EditorPreflightModeProps {
   preflight: PreflightResult;
   onBackToEdit: (focusTarget?: 'image' | 'text') => void;
   onFix?: (check: PreflightCheck) => void;
-  onContinueToCheckout: () => void;
+  onContinue?: () => void;
+  continueLabel?: string;
+  onContinueToCheckout?: () => void;
+  readOnly?: boolean;
 }
 
 export function EditorPreflightMode({
@@ -32,7 +35,10 @@ export function EditorPreflightMode({
   preflight,
   onBackToEdit,
   onFix,
+  onContinue,
+  continueLabel,
   onContinueToCheckout,
+  readOnly = false,
 }: EditorPreflightModeProps) {
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -188,15 +194,17 @@ export function EditorPreflightMode({
         >
           Quay lại sửa
         </button>
-        <button
-          type="button"
-          onClick={onContinueToCheckout}
-          disabled={hasErrors}
-          className="flex-1 h-11 inline-flex items-center justify-center gap-2 rounded-xl bg-[#315F86] text-xs sm:text-sm font-semibold text-white shadow-xs hover:bg-[#244A69] transition-all active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50"
-        >
-          <span>Tiếp tục đặt in</span>
-          <ArrowRight size={16} aria-hidden="true" />
-        </button>
+        {!readOnly && (
+          <button
+            type="button"
+            onClick={onContinueToCheckout}
+            disabled={hasErrors}
+            className="flex-1 h-11 inline-flex items-center justify-center gap-2 rounded-xl bg-[#315F86] text-xs sm:text-sm font-semibold text-white shadow-xs hover:bg-[#244A69] transition-all active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {continueLabel ? <span>{continueLabel}</span> : <span>Tiếp tục đặt in</span>}
+            <ArrowRight size={16} aria-hidden="true" />
+          </button>
+        )}
       </footer>
     </div>
   );

@@ -8,6 +8,7 @@ import { moveElements } from './multi-selection.ts';
 import { computeStickerContour } from './sticker-contour.ts';
 import { evaluateImageQuality } from './image-quality.ts';
 import { evaluateElementSafety, isElementImportant } from './safe-area.ts';
+import { canMutateElement, type DesignReviewMode } from './domain/design-revision.ts';
 export type ProductId = 'wrapping' | 'card' | 'sticker' | 'notebook';
 export type CardSurface = 'front' | 'inside' | 'back';
 export type CardOrientation = 'horizontal' | 'vertical';
@@ -1126,9 +1127,31 @@ export function createInitialState(productId: ProductId = 'wrapping'): DesignSta
  };
 }
 
-export function transitionState(state: DesignState, action: DesignAction): DesignState {
+export function transitionState(
+ state: DesignState,
+ action: DesignAction,
+ mode?: DesignReviewMode | 'guest'
+): DesignState {
  if (!state || !action) {
   return state;
+ }
+
+ if (mode === 'review' || mode === 'preflight' || mode === 'review-changes') {
+  return state;
+ }
+
+ if (mode === 'staff-edit') {
+  if (action.type === 'SET_PRODUCT' || action.type === 'SET_VARIANT' || action.type === 'SET_QUANTITY') {
+   return state;
+  }
+  if (action.type === 'SET_PRODUCT_OPTION') {
+   const frozenCard: Record<string, true> = { fold: true, orientation: true };
+   const frozenSticker: Record<string, true> = { shape: true, size: true, width: true, height: true };
+   const frozenNotebook: Record<string, true> = { finish: true, binding: true, size: true };
+   if (state.productId === 'card' && frozenCard[action.key]) return state;
+   if (state.productId === 'sticker' && frozenSticker[action.key]) return state;
+   if (state.productId === 'notebook' && frozenNotebook[action.key]) return state;
+  }
  }
 
  switch (action.type) {
@@ -1297,7 +1320,7 @@ export function transitionState(state: DesignState, action: DesignAction): Desig
   case 'MOVE_ELEMENT': {
    const list = state.elements ?? getDefaultElements(state);
    const target = list.find((el) => el.id === action.id);
-   if (!target || target.locked) return state;
+   if (!target || !canMutateElement(mode, target)) return state;
    return {
     ...state,
     elements: list.map((el) => (el.id === action.id ? { ...el, x: action.x, y: action.y } : el)),
@@ -1307,7 +1330,7 @@ export function transitionState(state: DesignState, action: DesignAction): Desig
   case 'RESIZE_ELEMENT': {
    const list = state.elements ?? getDefaultElements(state);
    const target = list.find((el) => el.id === action.id);
-   if (!target || target.locked) return state;
+   if (!target || !canMutateElement(mode, target)) return state;
    return {
     ...state,
     elements: list.map((el) =>
@@ -1327,7 +1350,7 @@ export function transitionState(state: DesignState, action: DesignAction): Desig
   case 'ROTATE_ELEMENT': {
    const list = state.elements ?? getDefaultElements(state);
    const target = list.find((el) => el.id === action.id);
-   if (!target || target.locked) return state;
+   if (!target || !canMutateElement(mode, target)) return state;
    return {
     ...state,
     elements: list.map((el) =>
@@ -1453,7 +1476,7 @@ export function transitionState(state: DesignState, action: DesignAction): Desig
   case 'DELETE_ELEMENT': {
    const currentList = state.elements ?? getDefaultElements(state);
    const target = currentList.find((el) => el.id === action.id);
-   if (!target || target.locked) return state;
+   if (!target || !canMutateElement(mode, target)) return state;
 
    const nextList = currentList.filter((el) => el.id !== action.id);
    const syncPatch: Partial<DesignState> = {};
@@ -1591,7 +1614,7 @@ export function transitionState(state: DesignState, action: DesignAction): Desig
    if (targetIndex === -1) return state;
 
    const target = currentList[targetIndex];
-   if (target.locked) return state;
+   if (!canMutateElement(mode, target)) return state;
 
    const oldData = getTextData(target) ?? {
     text: '',
