@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10">
+  <defs>
+    <g id="cycle-a"><use href="#cycle-b" /></g>
+    <g id="cycle-b"><use href="#cycle-a" /></g>
+  </defs>
+  <use href="#cycle-a" />
+</svg>
