@@ -5,7 +5,7 @@ import {
   DocumentRenderSurface,
   getDocumentRenderDimensions,
   resolveDocumentRenderSurface,
-} from '@/components/customizer/document-render-surface.tsx';
+} from '@/components/customizer/document-render-surface';
 import type { DesignState } from '@/lib/product-state.ts';
 import { getSupabaseSecretKey } from '@/lib/supabase/config.ts';
 

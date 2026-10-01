@@ -1,34 +1,29 @@
-import type { CSSProperties, JSX } from 'react';
+import type { CSSProperties, ReactNode } from 'react';
+import { createElement, Fragment } from 'react';
 
-import type { ColorValue } from '@/lib/color/color-types.ts';
-import { colorValueToCss } from '@/lib/color/color-renderers.ts';
-import { computePatternGrid, getWrappingPaperDimensions } from '@/lib/pattern-renderer.ts';
+import type { ColorValue } from '../../lib/color/color-types.ts';
+import { colorValueToCss } from '../../lib/color/color-renderers.ts';
+import { computePatternGrid, getWrappingPaperDimensions } from '../../lib/pattern-renderer.ts';
 import type {
   CanvasElement,
   DesignState,
   FixedStickerShape,
   StickerOptions,
-} from '@/lib/product-state.ts';
+} from '../../lib/product-state.ts';
 import {
   getImageData,
   getTextData,
   normalizeWrappingOptions,
-} from '@/lib/product-state.ts';
+} from '../../lib/product-state.ts';
 import {
-  generateDocumentRenderHtml,
-  generateDocumentRenderMarkup,
-  getDocumentRenderCss,
-  getDocumentRenderDimensions,
   resolveDocumentRenderSurface,
+  getDocumentRenderDimensions,
   type DocumentRenderDimensions,
   type DocumentRenderOptions,
-} from '@/lib/services/document-renderer.ts';
-import { computeStickerContour } from '@/lib/sticker-contour.ts';
+} from '../../lib/services/document-renderer.ts';
+import { computeStickerContour } from '../../lib/sticker-contour.ts';
 
 export {
-  generateDocumentRenderHtml,
-  generateDocumentRenderMarkup,
-  getDocumentRenderCss,
   getDocumentRenderDimensions,
   resolveDocumentRenderSurface,
   type DocumentRenderDimensions,
@@ -90,20 +85,20 @@ function RenderElementView({
   element: CanvasElement;
   design: DesignState;
   coordinateSpace?: { width: number; height: number };
-}): JSX.Element | null {
+}): ReactNode {
   if (element.type === 'group') return null;
 
   const x = typeof element.x === 'number' && Number.isFinite(element.x) ? element.x : 0;
   const y = typeof element.y === 'number' && Number.isFinite(element.y) ? element.y : 0;
-  const w = typeof element.width === 'number' && Number.isFinite(element.width) ? element.width : 0;
-  const h = typeof element.height === 'number' && Number.isFinite(element.height) ? element.height : 0;
+  const elementWidth = typeof element.width === 'number' && Number.isFinite(element.width) ? element.width : 0;
+  const elementHeight = typeof element.height === 'number' && Number.isFinite(element.height) ? element.height : 0;
   const z = typeof element.zIndex === 'number' && Number.isFinite(element.zIndex) ? element.zIndex : 0;
   const r = typeof element.rotation === 'number' && Number.isFinite(element.rotation) ? element.rotation : 0;
 
   const left = coordinateSpace ? (x / coordinateSpace.width) * 100 : x;
   const top = coordinateSpace ? (y / coordinateSpace.height) * 100 : y;
-  const width = coordinateSpace ? (w / coordinateSpace.width) * 100 : w;
-  const height = coordinateSpace ? (h / coordinateSpace.height) * 100 : h;
+  const width = coordinateSpace ? (elementWidth / coordinateSpace.width) * 100 : elementWidth;
+  const height = coordinateSpace ? (elementHeight / coordinateSpace.height) * 100 : elementHeight;
 
   const boxStyle: CSSProperties = {
     position: 'absolute',
@@ -126,30 +121,30 @@ function RenderElementView({
     const cropRotation = typeof crop?.rotation === 'number' && Number.isFinite(crop.rotation) ? crop.rotation : 0;
     const cropTransform = `translate3d(${cropX}px, ${cropY}px, 0) scale(${cropScale}) rotate(${cropRotation}deg)`;
 
-    return (
-      <div
-        className="dr-element dr-image-frame"
-        data-render-element="image"
-        style={{
+    return createElement(
+      'div',
+      {
+        className: 'dr-element dr-image-frame',
+        'data-render-element': 'image',
+        style: {
           ...boxStyle,
           ...getMaskStyle(data.mask),
           opacity: resolveImageOpacity(data.opacity),
           overflow: 'hidden',
-        }}
-      >
-        <img
-          src={data.src}
-          alt=""
-          style={{
-            display: 'block',
-            width: '100%',
-            height: '100%',
-            objectFit: 'cover',
-            transform: cropTransform,
-            transformOrigin: 'center',
-          }}
-        />
-      </div>
+        },
+      },
+      createElement('img', {
+        src: data.src,
+        alt: '',
+        style: {
+          display: 'block',
+          width: '100%',
+          height: '100%',
+          objectFit: 'cover',
+          transform: cropTransform,
+          transformOrigin: 'center',
+        },
+      }),
     );
   }
 
@@ -177,11 +172,12 @@ function RenderElementView({
     const lineHeight = typeof data.lineHeight === 'number' && Number.isFinite(data.lineHeight) ? Math.max(0.1, data.lineHeight) : 1.4;
     const letterSpacing = typeof data.letterSpacing === 'number' && Number.isFinite(data.letterSpacing) ? data.letterSpacing : 0;
 
-    return (
-      <div
-        className="dr-element dr-text"
-        data-render-element="text"
-        style={{
+    return createElement(
+      'div',
+      {
+        className: 'dr-element dr-text',
+        'data-render-element': 'text',
+        style: {
           ...boxStyle,
           ...colorStyle,
           display: 'flex',
@@ -198,10 +194,9 @@ function RenderElementView({
           lineHeight,
           letterSpacing: `${letterSpacing}px`,
           textAlign: data.align || 'center',
-        }}
-      >
-        {data.text}
-      </div>
+        },
+      },
+      data.text,
     );
   }
 
@@ -214,46 +209,47 @@ function RenderElementView({
       ? Math.max(0, rawData.borderWidth)
       : 0;
 
-  return (
-    <div
-      className="dr-element dr-shape"
-      data-render-element={element.type}
-      style={{
-        ...boxStyle,
-        background: fill,
-        border: `${strokeWidth}px solid ${stroke}`,
-        borderRadius: String(rawData.borderRadius ?? '8px'),
-        overflow: 'hidden',
-      }}
-    />
-  );
+  return createElement('div', {
+    className: 'dr-element dr-shape',
+    'data-render-element': element.type,
+    style: {
+      ...boxStyle,
+      background: fill,
+      border: `${strokeWidth}px solid ${stroke}`,
+      borderRadius: String(rawData.borderRadius ?? '8px'),
+      overflow: 'hidden',
+    },
+  });
 }
 
-function LegacyContent({ design }: { design: DesignState }): JSX.Element | null {
+function LegacyContent({ design }: { design: DesignState }): ReactNode {
   const hasImage = Boolean(design.image?.src);
   const hasText = Boolean(design.text && design.text.trim().length > 0);
   if (!hasImage && !hasText) return null;
 
-  return (
-    <>
-      {hasImage && (
-        <img
-          className="dr-legacy-image"
-          src={design.image!.src}
-          alt=""
-          style={{
-            position: 'absolute',
-            inset: '15%',
-            width: '70%',
-            height: '70%',
-            objectFit: 'contain',
-          }}
-        />
-      )}
-      {hasText && (
-        <div
-          className="dr-legacy-text"
-          style={{
+  return createElement(
+    Fragment,
+    null,
+    hasImage
+      ? createElement('img', {
+        className: 'dr-legacy-image',
+        src: design.image!.src,
+        alt: '',
+        style: {
+          position: 'absolute',
+          inset: '15%',
+          width: '70%',
+          height: '70%',
+          objectFit: 'contain',
+        },
+      })
+      : null,
+    hasText
+      ? createElement(
+        'div',
+        {
+          className: 'dr-legacy-text',
+          style: {
             position: 'absolute',
             inset: '10%',
             display: 'flex',
@@ -263,12 +259,11 @@ function LegacyContent({ design }: { design: DesignState }): JSX.Element | null 
             fontSize: 'clamp(18px, 6vw, 64px)',
             whiteSpace: 'pre-wrap',
             color: design.color || '#111827',
-          }}
-        >
-          {design.text}
-        </div>
-      )}
-    </>
+          },
+        },
+        design.text,
+      )
+      : null,
   );
 }
 
@@ -279,7 +274,7 @@ export function DocumentRenderSurface({
   heightPx,
   className = '',
   id,
-}: DocumentRenderSurfaceProps): JSX.Element {
+}: DocumentRenderSurfaceProps): ReactNode {
   const surface = resolveDocumentRenderSurface(design, requestedSurface);
   const elements = [...(design.elements ?? [])].sort((a, b) => (a.zIndex ?? 0) - (b.zIndex ?? 0));
   const rootStyle: CSSProperties = {
@@ -293,19 +288,21 @@ export function DocumentRenderSurface({
     const cardElements = elements.filter((element) => (element.surface ?? 'front') === surface);
     const background = resolveCssColor(design.productOptions.backgroundColorValue, design.backgroundColor || '#ffffff');
 
-    return (
-      <div
-        id={id}
-        className={`dr-surface dr-card ${className}`.trim()}
-        data-product="card"
-        data-surface={surface}
-        style={{ ...rootStyle, background }}
-      >
-        {cardElements.map((element) => (
-          <RenderElementView key={element.id} element={element} design={design} />
-        ))}
-        {cardElements.length === 0 && surface === 'front' && <LegacyContent design={design} />}
-      </div>
+    return createElement(
+      'div',
+      {
+        id,
+        className: `dr-surface dr-card ${className}`.trim(),
+        'data-product': 'card',
+        'data-surface': surface,
+        style: { ...rootStyle, background },
+      },
+      cardElements.map((element) =>
+        createElement(RenderElementView, { key: element.id, element, design }),
+      ),
+      cardElements.length === 0 && surface === 'front'
+        ? createElement(LegacyContent, { design })
+        : null,
     );
   }
 
@@ -331,64 +328,69 @@ export function DocumentRenderSurface({
         },
       });
 
-      return (
-        <div
-          id={id}
-          className={`dr-surface dr-wrapping ${className}`.trim()}
-          data-product="wrapping"
-          data-mode="pattern"
-          style={{ ...rootStyle, background }}
-        >
-          {grid.cells.map((cell) => {
-            const left = (cell.x / dimensions.width) * 100;
-            const top = (cell.y / dimensions.height) * 100;
-            const width = (cell.width / dimensions.width) * 100;
-            const height = (cell.height / dimensions.height) * 100;
-            const mirrorX = cell.mirrorX ? -1 : 1;
-            const mirrorY = cell.mirrorY ? -1 : 1;
+      return createElement(
+        'div',
+        {
+          id,
+          className: `dr-surface dr-wrapping ${className}`.trim(),
+          'data-product': 'wrapping',
+          'data-mode': 'pattern',
+          style: { ...rootStyle, background },
+        },
+        grid.cells.map((cell) => {
+          const left = (cell.x / dimensions.width) * 100;
+          const top = (cell.y / dimensions.height) * 100;
+          const width = (cell.width / dimensions.width) * 100;
+          const height = (cell.height / dimensions.height) * 100;
+          const mirrorX = cell.mirrorX ? -1 : 1;
+          const mirrorY = cell.mirrorY ? -1 : 1;
 
-            return (
-              <div
-                key={`${cell.col}:${cell.row}`}
-                className="dr-pattern-cell"
-                data-pattern-cell
-                style={{
-                  position: 'absolute',
-                  left: `${left}%`,
-                  top: `${top}%`,
-                  width: `${width}%`,
-                  height: `${height}%`,
-                  transform: `rotate(${cell.rotation}deg) scaleX(${mirrorX}) scaleY(${mirrorY})`,
-                  transformOrigin: 'center',
-                  overflow: 'visible',
-                }}
-              >
-                <div className="dr-motif" style={{ position: 'relative', width: '100%', height: '100%', overflow: 'hidden' }}>
-                  {elements.map((element) => (
-                    <RenderElementView key={element.id} element={element} design={design} />
-                  ))}
-                  {elements.length === 0 && <LegacyContent design={design} />}
-                </div>
-              </div>
-            );
-          })}
-        </div>
+          return createElement(
+            'div',
+            {
+              key: `${cell.col}:${cell.row}`,
+              className: 'dr-pattern-cell',
+              'data-pattern-cell': true,
+              style: {
+                position: 'absolute',
+                left: `${left}%`,
+                top: `${top}%`,
+                width: `${width}%`,
+                height: `${height}%`,
+                transform: `rotate(${cell.rotation}deg) scaleX(${mirrorX}) scaleY(${mirrorY})`,
+                transformOrigin: 'center',
+                overflow: 'visible',
+              },
+            },
+            createElement(
+              'div',
+              {
+                className: 'dr-motif',
+                style: { position: 'relative', width: '100%', height: '100%', overflow: 'hidden' },
+              },
+              elements.map((element) =>
+                createElement(RenderElementView, { key: element.id, element, design }),
+              ),
+              elements.length === 0 ? createElement(LegacyContent, { design }) : null,
+            ),
+          );
+        }),
       );
     }
 
-    return (
-      <div
-        id={id}
-        className={`dr-surface dr-wrapping ${className}`.trim()}
-        data-product="wrapping"
-        data-mode="full-sheet"
-        style={{ ...rootStyle, background }}
-      >
-        {elements.map((element) => (
-          <RenderElementView key={element.id} element={element} design={design} coordinateSpace={dimensions} />
-        ))}
-        {elements.length === 0 && <LegacyContent design={design} />}
-      </div>
+    return createElement(
+      'div',
+      {
+        id,
+        className: `dr-surface dr-wrapping ${className}`.trim(),
+        'data-product': 'wrapping',
+        'data-mode': 'full-sheet',
+        style: { ...rootStyle, background },
+      },
+      elements.map((element) =>
+        createElement(RenderElementView, { key: element.id, element, design, coordinateSpace: dimensions }),
+      ),
+      elements.length === 0 ? createElement(LegacyContent, { design }) : null,
     );
   }
 
@@ -407,17 +409,20 @@ export function DocumentRenderSurface({
           ? '16px'
           : '0';
 
-      return (
-        <div
-          id={id}
-          className={`dr-surface dr-sticker ${className}`.trim()}
-          style={{ ...rootStyle, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
-        >
-          <div
-            className="dr-sticker-fixed"
-            data-product="sticker"
-            data-sticker-shape={shape}
-            style={{
+      return createElement(
+        'div',
+        {
+          id,
+          className: `dr-surface dr-sticker ${className}`.trim(),
+          style: { ...rootStyle, display: 'flex', alignItems: 'center', justifyContent: 'center' },
+        },
+        createElement(
+          'div',
+          {
+            className: 'dr-sticker-fixed',
+            'data-product': 'sticker',
+            'data-sticker-shape': shape,
+            style: {
               position: 'relative',
               maxWidth: '100%',
               maxHeight: '100%',
@@ -427,76 +432,79 @@ export function DocumentRenderSurface({
               border: `${borderWidth}px solid white`,
               background,
               overflow: 'hidden',
-            }}
-          >
-            {elements.map((element) => (
-              <RenderElementView key={element.id} element={element} design={design} />
-            ))}
-            {elements.length === 0 && <LegacyContent design={design} />}
-          </div>
-        </div>
+            },
+          },
+          elements.map((element) =>
+            createElement(RenderElementView, { key: element.id, element, design }),
+          ),
+          elements.length === 0 ? createElement(LegacyContent, { design }) : null,
+        ),
       );
     }
 
     const contour = computeStickerContour(elements, options);
     const borderPath = contour.borderSvgPath || 'M2 2 H98 V98 H2 Z';
 
-    return (
-      <div
-        id={id}
-        className={`dr-surface dr-sticker ${className}`.trim()}
-        data-product="sticker"
-        data-sticker-shape="die-cut"
-        style={{ ...rootStyle, background: 'transparent' }}
-      >
-        {options.hasWhiteBorder && (
-          <svg
-            className="dr-sticker-border"
-            viewBox="0 0 100 100"
-            preserveAspectRatio="none"
-            aria-hidden="true"
-            style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', zIndex: 0 }}
-          >
-            <path
-              d={borderPath}
-              fill="white"
-              stroke="white"
-              strokeWidth={Math.max(1, borderWidth * 0.8)}
-              strokeLinejoin="round"
-            />
-          </svg>
-        )}
-        <div
-          className="dr-sticker-art"
-          style={{
+    return createElement(
+      'div',
+      {
+        id,
+        className: `dr-surface dr-sticker ${className}`.trim(),
+        'data-product': 'sticker',
+        'data-sticker-shape': 'die-cut',
+        style: { ...rootStyle, background: 'transparent' },
+      },
+      options.hasWhiteBorder
+        ? createElement(
+          'svg',
+          {
+            className: 'dr-sticker-border',
+            viewBox: '0 0 100 100',
+            preserveAspectRatio: 'none',
+            'aria-hidden': 'true',
+            style: { position: 'absolute', inset: 0, width: '100%', height: '100%', zIndex: 0 },
+          },
+          createElement('path', {
+            d: borderPath,
+            fill: 'white',
+            stroke: 'white',
+            strokeWidth: Math.max(1, borderWidth * 0.8),
+            strokeLinejoin: 'round',
+          }),
+        )
+        : null,
+      createElement(
+        'div',
+        {
+          className: 'dr-sticker-art',
+          style: {
             position: 'absolute',
             inset: 0,
             overflow: 'hidden',
             background,
             zIndex: 1,
-          }}
-        >
-          {elements.map((element) => (
-            <RenderElementView key={element.id} element={element} design={design} />
-          ))}
-          {elements.length === 0 && <LegacyContent design={design} />}
-        </div>
-      </div>
+          },
+        },
+        elements.map((element) =>
+          createElement(RenderElementView, { key: element.id, element, design }),
+        ),
+        elements.length === 0 ? createElement(LegacyContent, { design }) : null,
+      ),
     );
   }
 
   const background = resolveCssColor(design.productOptions.backgroundColorValue, design.backgroundColor || '#ffffff');
-  return (
-    <div
-      id={id}
-      className={`dr-surface dr-notebook ${className}`.trim()}
-      data-product="notebook"
-      style={{ ...rootStyle, background }}
-    >
-      {elements.map((element) => (
-        <RenderElementView key={element.id} element={element} design={design} />
-      ))}
-      {elements.length === 0 && <LegacyContent design={design} />}
-    </div>
+  return createElement(
+    'div',
+    {
+      id,
+      className: `dr-surface dr-notebook ${className}`.trim(),
+      'data-product': 'notebook',
+      style: { ...rootStyle, background },
+    },
+    elements.map((element) =>
+      createElement(RenderElementView, { key: element.id, element, design }),
+    ),
+    elements.length === 0 ? createElement(LegacyContent, { design }) : null,
   );
 }
