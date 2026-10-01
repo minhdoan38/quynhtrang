@@ -2,8 +2,10 @@ import { randomUUID } from 'node:crypto';
 
 import {
   assertLibraryTransition,
+  canDeleteDraft,
   canManageLibrary,
   parseLibraryMetadata,
+  type BulkItemResult,
   type FontCategory,
   type FontFaceRecord,
   type LibraryErrorCode,
@@ -43,6 +45,8 @@ function normalizeServiceError(error: unknown, fallbackMessage?: string): Error 
   if (message.includes('VALIDATION_FAILED')) return new LibraryServiceError('VALIDATION_FAILED', message);
   if (message.includes('DUPLICATE_BINARY')) return new LibraryServiceError('DUPLICATE_BINARY', message);
   if (message.includes('IMMUTABLE_BINARY')) return new LibraryServiceError('IMMUTABLE_BINARY', message);
+  if (message.includes('REFERENCED_DRAFT')) return new LibraryServiceError('REFERENCED_DRAFT', message);
+  if (message.includes('STORAGE_FAILURE')) return new LibraryServiceError('STORAGE_FAILURE', message);
   if (message.includes('LICENSE_REQUIRED')) return new LibraryServiceError('LICENSE_REQUIRED', message);
   if (
     message.includes('INVALID_INPUT') ||
@@ -92,7 +96,12 @@ export async function createStickerDraft(
     throw new LibraryServiceError('FORBIDDEN', 'Actor does not have permission to manage stickers');
   }
 
-  const validated = await validateSticker(input.bytes, input.filename);
+  let validated;
+  try {
+    validated = await validateSticker(input.bytes, input.filename);
+  } catch (err) {
+    throw new LibraryServiceError('VALIDATION_FAILED', err instanceof Error ? err.message : String(err));
+  }
   const duplicate = await repo.findDuplicate('sticker', validated.checksum);
   if (duplicate) {
     throw new LibraryServiceError('DUPLICATE_BINARY', 'Duplicate sticker binary already exists in library');
@@ -608,4 +617,195 @@ export async function resolveLibraryRefs(
     result.set(`${ref.kind}:${ref.id}`, record);
   }
   return result;
+}
+
+export async function deleteDraftAsset(
+  ref: LibraryRef,
+  key: MutationKey,
+  actor: StaffIdentity,
+  repo: AssetLibraryRepository,
+): Promise<void> {
+  if (!actor || actor.role !== 'admin') {
+    throw new LibraryServiceError('FORBIDDEN', 'Only administrators can delete draft assets');
+  }
+
+  const current = await repo.getRecord(ref);
+  if (!current) {
+    throw new LibraryServiceError('NOT_FOUND', `${ref.kind} ${ref.id} not found`);
+  }
+
+  if (!canDeleteDraft(actor.role, current.status, current.everPublishedAt)) {
+    if (current.status !== 'draft') {
+      throw new LibraryServiceError('IMMUTABLE_BINARY', 'Cannot delete published or archived asset');
+    }
+    if (current.everPublishedAt !== null) {
+      throw new LibraryServiceError('REFERENCED_DRAFT', 'Cannot delete asset that was previously published');
+    }
+    throw new LibraryServiceError('FORBIDDEN', 'Actor does not have permission to delete this draft');
+  }
+
+  if (current.revision !== key.expectedRevision) {
+    throw new LibraryServiceError('REVISION_CONFLICT', `Expected revision ${key.expectedRevision}, found ${current.revision}`);
+  }
+
+  try {
+    const intentResult = (await repo.prepareDelete(
+      ref,
+      key.expectedRevision,
+      actor.userId,
+      key.requestId,
+    )) as { intent?: string; intentId?: string; objectKeys?: string[]; object_keys?: string[] } | null;
+
+    const intentId = intentResult?.intent ?? intentResult?.intentId;
+    if (!intentId) {
+      throw new LibraryServiceError('STORAGE_FAILURE', 'Failed to acquire deletion intent');
+    }
+
+    const objectKeys = intentResult?.objectKeys ?? intentResult?.object_keys ?? [
+      current.binary?.key,
+      current.thumbnail?.key,
+    ].filter((k): k is string => typeof k === 'string' && k.length > 0);
+
+    if (objectKeys.length > 0) {
+      await repo.removeObjects('library-drafts', objectKeys);
+    }
+
+    await repo.finishDelete(actor.userId, intentId);
+  } catch (error) {
+    throw normalizeServiceError(error);
+  }
+}
+
+async function runWithConcurrency<T, R>(
+  items: readonly T[],
+  limit: number,
+  fn: (item: T, index: number) => Promise<R>,
+): Promise<R[]> {
+  const results = new Array<R>(items.length);
+  let nextIndex = 0;
+
+  async function worker() {
+    while (nextIndex < items.length) {
+      const current = nextIndex++;
+      results[current] = await fn(items[current]!, current);
+    }
+  }
+
+  const workerCount = Math.min(Math.max(1, limit), items.length);
+  const workers: Promise<void>[] = [];
+  for (let i = 0; i < workerCount; i++) {
+    workers.push(worker());
+  }
+  await Promise.all(workers);
+  return results;
+}
+
+export async function bulkUploadStickers(
+  items: {
+    bytes: Uint8Array;
+    filename?: string;
+    metadata: LibraryMetadataPatch;
+    requestId: string;
+  }[],
+  actor: StaffIdentity,
+  repo: AssetLibraryRepository,
+  options?: { concurrency?: number },
+): Promise<BulkItemResult[]> {
+  if (!items || items.length === 0 || items.length > 50) {
+    throw new LibraryServiceError('INVALID_INPUT', 'Bulk upload batch size must be between 1 and 50 items');
+  }
+
+  return runWithConcurrency(items, options?.concurrency ?? 3, async (item) => {
+    try {
+      const record = await createStickerDraft(item, actor, repo);
+      return {
+        ref: record.ref,
+        ok: true,
+        revision: record.revision,
+      };
+    } catch (error) {
+      const normalized = normalizeServiceError(error);
+      const code = normalized instanceof LibraryServiceError ? normalized.code : 'VALIDATION_FAILED';
+      return {
+        ref: {
+          kind: 'sticker',
+          id: item.filename ?? '',
+          checksum: '',
+        },
+        ok: false,
+        error: code,
+        message: normalized.message,
+      };
+    }
+  });
+}
+
+export async function bulkUpdateStickerMetadata(
+  items: {
+    ref: LibraryRef;
+    key: MutationKey;
+    patch: LibraryMetadataPatch;
+  }[],
+  actor: StaffIdentity,
+  repo: AssetLibraryRepository,
+  options?: { concurrency?: number },
+): Promise<BulkItemResult[]> {
+  if (!items || items.length === 0 || items.length > 50) {
+    throw new LibraryServiceError('INVALID_INPUT', 'Bulk update metadata batch size must be between 1 and 50 items');
+  }
+
+  return runWithConcurrency(items, options?.concurrency ?? 3, async (item) => {
+    try {
+      const record = await updateAssetMetadata(item.ref, item.key, item.patch, actor, repo);
+      return {
+        ref: record.ref,
+        ok: true,
+        revision: record.revision,
+      };
+    } catch (error) {
+      const normalized = normalizeServiceError(error);
+      const code = normalized instanceof LibraryServiceError ? normalized.code : 'INVALID_INPUT';
+      return {
+        ref: item.ref,
+        ok: false,
+        error: code,
+        message: normalized.message,
+      };
+    }
+  });
+}
+
+export async function bulkPublishStickers(
+  items: {
+    ref: LibraryRef;
+    key: MutationKey;
+    validationId: string;
+  }[],
+  actor: StaffIdentity,
+  repo: AssetLibraryRepository,
+  options?: { concurrency?: number },
+): Promise<BulkItemResult[]> {
+  if (!items || items.length === 0 || items.length > 50) {
+    throw new LibraryServiceError('INVALID_INPUT', 'Bulk publish batch size must be between 1 and 50 items');
+  }
+
+  return runWithConcurrency(items, options?.concurrency ?? 3, async (item) => {
+    try {
+      const record = await publishAsset(item.ref, item.key, item.validationId, actor, repo);
+      return {
+        ref: record.ref,
+        ok: true,
+        revision: record.revision,
+      };
+    } catch (error) {
+      const normalized = normalizeServiceError(error);
+      const code = normalized instanceof LibraryServiceError ? normalized.code : 'VALIDATION_FAILED';
+      return {
+        ref: item.ref,
+        ok: false,
+        error: code,
+        message: normalized.message,
+      };
+    }
+  });
 }

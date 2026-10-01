@@ -6,6 +6,7 @@ import type {
   FontFormat,
   LibraryKind,
   LibraryRecord,
+  LibraryRef,
   LibraryStatus,
   LicenseAcknowledgement,
   ValidationReceipt,
@@ -584,18 +585,51 @@ export class AssetLibraryRepository {
   }
 
   async prepareDelete(
+    ref: LibraryRef,
+    expectedRevision: number,
+    actorId: string,
+    requestId: string,
+  ): Promise<{ intent: string; objectKeys?: string[]; object_keys?: string[] }>;
+  async prepareDelete(
     actor: string,
     request: string,
     kind: LibraryKind,
     id: string,
     revision: number,
+  ): Promise<unknown>;
+  async prepareDelete(
+    first: LibraryRef | string,
+    second: number | string,
+    third?: string | LibraryKind,
+    fourth?: string,
+    fifth?: number,
   ): Promise<unknown> {
+    let p_actor: string;
+    let p_request: string;
+    let p_kind: LibraryKind;
+    let p_id: string;
+    let p_revision: number;
+
+    if (typeof first === 'object' && first !== null) {
+      p_kind = first.kind;
+      p_id = first.id;
+      p_revision = second as number;
+      p_actor = third as string;
+      p_request = fourth as string;
+    } else {
+      p_actor = first;
+      p_request = second as string;
+      p_kind = third as LibraryKind;
+      p_id = fourth as string;
+      p_revision = fifth as number;
+    }
+
     const { data, error } = await this.client.rpc('library_prepare_delete', {
-      p_actor: actor,
-      p_request: request,
-      p_kind: kind,
-      p_id: id,
-      p_revision: revision,
+      p_actor,
+      p_request,
+      p_kind,
+      p_id,
+      p_revision,
     });
     if (error) throw new Error(error.message);
     return data;
