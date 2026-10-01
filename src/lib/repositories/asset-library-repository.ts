@@ -182,9 +182,13 @@ export function mapFaceRow(row: DatabaseFaceRow): FontFaceRecord {
 }
 
 export function mapStickerRow(row: DatabaseStickerRow): StickerRecord {
-  const checksum = String(row.checksum ?? '');
+  const meta = row.metadata ?? {};
+  const checksum = String(row.checksum ?? meta.checksum ?? '');
   const isDraft = (row.status ?? 'draft') === 'draft';
   const bucket = isDraft ? 'library-drafts' : 'sticker-library';
+  const thumbnailPath = row.thumbnail_path ?? (typeof meta.thumbnail_path === 'string' ? meta.thumbnail_path : null);
+  const widthValue = row.width !== null && row.width !== undefined ? Number(row.width) : (typeof meta.width === 'number' ? meta.width : null);
+  const heightValue = row.height !== null && row.height !== undefined ? Number(row.height) : (typeof meta.height === 'number' ? meta.height : null);
   return {
     ref: { kind: 'sticker', id: String(row.id), checksum },
     status: (row.status ?? 'draft') as LibraryStatus,
@@ -194,13 +198,13 @@ export function mapStickerRow(row: DatabaseStickerRow): StickerRecord {
       bucket,
       key: String(row.storage_path),
       checksum,
-      byteSize: Number(row.byte_size ?? 0),
-      mimeType: String(row.mime_type ?? 'image/svg+xml'),
+      byteSize: Number(row.byte_size ?? meta.byte_size ?? 0),
+      mimeType: String(row.mime_type ?? meta.mime_type ?? 'image/svg+xml'),
     },
-    thumbnail: row.thumbnail_path
+    thumbnail: thumbnailPath
       ? {
         bucket,
-        key: String(row.thumbnail_path),
+        key: String(thumbnailPath),
         checksum: '',
         byteSize: 0,
         mimeType: 'image/png',
@@ -214,8 +218,8 @@ export function mapStickerRow(row: DatabaseStickerRow): StickerRecord {
     sampleText: null,
     license: (row.license && typeof row.license === 'object' ? row.license as LicenseAcknowledgement : null),
     validationId: row.validation_id ? String(row.validation_id) : null,
-    width: row.width !== null && row.width !== undefined ? Number(row.width) : null,
-    height: row.height !== null && row.height !== undefined ? Number(row.height) : null,
+    width: widthValue,
+    height: heightValue,
   };
 }
 
@@ -339,6 +343,168 @@ export class AssetLibraryRepository {
 
     if (error) throw new Error(error.message);
     return ((data ?? []) as unknown as DatabaseValidationRow[]).map(mapValidationRow);
+  }
+  async getFontFamilyById(id: string): Promise<FontFamilyRecord | null> {
+    return this.getFontFamily(id);
+  }
+
+  async getRecord(ref: { kind: LibraryKind; id: string }): Promise<LibraryRecord | null> {
+    if (ref.kind === 'sticker') {
+      return this.getSticker(ref.id);
+    }
+    return this.getFontFace(ref.id);
+  }
+
+  async getValidationRunById(id: string): Promise<ValidationReceipt | null> {
+    const { data, error } = await this.client
+      .from('library_validation_runs')
+      .select('*')
+      .eq('id', id)
+      .maybeSingle();
+
+    if (error) throw new Error(error.message);
+    if (!data) return null;
+    return mapValidationRow(data as unknown as DatabaseValidationRow);
+  }
+
+  async insertValidationRun(receipt: ValidationReceipt, actorId?: string): Promise<ValidationReceipt> {
+    const payload = {
+      id: receipt.id,
+      kind: receipt.ref.kind,
+      asset_id: receipt.ref.id,
+      revision: receipt.revision,
+      checksum: receipt.ref.checksum,
+      validator_version: receipt.validatorVersion,
+      engine_fingerprint: receipt.engineFingerprint,
+      passed: receipt.passed,
+      failures: receipt.failures,
+      missing_codepoints: receipt.missingCodepoints,
+      browser_proof_hash: receipt.browserProofHash,
+      production_proof_hash: receipt.productionProofHash,
+      created_by: actorId ?? null,
+    };
+    const { error } = await this.client
+      .from('library_validation_runs')
+      .insert(payload);
+    if (error) throw new Error(error.message);
+    return receipt;
+  }
+
+  async linkValidationRun(kind: LibraryKind, assetId: string, validationId: string): Promise<void> {
+    const table = kind === 'sticker' ? 'sticker_assets' : 'font_faces';
+    const { error } = await this.client
+      .from(table)
+      .update({ validation_id: validationId })
+      .eq('id', assetId);
+    if (error) throw new Error(error.message);
+  }
+
+  async findDuplicate(kind: LibraryKind, checksum: string, familyId?: string): Promise<LibraryRecord | null> {
+    if (kind === 'sticker') {
+      const { data, error } = await this.client
+        .from('sticker_assets')
+        .select('*')
+        .eq('checksum', checksum)
+        .neq('status', 'draft')
+        .limit(1);
+      if (error) throw new Error(error.message);
+      const rows = (data ?? []) as unknown as DatabaseStickerRow[];
+      return rows.length > 0 ? mapStickerRow(rows[0]!) : null;
+    }
+
+    let q = this.client
+      .from('font_faces')
+      .select('*')
+      .eq('checksum', checksum)
+      .neq('status', 'draft');
+    if (familyId) {
+      q = q.eq('family_id', familyId);
+    }
+    const { data, error } = await q.limit(1);
+    if (error) throw new Error(error.message);
+    const rows = (data ?? []) as unknown as DatabaseFaceRow[];
+    return rows.length > 0 ? mapFaceRow(rows[0]!) : null;
+  }
+
+  async replaceDraftBinary(
+    kind: LibraryKind,
+    assetId: string,
+    expectedRevision: number,
+    update: {
+      storagePath: string;
+      checksum: string;
+      byteSize: number;
+      width?: number | null;
+      height?: number | null;
+      mimeType?: string;
+    },
+  ): Promise<LibraryRecord> {
+    const table = kind === 'sticker' ? 'sticker_assets' : 'font_faces';
+    const payload: Record<string, unknown> = {
+      storage_path: update.storagePath,
+      checksum: update.checksum,
+      byte_size: update.byteSize,
+      validation_id: null,
+      revision: expectedRevision + 1,
+    };
+    if (update.mimeType) payload.mime_type = update.mimeType;
+    if (kind === 'sticker') {
+      if (update.width !== undefined) payload.width = update.width;
+      if (update.height !== undefined) payload.height = update.height;
+    }
+
+    const { error } = await this.client
+      .from(table)
+      .update(payload)
+      .eq('id', assetId)
+      .eq('revision', expectedRevision);
+    if (error) throw new Error(error.message);
+
+    const record = await this.getRecord({ kind, id: assetId });
+    if (!record) throw new Error('NOT_FOUND');
+    return record;
+  }
+
+  async uploadObject(bucket: string, path: string, bytes: Uint8Array, mimeType: string): Promise<void> {
+    const { error } = await this.client.storage
+      .from(bucket)
+      .upload(path, bytes, {
+        contentType: mimeType,
+        upsert: true,
+      });
+    if (error) throw new Error(`Storage upload failed: ${error.message}`);
+  }
+
+  async downloadObject(bucket: string, path: string): Promise<Uint8Array> {
+    const { data, error } = await this.client.storage
+      .from(bucket)
+      .download(path);
+    if (error || !data) throw new Error(`Storage download failed: ${error?.message ?? 'unknown'}`);
+    const arrayBuffer = await data.arrayBuffer();
+    return new Uint8Array(arrayBuffer);
+  }
+
+  async copyObject(sourceBucket: string, sourceKey: string, destinationBucket: string, destinationKey: string): Promise<void> {
+    if (sourceBucket === destinationBucket) {
+      const { error } = await this.client.storage
+        .from(sourceBucket)
+        .copy(sourceKey, destinationKey);
+      if (error) throw new Error(`Storage copy failed: ${error.message}`);
+      return;
+    }
+    const bytes = await this.downloadObject(sourceBucket, sourceKey);
+    const { error } = await this.client.storage
+      .from(destinationBucket)
+      .upload(destinationKey, bytes, { upsert: true });
+    if (error) throw new Error(`Storage copy failed: ${error.message}`);
+  }
+
+  async removeObjects(bucket: string, paths: string[]): Promise<void> {
+    if (paths.length === 0) return;
+    const { error } = await this.client.storage
+      .from(bucket)
+      .remove(paths);
+    if (error) throw new Error(`Storage remove failed: ${error.message}`);
   }
 
   async createDraft(actor: string, request: string, kind: LibraryKind, id: string, payload: unknown): Promise<unknown> {
