@@ -201,6 +201,9 @@ export interface TextElementData {
  lineHeight: number;
  letterSpacing: number;
  placeholder?: boolean;
+ fontFamilyId?: string;
+ fontFaceId?: string;
+ fontChecksum?: string;
 }
 
 export interface CreateTextElementParams {
@@ -255,6 +258,60 @@ export interface ImageObjectData {
 export function getImageData(element: CanvasElement): ImageObjectData | null {
  if (element.type !== 'image' || !element.data) return null;
  return element.data as unknown as ImageObjectData;
+}
+export interface StickerElementData {
+ libraryAssetId?: string;
+ assetChecksum?: string;
+ src: string;
+ title: string;
+ storagePath: string;
+ width?: number;
+ height?: number;
+}
+
+export function getStickerData(element: CanvasElement): StickerElementData | null {
+ if (element.type !== 'sticker' || !element.data) return null;
+ return element.data as unknown as StickerElementData;
+}
+
+export function createStickerElement(params: {
+ id: string;
+ stickerId: string;
+ storagePath: string;
+ src: string;
+ title: string;
+ checksum?: string;
+ x?: number;
+ y?: number;
+ width?: number;
+ height?: number;
+ surface?: CardSurface;
+}): CanvasElement {
+ const width = params.width ?? 20;
+ const height = params.height ?? 20;
+ const data: StickerElementData = {
+  libraryAssetId: params.stickerId,
+  ...(params.checksum ? { assetChecksum: params.checksum } : {}),
+  src: params.src,
+  title: params.title,
+  storagePath: params.storagePath,
+  ...(params.width !== undefined ? { width: params.width } : {}),
+  ...(params.height !== undefined ? { height: params.height } : {}),
+ };
+ return {
+  id: params.id,
+  type: 'sticker',
+  name: params.title,
+  x: params.x ?? 50,
+  y: params.y ?? 50,
+  width,
+  height,
+  rotation: 0,
+  locked: false,
+  zIndex: 1,
+  ...(params.surface ? { surface: params.surface } : {}),
+  data: data as unknown as Record<string, unknown>,
+ };
 }
 export interface CanvasElement {
  id: string;

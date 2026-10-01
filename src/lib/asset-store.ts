@@ -13,6 +13,7 @@ import {
 import { join } from 'node:path';
 import type { PromotedAsset } from './order-types.ts';
 import type { DesignState } from './product-state.ts';
+import { isLibraryAssetPath } from './services/library-dependencies.ts';
 
 export interface AssetPromotionResult {
   promotedAssets: PromotedAsset[];
@@ -235,7 +236,8 @@ function collectBlobUrlsAndMeta(design: DesignState): Map<string, ScannedAssetMe
   const metaMap = new Map<string, ScannedAssetMeta>();
 
   function record(url: string, partial?: Partial<ScannedAssetMeta> & { payload?: string | Uint8Array }) {
-    if (!url || typeof url !== 'string' || (!url.startsWith('blob:') && !url.startsWith('data:image/'))) return;
+    if (!url || typeof url !== 'string' || isLibraryAssetPath(url)) return;
+    if (!url.startsWith('blob:') && !url.startsWith('data:image/')) return;
     const existing = metaMap.get(url);
     const mimeType = partial?.mimeType ?? existing?.mimeType ?? (partial?.name ? inferMimeType(partial.name) : undefined);
     const byteSize = partial?.byteSize ?? existing?.byteSize;
@@ -277,6 +279,12 @@ function collectBlobUrlsAndMeta(design: DesignState): Map<string, ScannedAssetMe
     for (const el of design.elements) {
       const data = el.data as Record<string, unknown> | undefined;
       if (!data) continue;
+      const isLibraryElement = el.type === 'sticker' && (
+        typeof data.libraryAssetId === 'string'
+        || (typeof data.storagePath === 'string' && isLibraryAssetPath(data.storagePath))
+        || (typeof data.src === 'string' && isLibraryAssetPath(data.src))
+      );
+      if (isLibraryElement) continue;
 
       const rawPayload = (data.payload as string | Uint8Array | undefined) ?? (typeof data.data === 'string' ? data.data : undefined);
       const elementMeta: Partial<ScannedAssetMeta> = {

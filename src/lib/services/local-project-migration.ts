@@ -4,7 +4,6 @@ import {
   getRecentProjects,
   markProjectMigrated,
   RECENT_PROJECT_RETENTION_MS,
-  type RecentProject,
 } from '../storage.ts';
 import type { DesignState } from '../product-state.ts';
 
@@ -57,7 +56,7 @@ export async function migrateLocalProjects(
     errors: [],
   };
 
-  for (const local of migratable as RecentProject[]) {
+  for (const local of migratable) {
     try {
       // 1. Check if project with origin_local_project_id already exists in cloud
       const { data: existingCloud } = await supabase
@@ -74,18 +73,20 @@ export async function migrateLocalProjects(
       }
 
       // Reconstruct document
-      const doc: DesignState = {
-        productId: local.productId,
-        variantId: local.variantId,
-        templateId: local.templateId,
-        text: local.text,
-        color: local.color,
-        backgroundColor: local.backgroundColor,
-        image: local.image,
-        productOptions: local.productOptions || {},
-        elements: local.elements,
-        quantity: 1,
-      };
+      const doc: DesignState = local.design
+        ? structuredClone(local.design)
+        : {
+          productId: local.productId as DesignState['productId'],
+          variantId: local.variantId ?? '',
+          templateId: local.templateId ?? null,
+          text: local.text ?? '',
+          color: local.color ?? '',
+          backgroundColor: local.backgroundColor ?? '',
+          image: (local.image ?? null) as DesignState['image'],
+          productOptions: local.productOptions || {},
+          elements: local.elements as DesignState['elements'],
+          quantity: 1,
+        };
 
       // 2. Insert into cloud projects
       const { data: createdProject, error: insertError } = await supabase

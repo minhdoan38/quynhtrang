@@ -7,6 +7,7 @@ import type { CustomerInfo, PaymentInstructions, PendingOrder } from '../order-t
 import { getPaymentInstructions } from '../payment-qr-provider.ts';
 import { calculatePriceQuote } from '../pricing.ts';
 import { getDesignSummary, type DesignState } from '../product-state.ts';
+import { resolveLegacyReferences } from './library-dependencies.ts';
 import { AssetRepository } from '../repositories/asset-repository.ts';
 import { DesignVersionRepository } from '../repositories/design-version-repository.ts';
 import { OrderEventRepository } from '../repositories/order-event-repository.ts';
@@ -133,7 +134,8 @@ export async function prepareOrderFromGuestCheckout(
     status: 'approved',
     currentWorkingRevision: 1,
   });
-  const promotion = await promoteDesignAssets(input.design, [], {
+  const checkoutDesign = resolveLegacyReferences(input.design);
+  const promotion = await promoteDesignAssets(checkoutDesign, [], {
     projectId: project.id,
     assetRepo: repositories.assetRepo,
   });
