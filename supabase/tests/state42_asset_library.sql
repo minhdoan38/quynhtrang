@@ -59,6 +59,7 @@ DO $$
 declare
   v_actor uuid := 'a0000000-0000-0000-0000-000000000003';
   v_denied boolean;
+  v_result jsonb;
 begin
   insert into auth.users (id, instance_id, aud, role, email, encrypted_password, email_confirmed_at, raw_app_meta_data, raw_user_meta_data, created_at, updated_at)
   values (v_actor, '00000000-0000-0000-0000-000000000003', 'authenticated', 'authenticated', 'state42-admin@example.com', 'password', now(), '{"provider":"email"}'::jsonb, '{}'::jsonb, now(), now())
@@ -68,6 +69,9 @@ begin
   insert into public.sticker_assets(id, category, storage_path, published, status, revision)
   values ('state42-test', 'test', 'draft/test.svg', false, 'draft', 2)
   on conflict (id) do update set status = 'draft', published = false, revision = 2, ever_published_at = null;
+  insert into public.fonts(id, family_name, published, status, revision, ever_published_at)
+  values ('state42-test-family', 'State 42 Test', false, 'archived', 2, now())
+  on conflict (id) do update set status = 'archived', published = false, revision = 2, ever_published_at = now();
   set local role authenticated;
   set local "request.jwt.claim.sub" = 'a0000000-0000-0000-0000-000000000003';
   set local "request.jwt.claims" = '{"role":"authenticated","sub":"a0000000-0000-0000-0000-000000000003"}';
@@ -85,6 +89,15 @@ begin
   exception when others then v_denied := true;
   end;
   if not v_denied then raise exception 'Mismatched revision was accepted'; end if;
+
+  v_denied := false;
+  begin
+    select public.library_set_family_status(v_actor, gen_random_uuid(), 'state42-test-family', 2, 'draft') into v_result;
+  exception when others then
+    if sqlerrm <> 'CANNOT_RETURN_TO_DRAFT' then raise; end if;
+    v_denied := true;
+  end;
+  if not v_denied then raise exception 'Ever-published font family returned to draft'; end if;
 end $$;
 
 rollback;

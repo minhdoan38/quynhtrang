@@ -387,15 +387,27 @@ $$;
 
 create or replace function public.library_set_family_status(p_actor uuid, p_request uuid, p_id text, p_revision bigint, p_status text)
 returns jsonb language plpgsql security invoker set search_path = public, pg_temp as $$
-declare v_row jsonb;
+declare
+  v_family public.fonts%rowtype;
+  v_row jsonb;
 begin
   perform public.library_authorize(p_actor);
   if p_status not in ('draft','published','archived') then raise exception 'INVALID_INPUT'; end if;
-  perform 1 from public.fonts where id = p_id for update;
+  select * into v_family from public.fonts where id = p_id for update;
   if not found then raise exception 'NOT_FOUND'; end if;
-  if (select revision from public.fonts where id = p_id) <> p_revision then raise exception 'REVISION_CONFLICT'; end if;
+  if v_family.revision <> p_revision then raise exception 'REVISION_CONFLICT'; end if;
+  if p_status = 'draft' and (v_family.ever_published_at is not null or v_family.status <> 'draft') then
+    raise exception 'CANNOT_RETURN_TO_DRAFT';
+  end if;
   if p_status = 'published' and not exists (select 1 from public.font_faces where family_id = p_id and status = 'published') then raise exception 'VALIDATION_FAILED'; end if;
-  update public.fonts set status = p_status, published = (p_status = 'published'), ever_published_at = case when p_status = 'published' then coalesce(ever_published_at, now()) else ever_published_at end, revision = revision + 1, updated_by = p_actor where id = p_id returning to_jsonb(fonts.*) into v_row;
+  update public.fonts
+  set status = p_status,
+      published = (p_status = 'published'),
+      ever_published_at = case when p_status = 'published' then coalesce(v_family.ever_published_at, now()) else v_family.ever_published_at end,
+      revision = revision + 1,
+      updated_by = p_actor
+  where id = p_id
+  returning to_jsonb(fonts.*) into v_row;
   perform public.library_event(p_actor, p_request, 'font-family', p_id, p_revision, p_revision + 1, 'status_changed', jsonb_build_object('status', p_status));
   return jsonb_build_object('ok', true, 'item', v_row);
 end;
