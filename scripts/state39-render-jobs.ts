@@ -1,4 +1,5 @@
-import { createHash } from 'node:crypto';
+import type { DesignState } from '../src/lib/product-state.ts';
+import { renderDocument } from '../src/lib/services/document-renderer.ts';
 import { createPrivilegedSupabaseClient } from '../src/lib/supabase/admin.ts';
 
 interface RenderJobRow {
@@ -67,21 +68,12 @@ export async function processRenderJobs(options: { once?: boolean } = {}) {
           throw new Error('Phiên bản thiết kế không tồn tại');
         }
 
-        const contentHash = createHash('sha256')
-          .update(JSON.stringify(version.design_document))
-          .digest('hex');
-
-        const storagePath = `renders/${job.version_id}/${contentHash}.png`;
-
-        // Mock 1x1 transparent PNG buffer for server render pipeline
-        const pngBytes = Buffer.from(
-          'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==',
-          'base64'
-        );
+        const rendered = await renderDocument(version.design_document as DesignState);
+        const storagePath = `renders/${job.version_id}/${rendered.sha256}.png`;
 
         await supabase.storage
-          .from('customer-assets')
-          .upload(storagePath, pngBytes, {
+          .from('approved-renders')
+          .upload(storagePath, Buffer.from(rendered.png), {
             contentType: 'image/png',
             upsert: true,
           });
@@ -92,7 +84,7 @@ export async function processRenderJobs(options: { once?: boolean } = {}) {
           .insert({
             version_id: job.version_id,
             storage_path: storagePath,
-            checksum: contentHash,
+            checksum: rendered.sha256,
             created_at: new Date().toISOString(),
           })
           .select()
