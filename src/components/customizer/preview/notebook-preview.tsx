@@ -6,6 +6,7 @@ import {
   NOTEBOOK_COVER_DEFINITION,
   getImageData,
   getTextData,
+  getStickerData,
   type CanvasElement,
   type DesignState,
 } from '@/lib/product-state';
@@ -63,13 +64,15 @@ function ElementPreview({ element, state }: { element: CanvasElement; state: Des
     );
   }
 
-  if (element.type === 'shape' || element.type === 'sticker') {
+  if (element.type === 'sticker') {
+    const data = getStickerData(element);
+    if (!data?.src) return null;
+    return <img src={data.src} alt={data.title} className="absolute object-contain" style={style} draggable={false} data-preview-element="sticker" />;
+  }
+
+  if (element.type === 'shape') {
     const color = typeof element.data?.color === 'string' ? element.data.color : state.color;
-    return (
-      <div className="absolute overflow-hidden" style={style} data-preview-element={element.type}>
-        <span className="block h-full w-full rounded-md opacity-70" style={{ backgroundColor: color }} />
-      </div>
-    );
+    return <div className="absolute overflow-hidden" style={style} data-preview-element="shape"><span className="block h-full w-full rounded-md opacity-70" style={{ backgroundColor: color }} /></div>;
   }
 
   return null;

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useRef } from 'react';
+import { useEffect, useMemo, useState, useRef } from 'react';
 import gsap from 'gsap';
 import { useGSAP } from '@gsap/react';
 import {
@@ -21,16 +21,21 @@ import {
   Circle,
   Triangle,
   Minus,
+  Search,
+  Loader2,
+  RotateCcw,
 } from 'lucide-react';
 import {
   ADD_MENU_ITEMS,
   SHAPE_DEFINITIONS,
   getProviderStatus,
+  getPublishedStickers,
   type AddContentType,
   type AddSubflow,
   type ImageSourceType,
   type TextStylePreset,
   type ShapePrimitiveType,
+  type PublishedSticker,
 } from '@/lib/add-content';
 import { ImageSourceChooser } from './image-source-chooser';
 interface AddContentSheetProps {
@@ -38,6 +43,7 @@ interface AddContentSheetProps {
   onSelectImageSource: (source: ImageSourceType) => void;
   onSelectTextStyle: (preset: TextStylePreset) => void;
   onSelectShape: (shape: ShapePrimitiveType) => void;
+  onSelectSticker?: (sticker: PublishedSticker) => void;
 }
 
 export function AddContentSheet({
@@ -45,9 +51,50 @@ export function AddContentSheet({
   onSelectImageSource,
   onSelectTextStyle,
   onSelectShape,
+  onSelectSticker,
 }: AddContentSheetProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [subflow, setSubflow] = useState<AddSubflow>({ mode: 'root' });
+  const [stickers, setStickers] = useState<PublishedSticker[]>([]);
+  const [stickerQuery, setStickerQuery] = useState('');
+  const [stickerCategory, setStickerCategory] = useState('all');
+  const [stickerLoading, setStickerLoading] = useState(false);
+  const [stickerError, setStickerError] = useState(false);
+  const [stickerAttempt, setStickerAttempt] = useState(0);
+
+  useEffect(() => {
+    if (subflow.mode !== 'sticker-browser') return;
+    let active = true;
+    setStickerLoading(true);
+    setStickerError(false);
+    getPublishedStickers()
+      .then((items) => {
+        if (!active) return;
+        setStickers(items);
+        setStickerLoading(false);
+      })
+      .catch(() => {
+        if (!active) return;
+        setStickerError(true);
+        setStickerLoading(false);
+      });
+    return () => { active = false; };
+  }, [subflow.mode, stickerAttempt]);
+
+  const stickerCategories = useMemo(
+    () => Array.from(new Set(stickers.map((sticker) => sticker.category).filter(Boolean))),
+    [stickers]
+  );
+  const visibleStickers = useMemo(() => {
+    const query = stickerQuery.trim().toLocaleLowerCase('vi');
+    return stickers.filter((sticker) => {
+      if (stickerCategory !== 'all' && sticker.category !== stickerCategory) return false;
+      if (!query) return true;
+      return [sticker.title, sticker.id, sticker.category, ...sticker.tags]
+        .filter((value): value is string => Boolean(value))
+        .some((value) => value.toLocaleLowerCase('vi').includes(query));
+    });
+  }, [stickerCategory, stickerQuery, stickers]);
 
   // GSAP animation for subflow replacement (smooth lateral transition without sheet stacking)
   useGSAP(
@@ -292,20 +339,64 @@ export function AddContentSheet({
         </div>
       )}
 
-      {/* 5. STICKER BROWSER (Contract-only / Honest State) */}
+      {/* 5. STICKER BROWSER */}
       {subflow.mode === 'sticker-browser' && (
-        <div className="add-flow-content space-y-3 pt-2 text-center">
-          <div className="p-4 rounded-xl border border-[#ECE6DC] bg-[#FFFDF8] text-center space-y-2">
-            <div className="w-10 h-10 mx-auto rounded-full bg-[#F8F3E8] flex items-center justify-center text-[#2E3338]">
-              <Smile className="w-5 h-5" />
-            </div>
-            <p className="text-xs font-semibold text-[#2E3338]">
-              {getProviderStatus('sticker').message}
-            </p>
-            <p className="text-xs text-[#666A6D]">
-              Bộ sưu tập sticker vẽ tay phong cách vintage pastel đang được đội ngũ quản trị tuyển chọn và cập nhật sớm.
-            </p>
+        <div className="add-flow-content space-y-3 pt-1">
+          <div className="relative">
+            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#666A6D]" />
+            <input
+              type="search"
+              value={stickerQuery}
+              onChange={(event) => setStickerQuery(event.target.value)}
+              placeholder="Tìm sticker..."
+              aria-label="Tìm sticker"
+              className="h-10 w-full rounded-xl border border-[#DDD6CC] bg-white pl-9 pr-3 text-xs focus:border-[#315F86] focus:outline-none"
+            />
           </div>
+          {stickerCategories.length > 0 && (
+            <div className="flex gap-1.5 overflow-x-auto pb-1" aria-label="Danh mục sticker">
+              {['all', ...stickerCategories].map((category) => (
+                <button
+                  key={category}
+                  type="button"
+                  onClick={() => setStickerCategory(category)}
+                  className={`shrink-0 rounded-full px-3 py-1.5 text-xs font-semibold ${stickerCategory === category ? 'bg-[#315F86] text-white' : 'bg-[#F8F3E8] text-[#2E3338]'}`}
+                >
+                  {category === 'all' ? 'Tất cả' : category}
+                </button>
+              ))}
+            </div>
+          )}
+          {stickerLoading ? (
+            <div role="status" className="flex items-center justify-center gap-2 py-10 text-xs text-[#666A6D]"><Loader2 className="h-4 w-4 animate-spin" /> Đang tải sticker...</div>
+          ) : stickerError ? (
+            <div role="alert" className="space-y-3 rounded-xl border border-[#F5C7C0] bg-[#FDF0ED] p-5 text-center">
+              <p className="text-xs font-semibold text-[#A63626]">Không thể tải bộ sưu tập sticker.</p>
+              <button type="button" onClick={() => setStickerAttempt((attempt) => attempt + 1)} className="inline-flex items-center gap-1 text-xs font-semibold text-[#315F86]"><RotateCcw className="h-3.5 w-3.5" /> Thử lại</button>
+            </div>
+          ) : visibleStickers.length === 0 ? (
+            <div className="rounded-xl border border-dashed border-[#DDD6CC] bg-[#FFFDF8] p-8 text-center text-xs font-medium text-[#666A6D]">Không tìm thấy sticker phù hợp</div>
+          ) : (
+            <div className="grid max-h-[48vh] grid-cols-3 gap-2 overflow-y-auto overscroll-contain">
+              {visibleStickers.map((sticker) => {
+                const src = sticker.thumbnailPath
+                  ? `/api/library/sticker/${encodeURIComponent(sticker.id)}?thumb=true`
+                  : `/api/library/sticker/${encodeURIComponent(sticker.id)}`;
+                return (
+                  <button
+                    key={sticker.id}
+                    type="button"
+                    onClick={() => { onSelectSticker?.(sticker); onClose(); }}
+                    className="flex aspect-square flex-col items-center justify-center gap-1 overflow-hidden rounded-xl border border-[#ECE6DC] bg-white p-2 hover:border-[#315F86] active:scale-95"
+                    aria-label={`Thêm sticker ${sticker.title || sticker.id}`}
+                  >
+                    <img src={src} alt="" className="min-h-0 w-full flex-1 object-contain" loading="lazy" />
+                    <span className="w-full truncate text-[10px] font-medium text-[#2E3338]">{sticker.title || sticker.id}</span>
+                  </button>
+                );
+              })}
+            </div>
+          )}
         </div>
       )}
 

@@ -29,7 +29,7 @@ import { TEMPLATES, type ProductId, type CanvasElement, type CardSurface } from 
 import { AddContentSheet } from './add-content-sheet';
 import { ImageSourceChooser } from './image-source-chooser';
 import { LayersSheetContent } from './layers-sheet-content';
-import type { ImageSourceType, TextStylePreset, ShapePrimitiveType, ImageSourceContext } from '@/lib/add-content';
+import type { ImageSourceType, TextStylePreset, ShapePrimitiveType, ImageSourceContext, PublishedSticker } from '@/lib/add-content';
 import { FontBrowserContent } from './font-browser-sheet';
 import { ColorPickerContent } from './color-picker-sheet';
 import { MaskSheetContent } from './mask-sheet-content';
@@ -96,8 +96,9 @@ interface EditorSheetsProps {
   onUploadImageClick: (source?: ImageSourceType, context?: ImageSourceContext) => void;
   imageSourceContext?: ImageSourceContext;
   onAddShape?: (shape: ShapePrimitiveType) => void;
+  onSelectSticker?: (sticker: PublishedSticker) => void;
   onSetColor: (color: string) => void;
-  onSetFont: (font: string) => void;
+  onSetFont: (font: string, fontId?: string, faceId?: string) => void;
   onSetFontSize: (size: number) => void;
   onSetTextAlign?: (align: 'left' | 'center' | 'right') => void;
   onSetOpacity: (opacity: number) => void;
@@ -181,6 +182,7 @@ export function EditorSheets({
   onUploadImageClick,
   imageSourceContext,
   onAddShape,
+  onSelectSticker,
   onSetColor,
   onSetFont,
   onSetFontSize,
@@ -257,6 +259,7 @@ export function EditorSheets({
             onSelectShape={(shape) => {
               if (onAddShape) onAddShape(shape);
             }}
+            onSelectSticker={onSelectSticker}
           />
         )}
         {/* PATTERN CONTROLS SHEET */}
@@ -457,7 +460,7 @@ export function EditorSheets({
         {activeSheet === 'font' && (
           <FontBrowserContent
             currentFamily={fontFamily}
-            onPreviewFont={(fam) => onSetFont(fam)}
+            onPreviewFont={(family, fontId, faceId) => onSetFont(family, fontId, faceId)}
             onClose={onClose}
           />
         )}

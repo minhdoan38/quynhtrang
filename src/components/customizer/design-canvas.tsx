@@ -12,6 +12,7 @@ import {
   createTextElement,
   getTextData,
   getImageData,
+  getStickerData,
   type PatternConfig,
   type PatternWorkspaceView,
   type FixedStickerShape,
@@ -72,7 +73,7 @@ export interface DesignCanvasProps {
   onSelectElement?: (id: string | null) => void;
   onSelectText?: (id: string | null) => void;
   onToggleSelectElement?: (id: string) => void;
-  onDoubleTap?: (target: 'image' | 'text') => void;
+  onDoubleTap?: (target: 'image' | 'text' | 'sticker') => void;
   onDoubleTapText?: (id: string) => void;
   onDoubleTapGroup?: (groupId: string) => void;
   onMeasureText?: (id: string, height: number) => void;
@@ -85,7 +86,7 @@ export interface DesignCanvasProps {
   textTransform?: TransformState;
   textTransforms?: Record<string, TransformState>;
   onCommitTransform?: (
-    target: 'image' | 'text',
+    target: 'image' | 'text' | 'sticker',
     transform: TransformState,
     elementId?: string
   ) => void;
@@ -241,7 +242,7 @@ export function DesignCanvas({
 
   // Active live gesture transform tracking (only non-null during active drag/resize/rotate)
   const [activeGestureTransform, setActiveGestureTransform] = useState<{
-    target: 'image' | 'text';
+    target: 'image' | 'text' | 'sticker';
     elementId?: string;
     transform: TransformState;
   } | null>(null);
@@ -263,7 +264,7 @@ export function DesignCanvas({
 
   // Gesture state tracking
   const activeGestureRef = useRef<{
-    target: 'image' | 'text';
+    target: 'image' | 'text' | 'sticker';
     elementId?: string;
     action: 'move' | 'resize' | 'rotate';
     handle?: TransformHandle;
@@ -274,6 +275,8 @@ export function DesignCanvas({
     hasExceededThreshold: boolean;
     centerScreenX: number;
     centerScreenY: number;
+    canvasWidth: number;
+    canvasHeight: number;
   } | null>(null);
 
   const lastTapRef = useRef<Record<string, TapPoint | null>>({
@@ -304,8 +307,8 @@ export function DesignCanvas({
     if (action === 'move') {
       const nextTransform = {
         ...initialTransform,
-        x: Math.round(initialTransform.x + dx),
-        y: Math.round(initialTransform.y + dy),
+        x: target === 'sticker' ? initialTransform.x + (dx / gesture.canvasWidth) * 100 : Math.round(initialTransform.x + dx),
+        y: target === 'sticker' ? initialTransform.y + (dy / gesture.canvasHeight) * 100 : Math.round(initialTransform.y + dy),
       };
       gesture.latestTransform = nextTransform;
       setActiveGestureTransform({ target, elementId, transform: nextTransform });
@@ -370,36 +373,39 @@ export function DesignCanvas({
         onDoubleTap?.(gesture.target);
       } else {
         lastTapRef.current[tapKey] = currTap;
-        if (gesture.target === 'text' && gesture.elementId) {
-          onSelectText?.(gesture.elementId);
-        }
-        onSelectTarget?.(gesture.target);
+        if (gesture.target === 'text' && gesture.elementId) onSelectText?.(gesture.elementId);
+        if (gesture.target === 'sticker' && gesture.elementId) onSelectElement?.(gesture.elementId);
+        onSelectTarget?.(gesture.target === 'sticker' ? 'group' : gesture.target);
       }
     }
-  }, [textTransform, onCommitTransform, onDoubleTap, onDoubleTapText, onSelectTarget, onSelectText, handlePointerMove]);
+  }, [onCommitTransform, onDoubleTap, onDoubleTapText, onSelectElement, onSelectTarget, onSelectText, handlePointerMove]);
 
   const startGesture = (
-    target: 'image' | 'text',
+    target: 'image' | 'text' | 'sticker',
     elementId: string | undefined,
     action: 'move' | 'resize' | 'rotate',
     handle: TransformHandle | undefined,
     e: React.PointerEvent,
-    itemLocked = false
+    itemLocked = false,
+    initialOverride?: TransformState
   ) => {
     if (isMockup) return;
 
     if (action === 'move' && (isLocked || itemLocked)) {
       onLockedFeedback?.();
       if (target === 'text' && elementId) onSelectText?.(elementId);
-      onSelectTarget?.(target);
+      if (target === 'sticker' && elementId) onSelectElement?.(elementId);
+      onSelectTarget?.(target === 'sticker' ? 'group' : target);
       return;
     }
 
     const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
-    const currentTransform =
+    const canvasRect = (e.currentTarget as HTMLElement).closest('#design-canvas, #mockup-canvas')?.getBoundingClientRect();
+    const currentTransform = initialOverride ?? (
       target === 'image'
         ? effectiveImageTransform
-        : (elementId ? getEffectiveTextTransform(elementId) : textTransform);
+        : (elementId ? getEffectiveTextTransform(elementId) : textTransform)
+    );
     activeGestureRef.current = {
       target,
       elementId,
@@ -412,6 +418,8 @@ export function DesignCanvas({
       hasExceededThreshold: false,
       centerScreenX: rect.left + rect.width / 2,
       centerScreenY: rect.top + rect.height / 2,
+      canvasWidth: canvasRect?.width || 1,
+      canvasHeight: canvasRect?.height || 1,
     };
 
     window.addEventListener('pointermove', handlePointerMove);
@@ -702,6 +710,11 @@ export function DesignCanvas({
                     </text>
                   );
                 })}
+                {(elements ?? []).filter((element) => element.type === 'sticker').map((element) => {
+                  const sticker = getStickerData(element);
+                  if (!sticker?.src) return null;
+                  return <image key={element.id} href={sticker.src} x={element.x - element.width / 2} y={element.y - element.height / 2} width={element.width} height={element.height} transform={`rotate(${element.rotation} ${element.x} ${element.y})`} preserveAspectRatio="xMidYMid meet" />;
+                })}
               </g>
             );
           })}
@@ -932,6 +945,46 @@ export function DesignCanvas({
           />
         );
       })}
+      {(elements ?? []).filter((element) => {
+        if (element.type !== 'sticker') return false;
+        return productId !== 'card' || (element.surface ?? 'front') === currentSurface;
+      }).map((element) => {
+        const sticker = getStickerData(element);
+        if (!sticker?.src) return null;
+        const liveTransform = activeGestureTransform?.target === 'sticker' && activeGestureTransform.elementId === element.id
+          ? activeGestureTransform.transform
+          : { x: element.x, y: element.y, scale: 1, rotation: element.rotation };
+        const selected = !isMockup && selectedElementId === element.id && selectionMode !== 'multi-select';
+        const multiSelected = selectionMode === 'multi-select' && selectedElementIds.includes(element.id);
+        const dimmed = selectionMode === 'group-edit' && Boolean(activeGroupId) && element.parentGroupId !== activeGroupId;
+        return (
+          <div
+            key={element.id}
+            role={isMockup ? undefined : 'button'}
+            tabIndex={isMockup ? undefined : 0}
+            data-element-id={element.id}
+            aria-label={isMockup ? undefined : `Sticker: ${sticker.title}`}
+            className={`absolute select-none touch-none ${multiSelected ? 'ring-2 ring-[#315F86]/80 ring-offset-2 rounded-xs' : ''} ${dimmed ? 'opacity-40 pointer-events-none' : ''}`}
+            style={{ left: `${liveTransform.x - element.width / 2}%`, top: `${liveTransform.y - element.height / 2}%`, width: `${element.width}%`, height: `${element.height}%`, zIndex: element.zIndex ?? 1, transform: `rotate(${liveTransform.rotation}deg) scale(${liveTransform.scale})`, transformOrigin: 'center' }}
+            onClick={(event) => {
+              if (isMockup) return;
+              event.stopPropagation();
+              if (selectionMode === 'multi-select') {
+                if (element.locked) onLockedFeedback?.();
+                else onToggleSelectElement?.(element.id);
+              }
+            }}
+            onPointerDown={(event) => {
+              if (isMockup || selectionMode === 'multi-select') return;
+              event.stopPropagation();
+              startGesture('sticker', element.id, 'move', undefined, event, Boolean(element.locked), liveTransform);
+            }}
+          >
+            <img src={sticker.src} alt={sticker.title} draggable={false} className="h-full w-full pointer-events-none select-none object-contain" />
+            {selected && <SelectionOverlay isLocked={Boolean(element.locked)} isRotating={isRotating} rotationAngle={liveTransform.rotation} onHandlePointerDown={(handle, event) => startGesture('sticker', element.id, handle === 'rotate' ? 'rotate' : 'resize', handle, event, Boolean(element.locked), liveTransform)} />}
+          </div>
+        );
+      })}
       {/* Group Elements */}
       {elements?.filter((el) => {
         if (el.type !== 'group') return false;
@@ -1023,7 +1076,7 @@ export function DesignCanvas({
         </div>
       )}
 
-      {!image?.src && resolvedTextElements.length === 0 && (
+      {!image?.src && resolvedTextElements.length === 0 && !(elements ?? []).some((element) => element.type === 'sticker') && (
         <p
           className="text-xs text-[#666A6D] font-medium select-none text-center px-4"
           onClick={(e) => {

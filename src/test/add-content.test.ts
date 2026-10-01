@@ -35,8 +35,8 @@ test('provides clear honest status for available and unavailable providers', () 
   assert.equal(getProviderStatus('shape').available, true);
 
   const stickerStatus = getProviderStatus('sticker');
-  assert.equal(stickerStatus.available, false);
-  assert.equal(stickerStatus.message, 'Thư viện sticker đang được chuẩn bị.');
+  assert.equal(stickerStatus.available, true);
+  assert.equal(stickerStatus.message, 'Bộ sưu tập sticker sẵn sàng sử dụng.');
 
   const qrStatus = getProviderStatus('qr');
   assert.equal(qrStatus.available, false);

@@ -17,6 +17,7 @@ import {
   addRecentFontId,
   MAX_RECENT_FONTS,
   RECENT_FONTS_STORAGE_KEY,
+  loadFont,
 } from '../lib/fonts.ts';
 
 // In-memory mock storage
@@ -233,4 +234,45 @@ test('loadPublishedFonts queries catalog repository and falls back to FONT_REGIS
   const repo = new CatalogRepository(null);
   const viaRepo = await getPublishedFonts(repo);
   assert.equal(viaRepo.length, fonts.length);
+});
+
+test('loadPublishedFonts preserves self-hosted identity and loadFont registers its unique CSS alias', async () => {
+  const repository = {
+    listPublishedFonts: async () => [{
+      id: 'family-handwriting',
+      name: 'Handwriting',
+      family: 'Handwriting',
+      category: 'handwriting' as const,
+      storagePath: 'fonts/family-handwriting/face-handwriting/font.woff2',
+      metadata: { faceId: 'face-handwriting' },
+    }],
+  } as unknown as CatalogRepository;
+  const [font] = await loadPublishedFonts(repository);
+  assert.equal(font.faceId, 'face-handwriting');
+  assert.equal(font.cssAlias, 'qt-face-face-handwriting');
+  assert.equal(font.family, '"qt-face-face-handwriting"');
+
+  const originalWindow = globalThis.window;
+  const originalDocument = globalThis.document;
+  const originalFontFace = globalThis.FontFace;
+  const added: FontFace[] = [];
+  const constructed: Array<{ family: string; source: string }> = [];
+  class TestFontFace {
+    constructor(family: string, source: string) {
+      constructed.push({ family, source });
+    }
+    async load() { return this; }
+  }
+  try {
+    Object.defineProperty(globalThis, 'window', { configurable: true, value: {} });
+    Object.defineProperty(globalThis, 'document', { configurable: true, value: { fonts: { add: (face: FontFace) => added.push(face) } } });
+    Object.defineProperty(globalThis, 'FontFace', { configurable: true, value: TestFontFace });
+    assert.equal(await loadFont(font), true);
+    assert.deepEqual(constructed, [{ family: 'qt-face-face-handwriting', source: 'url("/api/library/font/face-handwriting")' }]);
+    assert.equal(added.length, 1);
+  } finally {
+    Object.defineProperty(globalThis, 'window', { configurable: true, value: originalWindow });
+    Object.defineProperty(globalThis, 'document', { configurable: true, value: originalDocument });
+    Object.defineProperty(globalThis, 'FontFace', { configurable: true, value: originalFontFace });
+  }
 });

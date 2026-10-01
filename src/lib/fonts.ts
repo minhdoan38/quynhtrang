@@ -1,4 +1,5 @@
 import { CatalogRepository } from './repositories/catalog-repository.ts';
+import { isSupabaseConfigured } from './supabase/config.ts';
 
 export interface FontItem {
   readonly id: string;
@@ -8,6 +9,9 @@ export interface FontItem {
   readonly status: 'published' | 'draft' | 'archived';
   readonly googleFont?: string;
   readonly sampleText?: string;
+  readonly storagePath?: string;
+  readonly faceId?: string;
+  readonly cssAlias?: string;
 }
 
 export const FONT_REGISTRY: readonly FontItem[] = Object.freeze([
@@ -146,24 +150,30 @@ export function getPublishedFonts(repository?: CatalogRepository): FontItem[] | 
 export async function loadPublishedFonts(
   repository?: CatalogRepository
 ): Promise<FontItem[]> {
-  try {
-    const repo = repository ?? new CatalogRepository();
-    const fonts = await repo.listFonts();
-    if (!fonts || fonts.length === 0) {
-      return FONT_REGISTRY.filter((f) => f.status === 'published');
-    }
-    return fonts.map((f) => ({
-      id: f.id,
-      name: f.name,
-      family: f.family,
-      category: f.category,
-      status: 'published' as const,
-      googleFont: f.googleFont ?? undefined,
-      sampleText: f.sampleText,
-    }));
-  } catch {
-    return FONT_REGISTRY.filter((f) => f.status === 'published');
+  if (!repository && !isSupabaseConfigured()) {
+    return FONT_REGISTRY.filter((font) => font.status === 'published');
   }
+  const repo = repository ?? new CatalogRepository();
+  const fonts = await repo.listPublishedFonts();
+  if (!repository && isSupabaseConfigured() && fonts.length === 0) {
+    return [];
+  }
+  return fonts.map((font) => {
+    const faceId = typeof font.metadata?.faceId === 'string' ? font.metadata.faceId : font.id;
+    const cssAlias = font.storagePath ? `qt-face-${faceId.replace(/[^a-zA-Z0-9_-]/g, '-')}` : undefined;
+    return {
+      id: font.id,
+      name: font.name,
+      family: cssAlias ? `"${cssAlias}"` : font.family,
+      category: font.category,
+      status: 'published' as const,
+      googleFont: font.googleFont ?? undefined,
+      storagePath: font.storagePath ?? undefined,
+      faceId,
+      cssAlias,
+      sampleText: font.sampleText,
+    };
+  });
 }
 
 export const getPublishedFontsAsync = loadPublishedFonts;
@@ -257,19 +267,30 @@ export function loadFont(font: FontItem): Promise<boolean> {
     return Promise.resolve(true);
   }
 
-  // If system font or no googleFont definition, consider loaded
-  if (!font.googleFont) {
-    return Promise.resolve(true);
+  const cacheKey = `${font.id}:${font.faceId ?? ''}:${font.storagePath ?? font.googleFont ?? ''}`;
+  const cached = fontLoadPromiseCache.get(cacheKey);
+  if (cached) return cached;
+
+  if (font.storagePath && typeof FontFace !== 'undefined' && 'fonts' in document) {
+    const alias = font.cssAlias ?? `qt-face-${(font.faceId ?? font.id).replace(/[^a-zA-Z0-9_-]/g, '-')}`;
+    const url = `/api/library/font/${encodeURIComponent(font.faceId ?? font.id)}`;
+    const loadPromise = new FontFace(alias, `url("${url}")`)
+      .load()
+      .then((face) => {
+        document.fonts.add(face);
+        return true;
+      })
+      .catch(() => false);
+    fontLoadPromiseCache.set(cacheKey, loadPromise);
+    return loadPromise;
   }
 
-  const cached = fontLoadPromiseCache.get(font.id);
-  if (cached) return cached;
+  if (!font.googleFont) return Promise.resolve(true);
 
   const loadPromise = new Promise<boolean>((resolve) => {
     try {
       const linkId = `google-font-${font.id}`;
       let linkEl = document.getElementById(linkId) as HTMLLinkElement | null;
-
       if (!linkEl) {
         linkEl = document.createElement('link');
         linkEl.id = linkId;
@@ -277,13 +298,9 @@ export function loadFont(font: FontItem): Promise<boolean> {
         linkEl.href = `https://fonts.googleapis.com/css2?family=${font.googleFont}&display=swap`;
         document.head.appendChild(linkEl);
       }
-
-      // Check document.fonts if available
       if ('fonts' in document) {
-        const checkFamily = font.name;
-        // Wait up to 3s for font to load
         const timeoutId = setTimeout(() => resolve(true), 3000);
-        document.fonts.load(`16px "${checkFamily}"`).then(() => {
+        document.fonts.load(`16px "${font.name}"`).then(() => {
           clearTimeout(timeoutId);
           resolve(true);
         }).catch(() => {
@@ -298,7 +315,6 @@ export function loadFont(font: FontItem): Promise<boolean> {
       resolve(false);
     }
   });
-
-  fontLoadPromiseCache.set(font.id, loadPromise);
+  fontLoadPromiseCache.set(cacheKey, loadPromise);
   return loadPromise;
 }

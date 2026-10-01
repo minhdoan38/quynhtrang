@@ -1,21 +1,23 @@
 'use client';
 
-import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
+import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { Search, X, Check, Loader2, AlertCircle, RotateCcw } from 'lucide-react';
 import {
-  FontItem,
-  getPublishedFonts,
+  FONT_REGISTRY,
+  type FontItem,
   findFontByFamily,
   getDefaultFont,
+  getPublishedFontsAsync,
   searchFonts,
   getRecentFontIds,
   addRecentFontId,
   loadFont,
 } from '@/lib/fonts';
+import { isSupabaseConfigured } from '@/lib/supabase/config';
 
 export interface FontBrowserContentProps {
   currentFamily: string;
-  onPreviewFont: (family: string, fontId: string) => void;
+  onPreviewFont: (family: string, fontId: string, faceId?: string) => void;
   onClose: () => void;
   onExpandDetent?: () => void;
 }
@@ -30,23 +32,49 @@ export function FontBrowserContent({
   const [recentIds, setRecentIds] = useState<string[]>([]);
   const [loadingIds, setLoadingIds] = useState<Record<string, boolean>>({});
   const [failedIds, setFailedIds] = useState<Record<string, boolean>>({});
+  const [publishedFonts, setPublishedFonts] = useState<FontItem[]>([]);
+  const [isCatalogLoading, setIsCatalogLoading] = useState(true);
+  const [catalogError, setCatalogError] = useState(false);
+  const [catalogAttempt, setCatalogAttempt] = useState(0);
 
   const searchInputRef = useRef<HTMLInputElement>(null);
   const selectedRowRef = useRef<HTMLButtonElement>(null);
   const listContainerRef = useRef<HTMLDivElement>(null);
 
-  const publishedFonts = useMemo(() => getPublishedFonts(), []);
   const defaultFont = useMemo(() => getDefaultFont(), []);
 
-  // Determine current active font item
   const currentFontItem = useMemo(() => {
-    return findFontByFamily(currentFamily) || defaultFont;
-  }, [currentFamily, defaultFont]);
+    return publishedFonts.find((font) => font.family === currentFamily)
+      ?? findFontByFamily(currentFamily)
+      ?? { ...defaultFont, id: `current-${currentFamily}`, family: currentFamily, name: currentFamily, status: 'archived' as const };
+  }, [currentFamily, defaultFont, publishedFonts]);
 
   // Load recent font IDs on mount
   useEffect(() => {
     setRecentIds(getRecentFontIds());
   }, []);
+  useEffect(() => {
+    let active = true;
+    setIsCatalogLoading(true);
+    setCatalogError(false);
+    if (!isSupabaseConfigured()) {
+      setPublishedFonts(FONT_REGISTRY.filter((font) => font.status === 'published'));
+      setIsCatalogLoading(false);
+      return () => { active = false; };
+    }
+    getPublishedFontsAsync()
+      .then((fonts) => {
+        if (!active) return;
+        setPublishedFonts(fonts);
+        setIsCatalogLoading(false);
+      })
+      .catch(() => {
+        if (!active) return;
+        setCatalogError(true);
+        setIsCatalogLoading(false);
+      });
+    return () => { active = false; };
+  }, [catalogAttempt]);
 
   // Filtered fonts based on search
   const filteredFonts = useMemo(() => {
@@ -102,7 +130,7 @@ export function FontBrowserContent({
 
         if (success) {
           // Immediately update canvas preview
-          onPreviewFont(font.family, font.id);
+          onPreviewFont(font.family, font.id, font.faceId);
           // Update recent fonts
           const nextRecents = addRecentFontId(font.id);
           setRecentIds(nextRecents);
@@ -122,9 +150,8 @@ export function FontBrowserContent({
   );
 
   const handleRetryLoad = useCallback(
-    (e: React.MouseEvent, font: FontItem) => {
-      e.stopPropagation();
-      handleSelectFont(font);
+    (font: FontItem) => {
+      void handleSelectFont(font);
     },
     [handleSelectFont]
   );
@@ -139,65 +166,46 @@ export function FontBrowserContent({
     const isFailed = Boolean(failedIds[font.id]);
 
     return (
-      <button
+      <div
         key={`${isRecentSection ? 'recent-' : ''}${font.id}`}
-        ref={isSelected && !isRecentSection ? selectedRowRef : undefined}
-        type="button"
-        role="option"
-        aria-selected={isSelected}
-        onClick={() => handleSelectFont(font)}
-        className={`w-full flex items-center justify-between p-3 rounded-xl border text-left transition-all min-h-[58px] ${
-          isSelected
-            ? 'border-[#315F86] bg-[#DCEBF4]/40 shadow-xs'
-            : 'border-[#ECE6DC] bg-white hover:bg-[#F8F3E8] active:scale-[0.99]'
-        }`}
+        className={`w-full flex items-center rounded-xl border transition-all min-h-[58px] ${isSelected
+          ? 'border-[#315F86] bg-[#DCEBF4]/40 shadow-xs'
+          : 'border-[#ECE6DC] bg-white hover:bg-[#F8F3E8]'
+          }`}
       >
-        <div className="flex-1 min-w-0 pr-3">
-          <div className="flex items-center gap-2">
-            <span className="text-xs font-semibold text-[#2E3338] truncate">
-              {font.name}
-            </span>
-            {isLoading && (
-              <span className="inline-flex items-center gap-1 text-xs text-[#315F86] font-medium animate-pulse">
-                <Loader2 className="w-3 h-3 animate-spin" />
-                Đang tải font...
-              </span>
-            )}
-            {isFailed && (
-              <span className="inline-flex items-center gap-1 text-xs text-[#B3535D] font-medium">
-                <AlertCircle className="w-3 h-3" />
-                Lỗi tải
-              </span>
-            )}
-          </div>
-          {/* Vietnamese sample text rendered in that specific font */}
-          <div
-            className="text-base text-[#2E3338] mt-0.5 truncate tracking-normal"
-            style={{ fontFamily: font.family }}
-          >
-            {font.sampleText || 'Cảm ơn Việt Nam'}
-          </div>
-        </div>
-
-        <div className="shrink-0 flex items-center gap-1.5">
-          {isFailed && (
-            <button
-              type="button"
-              onClick={(e) => handleRetryLoad(e, font)}
-              className="p-1 rounded text-xs text-[#315F86] hover:bg-[#DCEBF4] inline-flex items-center gap-1 font-semibold"
-              title="Thử lại"
-            >
-              <RotateCcw className="w-3.5 h-3.5" />
-              <span>Thử lại</span>
-            </button>
-          )}
-          {isSelected && (
-            <div className="w-6 h-6 rounded-full bg-[#315F86] text-white flex items-center justify-center">
-              <Check className="w-3.5 h-3.5" />
+        <button
+          ref={isSelected && !isRecentSection ? selectedRowRef : undefined}
+          type="button"
+          role="option"
+          aria-selected={isSelected}
+          disabled={font.status === 'archived'}
+          onClick={() => handleSelectFont(font)}
+          className="min-w-0 flex flex-1 items-center justify-between p-3 text-left active:scale-[0.99] disabled:cursor-default"
+        >
+          <div className="flex-1 min-w-0 pr-3">
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-semibold text-[#2E3338] truncate">{font.name}</span>
+              {isLoading && <span className="inline-flex items-center gap-1 text-xs text-[#315F86] font-medium animate-pulse"><Loader2 className="w-3 h-3 animate-spin" />Đang tải font...</span>}
+              {isFailed && <span className="inline-flex items-center gap-1 text-xs text-[#B3535D] font-medium"><AlertCircle className="w-3 h-3" />Lỗi tải</span>}
+              {font.status === 'archived' && <span className="text-[10px] text-[#666A6D]">Đã lưu trữ · không dùng cho chữ mới</span>}
             </div>
-          )}
-        </div>
-      </button>
+            <div className="text-base text-[#2E3338] mt-0.5 truncate tracking-normal" style={{ fontFamily: font.family }}>
+              {font.sampleText || 'Cảm ơn Việt Nam'}
+            </div>
+          </div>
+          {isSelected && <span className="w-6 h-6 rounded-full bg-[#315F86] text-white flex items-center justify-center"><Check className="w-3.5 h-3.5" /></span>}
+        </button>
+        {isFailed && (
+          <button
+            type="button"
+            onClick={() => handleRetryLoad(font)}
+            className="mr-2 p-1 rounded text-xs text-[#315F86] hover:bg-[#DCEBF4] inline-flex items-center gap-1 font-semibold"
+            title="Thử lại"
+          >
+            <RotateCcw className="w-3.5 h-3.5" /><span>Thử lại</span>
+          </button>
+        )}
+      </div>
     );
   };
 
@@ -253,45 +261,50 @@ export function FontBrowserContent({
         aria-label="Danh sách kiểu chữ khả dụng"
         className="flex-1 overflow-y-auto px-1 py-1 space-y-4 overscroll-contain"
       >
-        {/* Section 1: Recent Fonts (only if exists and no search query) */}
-        {recentFontItems.length > 0 && !query.trim() && (
-          <div className="space-y-1.5">
-            <span className="text-xs font-bold text-[#666A6D] uppercase tracking-wider block px-1">
-              Gần đây
-            </span>
-            <div className="space-y-1.5">
-              {recentFontItems.map((f) => renderFontRow(f, true))}
-            </div>
+        {isCatalogLoading ? (
+          <div role="status" className="flex items-center justify-center gap-2 p-8 text-xs text-[#666A6D]">
+            <Loader2 className="h-4 w-4 animate-spin" /> Đang tải thư viện font...
           </div>
-        )}
-
-        {/* Section 2: All Fonts / Search Results */}
-        <div className="space-y-1.5">
-          <span className="text-xs font-bold text-[#666A6D] uppercase tracking-wider block px-1">
-            {query.trim() ? 'Kết quả tìm kiếm' : 'Tất cả font'}
-          </span>
-
-          {filteredFonts.length === 0 ? (
-            <div className="p-6 text-center space-y-2 rounded-xl border border-dashed border-[#DDD6CC] bg-[#FFFDF8]">
-              <p className="text-xs font-medium text-[#666A6D]">
-                Không tìm thấy font phù hợp.
-              </p>
-              {query.trim() && (
-                <button
-                  type="button"
-                  onClick={() => setQuery('')}
-                  className="inline-flex items-center justify-center text-xs font-semibold text-[#315F86] hover:underline"
-                >
-                  Xóa tìm kiếm
-                </button>
+        ) : catalogError ? (
+          <div role="alert" className="p-6 text-center space-y-3 rounded-xl border border-[#F5C7C0] bg-[#FDF0ED]">
+            <p className="text-xs font-medium text-[#A63626]">Không thể tải thư viện font.</p>
+            <button
+              type="button"
+              onClick={() => setCatalogAttempt((attempt) => attempt + 1)}
+              className="inline-flex items-center gap-1 text-xs font-semibold text-[#315F86]"
+            >
+              <RotateCcw className="h-3.5 w-3.5" /> Thử lại
+            </button>
+          </div>
+        ) : (
+          <>
+            {currentFontItem.status === 'archived' && !publishedFonts.some((font) => font.id === currentFontItem.id) && (
+              <div className="space-y-1.5">
+                <span className="text-xs font-bold text-[#666A6D] uppercase tracking-wider block px-1">Đang dùng</span>
+                {renderFontRow(currentFontItem)}
+              </div>
+            )}
+            {recentFontItems.length > 0 && !query.trim() && (
+              <div className="space-y-1.5">
+                <span className="text-xs font-bold text-[#666A6D] uppercase tracking-wider block px-1">Gần đây</span>
+                <div className="space-y-1.5">{recentFontItems.map((font) => renderFontRow(font, true))}</div>
+              </div>
+            )}
+            <div className="space-y-1.5">
+              <span className="text-xs font-bold text-[#666A6D] uppercase tracking-wider block px-1">
+                {query.trim() ? 'Kết quả tìm kiếm' : 'Tất cả font'}
+              </span>
+              {filteredFonts.length === 0 ? (
+                <div className="p-6 text-center space-y-2 rounded-xl border border-dashed border-[#DDD6CC] bg-[#FFFDF8]">
+                  <p className="text-xs font-medium text-[#666A6D]">Không tìm thấy font phù hợp.</p>
+                  {query.trim() && <button type="button" onClick={() => setQuery('')} className="text-xs font-semibold text-[#315F86] hover:underline">Xóa tìm kiếm</button>}
+                </div>
+              ) : (
+                <div className="space-y-1.5">{filteredFonts.map((font) => renderFontRow(font))}</div>
               )}
             </div>
-          ) : (
-            <div className="space-y-1.5">
-              {filteredFonts.map((f) => renderFontRow(f, false))}
-            </div>
-          )}
-        </div>
+          </>
+        )}
       </div>
     </div>
   );

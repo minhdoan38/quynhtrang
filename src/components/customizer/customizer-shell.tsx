@@ -22,6 +22,7 @@ import {
   migrateLegacyText,
   getTextData,
   getImageData,
+  createStickerElement,
   type DesignState,
   type DesignAction,
   type ProductId,
@@ -77,7 +78,7 @@ import { EditorPreflightMode } from './editor-preflight-mode';
 import { EmptyEditorState } from './empty-editor-state';
 import { BottomNavigation, type SelectedTarget } from './bottom-navigation';
 import { EditorSheets, type ActiveSheetType } from './editor-sheets';
-import type { ImageSourceType, TextStylePreset, ShapePrimitiveType, ImageSourceContext } from '@/lib/add-content';
+import { calculateCenteredPlacement, type ImageSourceType, type TextStylePreset, type ShapePrimitiveType, type ImageSourceContext, type PublishedSticker } from '@/lib/add-content';
 import { useColorEditor } from './use-color-editor';
 import type { ColorTarget, HexColor } from '@/lib/color/color-types';
 import { resolveEditorBackAction, type SaveStatus } from '@/lib/navigation';
@@ -409,12 +410,12 @@ export function CustomizerShell({ context }: CustomizerShellProps = {}) {
     dispatchDirect(action);
   }, [dispatchDirect]);
 
-  const handleSetFont = useCallback((fontFamily: string) => {
+  const handleSetFont = useCallback((fontFamily: string, fontId?: string, faceId?: string) => {
     if (selectedTarget === 'text' && selectedTextId) {
       dispatchDirect({
         type: 'UPDATE_TEXT_STYLE',
         id: selectedTextId,
-        patch: { fontFamily },
+        patch: { fontFamily, fontFamilyId: fontId, fontFaceId: faceId },
       });
     }
     dispatchDirect({
@@ -1049,6 +1050,31 @@ export function CustomizerShell({ context }: CustomizerShellProps = {}) {
     );
     showToast('Đã thêm hình khối.');
   };
+  const handleSelectSticker = useCallback((sticker: PublishedSticker) => {
+    const id = `sticker-${Date.now()}`;
+    const existingCount = (state.elements ?? getDefaultElements(state)).length;
+    const placement = calculateCenteredPlacement(50, 50, existingCount);
+    const element = createStickerElement({
+      id,
+      stickerId: sticker.id,
+      storagePath: sticker.storagePath,
+      src: `/api/library/sticker/${encodeURIComponent(sticker.id)}`,
+      title: sticker.title || sticker.id,
+      x: placement.x,
+      y: placement.y,
+      width: 50,
+      height: 50,
+      surface: state.productId === 'card' ? activeCardSurface : undefined,
+    });
+    executeAction(
+      { type: 'ADD_CANVAS_ELEMENT', element },
+      { type: 'add', label: 'Thêm sticker', affectedIds: [id] }
+    );
+    setSelectedTarget('group');
+    setSelectedElementId(id);
+    setSelectedTextId(null);
+    setActiveSheet(null);
+  }, [activeCardSurface, executeAction, state]);
   // Workspace touch / pan / pinch gesture tracking
   const pinchStateRef = useRef<{
     initialDistance: number;
@@ -1938,7 +1964,7 @@ export function CustomizerShell({ context }: CustomizerShellProps = {}) {
               if (id) {
                 const elements = state.elements ?? getDefaultElements(state);
                 const el = elements.find((e) => e.id === id);
-                if (el?.type === 'group') {
+                if (el?.type === 'group' || el?.type === 'sticker') {
                   setSelectedTarget('group');
                 } else if (el?.type === 'image') {
                   setSelectedTarget('image');
@@ -1951,26 +1977,24 @@ export function CustomizerShell({ context }: CustomizerShellProps = {}) {
             onDoubleTapGroup={handleEnterGroupEdit}
             onCommitMultiTransform={handleCommitMultiTransform}
             onSelectTarget={(target) => {
+              setSelectedTarget(target);
               if (target === 'image') {
                 const elements = state.elements ?? getDefaultElements(state);
-                const imgEl = elements.find((e) => e.type === 'image');
+                const imgEl = elements.find((element) => element.type === 'image');
                 setSelectedElementId(imgEl?.id || 'image-1');
                 setSelectedTextId(null);
               } else if (target === 'text') {
                 const elements = state.elements ?? getDefaultElements(state);
-                const txtEl = elements.find((e) => e.type === 'text');
+                const txtEl = elements.find((element) => element.type === 'text');
                 setSelectedElementId(txtEl?.id || 'text-1');
                 setSelectedTextId(txtEl?.id || 'text-1');
-              } else {
+              } else if (target !== 'group') {
                 setSelectedElementId(null);
                 setSelectedTextId(null);
               }
             }}
-            onSelectText={handleSelectTextElement}
             onDoubleTap={(target) => {
-              if (target === 'image') {
-                setFocusMode('crop');
-              }
+              if (target === 'image') setFocusMode('crop');
             }}
             onDoubleTapText={(id) => {
               const elements = state.elements ?? getDefaultElements(state);
@@ -1995,24 +2019,19 @@ export function CustomizerShell({ context }: CustomizerShellProps = {}) {
             onCommitTransform={(target, transform, elementId) => {
               if (target === 'text' && elementId) {
                 executeAction(
-                  {
-                    type: 'UPDATE_ELEMENT',
-                    id: elementId,
-                    patch: {
-                      x: transform.x,
-                      y: transform.y,
-                      rotation: transform.rotation,
-                    },
-                  },
+                  { type: 'UPDATE_ELEMENT', id: elementId, patch: { x: transform.x, y: transform.y, rotation: transform.rotation } },
                   { type: 'move', label: 'Di chuyển chữ', affectedIds: [elementId] }
+                );
+              } else if (target === 'sticker' && elementId) {
+                const sticker = (state.elements ?? []).find((element) => element.id === elementId);
+                if (!sticker) return;
+                executeAction(
+                  { type: 'UPDATE_ELEMENT', id: elementId, patch: { x: transform.x, y: transform.y, width: sticker.width * transform.scale, height: sticker.height * transform.scale, rotation: transform.rotation } },
+                  { type: 'move', label: 'Biến đổi sticker', affectedIds: [elementId] }
                 );
               } else if (target === 'image') {
                 executeAction(
-                  {
-                    type: 'SET_PRODUCT_OPTION',
-                    key: 'imageTransform',
-                    value: transform,
-                  },
+                  { type: 'SET_PRODUCT_OPTION', key: 'imageTransform', value: transform },
                   { type: 'move', label: 'Di chuyển ảnh', affectedIds: [elementId || 'image-1'] }
                 );
               }
@@ -2203,6 +2222,7 @@ export function CustomizerShell({ context }: CustomizerShellProps = {}) {
         onUploadImageClick={(source, ctx) => handleOpenImagePicker(source, ctx)}
         imageSourceContext={imageSourceContext}
         onAddShape={handleInsertShape}
+        onSelectSticker={handleSelectSticker}
         onSetColor={handleSetColor}
         onSetFont={handleSetFont}
         onSetFontSize={handleSetFontSize}

@@ -3,7 +3,7 @@
 import type * as React from 'react';
 import type { CSSProperties } from 'react';
 import type { CanvasElement, DesignState } from '@/lib/product-state';
-import { getImageData, normalizeWrappingOptions } from '@/lib/product-state';
+import { getImageData, getStickerData, normalizeWrappingOptions } from '@/lib/product-state';
 import { computePatternGrid, getWrappingPaperDimensions } from '@/lib/pattern-renderer';
 
 export interface WrappingDimensions {
@@ -29,6 +29,10 @@ function getMotif(element: CanvasElement | undefined, state: DesignState): Motif
   }
   if (element.type === 'image') {
     const data = getImageData(element);
+    return data?.src ? { src: data.src } : {};
+  }
+  if (element.type === 'sticker') {
+    const data = getStickerData(element);
     return data?.src ? { src: data.src } : {};
   }
   if (element.type === 'text') {

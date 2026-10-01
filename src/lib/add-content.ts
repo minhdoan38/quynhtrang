@@ -91,8 +91,8 @@ export function getProviderStatus(type: AddContentType): AddProviderStatus {
    return { available: true, message: 'Sẵn sàng sử dụng' };
   case 'sticker':
    return {
-    available: false,
-    message: 'Thư viện sticker đang được chuẩn bị.',
+    available: true,
+    message: 'Bộ sưu tập sticker sẵn sàng sử dụng.',
    };
   case 'qr':
    return {
@@ -115,12 +115,8 @@ export async function getPublishedStickers(
  category?: string,
  repository?: CatalogRepository
 ): Promise<PublishedSticker[]> {
- try {
-  const repo = repository ?? new CatalogRepository();
-  return await repo.listStickers(category);
- } catch {
-  return [];
- }
+ const repo = repository ?? new CatalogRepository();
+ return repo.listPublishedStickers(category);
 }
 
 /**

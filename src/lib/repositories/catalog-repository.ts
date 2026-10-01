@@ -148,11 +148,21 @@ export class CatalogRepository implements PublishedCatalogRepository {
   }
 
   async listPublishedFonts(): Promise<PublishedFont[]> {
-    return this.listFonts();
+    if (!this.client) return this.getStaticFonts();
+    const { data, error } = await this.client.from('fonts').select('*').eq('published', true).order('id');
+    if (error) throw error;
+    if (data === null || data === undefined) throw new Error('Font catalog returned no data');
+    return (data as DatabaseFontRow[]).map(mapFontRow);
   }
 
   async listPublishedStickers(category?: string): Promise<PublishedSticker[]> {
-    return this.listStickers(category);
+    if (!this.client) return [];
+    let query = this.client.from('sticker_assets').select('*').eq('published', true);
+    if (category) query = query.eq('category', category);
+    const { data, error } = await query.order('id');
+    if (error) throw error;
+    if (data === null || data === undefined) throw new Error('Sticker catalog returned no data');
+    return (data as DatabaseStickerRow[]).map(mapStickerRow);
   }
 
 
