@@ -11,6 +11,7 @@ class Query {
   constructor(result: Result) {
     this.result = result;
   }
+  update(...args: unknown[]) { this.calls.push(['update', ...args]); return this; }
   select(...args: unknown[]) { this.calls.push(['select', ...args]); return this; }
   eq(...args: unknown[]) { this.calls.push(['eq', ...args]); return this; }
   order(...args: unknown[]) { this.calls.push(['order', ...args]); return this; }
@@ -148,6 +149,21 @@ test('throws Supabase errors instead of returning partial data', async () => {
   const rpcClient = new AssetLibraryClient({ library_archive: { data: null, error: { message: 'REVISION_CONFLICT' } } });
   await assert.rejects(
     () => new AssetLibraryRepository(rpcClient as never).archive('actor', 'request', 'sticker', 'rose', 9, 'Retired'),
+    /REVISION_CONFLICT/,
+  );
+});
+
+test('replaceDraftBinary throws REVISION_CONFLICT when update affects zero rows', async () => {
+  const client = new AssetLibraryClient({
+    sticker_assets: { data: [], error: null, count: 0 },
+  });
+  const repository = new AssetLibraryRepository(client as never);
+  await assert.rejects(
+    () => repository.replaceDraftBinary('sticker', 'flower', 1, {
+      storagePath: 'drafts/flower.svg',
+      checksum: 'sha-new',
+      byteSize: 100,
+    }),
     /REVISION_CONFLICT/,
   );
 });

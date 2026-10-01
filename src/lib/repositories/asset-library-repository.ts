@@ -453,12 +453,14 @@ export class AssetLibraryRepository {
       if (update.height !== undefined) payload.height = update.height;
     }
 
-    const { error } = await this.client
+    const { data, error } = await this.client
       .from(table)
       .update(payload)
       .eq('id', assetId)
-      .eq('revision', expectedRevision);
+      .eq('revision', expectedRevision)
+      .select('id');
     if (error) throw new Error(error.message);
+    if (!data || data.length === 0) throw new Error('REVISION_CONFLICT');
 
     const record = await this.getRecord({ kind, id: assetId });
     if (!record) throw new Error('NOT_FOUND');

@@ -111,7 +111,8 @@ class FakeRepository {
   calls: { name: string; args: unknown[] }[] = [];
   failCreate = false;
   failPatch = false;
-
+  failReplace = false;
+  replaceError: Error | null = null;
   async getRecord() { return this.record; }
   async getSticker() { return this.record as StickerRecord | null; }
   async getFontFace() { return this.record as FontFaceRecord | null; }
@@ -135,6 +136,7 @@ class FakeRepository {
   }
   async replaceDraftBinary(...args: unknown[]) {
     this.calls.push({ name: 'replaceDraftBinary', args });
+    if (this.failReplace) throw this.replaceError ?? new Error('REVISION_CONFLICT');
     const replaced = sticker({ ...this.record as StickerRecord, revision: (this.record?.revision ?? 1) + 1, validationId: null });
     this.record = replaced;
     return replaced;
@@ -369,6 +371,28 @@ test('replaceDraftBinary updates font face binary and resets validation', async 
     replaceDraftBinary(face().ref, { ...key, expectedRevision: 99 }, bytes, actor, repo),
     isExpectedServiceError('REVISION_CONFLICT'),
   );
+});
+
+test('replaceDraftBinary cleans up uploaded draft files and maps REVISION_CONFLICT when repository update fails', async () => {
+  const repoInstance = new FakeRepository();
+  const repo = repoInstance as unknown as AssetLibraryRepository;
+  repoInstance.record = sticker();
+  repoInstance.failReplace = true;
+  const bytes = new Uint8Array(await readFile(join(fixtures, 'safe-sticker.svg')));
+
+  await assert.rejects(
+    replaceDraftBinary(sticker().ref, key, bytes, actor, repo),
+    (error: unknown) => {
+      assert.ok(error instanceof LibraryServiceError);
+      assert.equal(error.code, 'REVISION_CONFLICT');
+      return true;
+    },
+  );
+
+  assert.equal(repoInstance.uploads.length, 2);
+  assert.deepEqual(repoInstance.removals, [
+    { bucket: 'library-drafts', keys: repoInstance.uploads.map((upload) => upload.key) },
+  ]);
 });
 
 test('publishAsset copies validated font face binary to fonts bucket', async () => {

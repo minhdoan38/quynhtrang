@@ -33,7 +33,7 @@ export class LibraryServiceError extends Error {
   }
 }
 
-function normalizeServiceError(error: unknown): Error {
+function normalizeServiceError(error: unknown, fallbackMessage?: string): Error {
   if (error instanceof LibraryServiceError) return error;
   const message = error instanceof Error ? error.message : String(error);
   if (message.includes('REVISION_CONFLICT')) return new LibraryServiceError('REVISION_CONFLICT', message);
@@ -52,7 +52,13 @@ function normalizeServiceError(error: unknown): Error {
   ) {
     return new LibraryServiceError('INVALID_INPUT', message);
   }
-  return error instanceof Error ? error : new Error(message);
+  if (error instanceof Error) {
+    if (fallbackMessage && !error.message) {
+      return new Error(fallbackMessage);
+    }
+    return error;
+  }
+  return new Error(fallbackMessage ?? message);
 }
 
 function filterDefined(input: Record<string, unknown>): Record<string, unknown> {
@@ -244,39 +250,51 @@ export async function replaceDraftBinary(
     throw new LibraryServiceError('REVISION_CONFLICT', `Expected revision ${key.expectedRevision}, found ${current.revision}`);
   }
 
-  if (ref.kind === 'sticker') {
-    const validated = await validateSticker(bytes);
-    const ext = validated.format === 'svg' ? 'svg' : validated.format;
-    const storageKey = `drafts/${actor.userId}/${ref.id}/${validated.checksum}.${ext}`;
-    const thumbKey = `drafts/${actor.userId}/${ref.id}/${validated.checksum}-thumb.png`;
-    const mimeType = validated.format === 'svg' ? 'image/svg+xml' : `image/${validated.format}`;
+  const uploadedKeys: string[] = [];
 
-    await repo.uploadObject('library-drafts', storageKey, validated.canonicalBytes, mimeType);
-    if (validated.thumbnailBytes && validated.thumbnailBytes.byteLength > 0) {
-      await repo.uploadObject('library-drafts', thumbKey, validated.thumbnailBytes, 'image/png');
+  try {
+    if (ref.kind === 'sticker') {
+      const validated = await validateSticker(bytes);
+      const ext = validated.format === 'svg' ? 'svg' : validated.format;
+      const storageKey = `drafts/${actor.userId}/${ref.id}/${validated.checksum}.${ext}`;
+      const thumbKey = `drafts/${actor.userId}/${ref.id}/${validated.checksum}-thumb.png`;
+      const mimeType = validated.format === 'svg' ? 'image/svg+xml' : `image/${validated.format}`;
+
+      await repo.uploadObject('library-drafts', storageKey, validated.canonicalBytes, mimeType);
+      uploadedKeys.push(storageKey);
+      if (validated.thumbnailBytes && validated.thumbnailBytes.byteLength > 0) {
+        await repo.uploadObject('library-drafts', thumbKey, validated.thumbnailBytes, 'image/png');
+        uploadedKeys.push(thumbKey);
+      }
+
+      return await repo.replaceDraftBinary('sticker', ref.id, key.expectedRevision, {
+        storagePath: storageKey,
+        checksum: validated.checksum,
+        byteSize: validated.canonicalBytes.byteLength,
+        width: validated.width,
+        height: validated.height,
+        mimeType,
+      });
+    } else {
+      const validated = await validateFont(bytes);
+      const storageKey = `drafts/${actor.userId}/${ref.id}/${validated.checksum}.${validated.format}`;
+      const mimeType = `font/${validated.format}`;
+
+      await repo.uploadObject('library-drafts', storageKey, bytes, mimeType);
+      uploadedKeys.push(storageKey);
+
+      return await repo.replaceDraftBinary('font-face', ref.id, key.expectedRevision, {
+        storagePath: storageKey,
+        checksum: validated.checksum,
+        byteSize: bytes.byteLength,
+        mimeType,
+      });
     }
-
-    return await repo.replaceDraftBinary('sticker', ref.id, key.expectedRevision, {
-      storagePath: storageKey,
-      checksum: validated.checksum,
-      byteSize: validated.canonicalBytes.byteLength,
-      width: validated.width,
-      height: validated.height,
-      mimeType,
-    });
-  } else {
-    const validated = await validateFont(bytes);
-    const storageKey = `drafts/${actor.userId}/${ref.id}/${validated.checksum}.${validated.format}`;
-    const mimeType = `font/${validated.format}`;
-
-    await repo.uploadObject('library-drafts', storageKey, bytes, mimeType);
-
-    return await repo.replaceDraftBinary('font-face', ref.id, key.expectedRevision, {
-      storagePath: storageKey,
-      checksum: validated.checksum,
-      byteSize: bytes.byteLength,
-      mimeType,
-    });
+  } catch (err) {
+    if (uploadedKeys.length > 0) {
+      await repo.removeObjects('library-drafts', uploadedKeys).catch(() => { });
+    }
+    throw normalizeServiceError(err, 'Failed to replace draft binary');
   }
 }
 
