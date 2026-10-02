@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import { headers } from 'next/headers.js';
+import Link from 'next/link';
 import { redirect } from 'next/navigation.js';
 
 import { getOptionalStaff } from '@/lib/admin/authorization.ts';
@@ -61,10 +62,24 @@ export default async function AdminLayout({
     <div className="min-h-screen bg-stone-50/70 text-stone-900 font-sans">
       <header className="sticky top-0 z-40 bg-white/95 backdrop-blur-xs border-b border-stone-200">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 h-14 flex items-center justify-between gap-4">
-          <div className="flex items-center gap-3 min-w-0">
-            <h1 className="text-sm sm:text-base font-semibold text-stone-900 truncate">
-              Quỳnh Trang Studio — Quản trị đơn hàng
-            </h1>
+          <div className="flex items-center gap-6 min-w-0">
+            <Link href="/admin/orders" className="text-sm sm:text-base font-semibold text-stone-900 truncate hover:opacity-80">
+              Quỳnh Trang Studio
+            </Link>
+            <nav className="flex items-center gap-1 text-xs font-medium" aria-label="Điều hướng quản trị">
+              <Link
+                href="/admin/orders"
+                className="px-2.5 py-1 rounded-md text-stone-600 hover:text-stone-900 hover:bg-stone-100 transition"
+              >
+                Đơn hàng
+              </Link>
+              <Link
+                href="/admin/content/stickers"
+                className="px-2.5 py-1 rounded-md text-stone-600 hover:text-stone-900 hover:bg-stone-100 transition"
+              >
+                Thư viện nội dung
+              </Link>
+            </nav>
           </div>
 
           <div className="flex items-center gap-3 shrink-0">
