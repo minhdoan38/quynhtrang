@@ -722,29 +722,31 @@ on conflict (template_id, version) do update set
   design_document = excluded.design_document;
 
 -- 4. Fonts (authoritative matching src/lib/fonts.ts)
-insert into public.fonts (id, family_name, google_font, storage_path, published, metadata)
+insert into public.fonts (id, family_name, google_font, storage_path, published, status, revision, ever_published_at, metadata)
 values
-  ('be-vietnam-pro', 'Be Vietnam Pro', 'Be+Vietnam+Pro:wght@400;600;700', null, true, jsonb_build_object('category', 'sans', 'family', '"Be Vietnam Pro", system-ui, sans-serif', 'sampleText', 'Cảm ơn Việt Nam')),
-  ('lora', 'Lora', 'Lora:wght@500;600;700', null, true, jsonb_build_object('category', 'serif', 'family', 'Lora, Georgia, serif', 'sampleText', 'Cảm ơn Việt Nam')),
-  ('playfair-display', 'Playfair Display', 'Playfair+Display:wght@600;700', null, true, jsonb_build_object('category', 'display', 'family', '"Playfair Display", serif', 'sampleText', 'Cảm ơn Việt Nam')),
-  ('montserrat', 'Montserrat', 'Montserrat:wght@500;700', null, true, jsonb_build_object('category', 'sans', 'family', 'Montserrat, sans-serif', 'sampleText', 'Cảm ơn Việt Nam')),
-  ('merriweather', 'Merriweather', 'Merriweather:wght@400;700', null, true, jsonb_build_object('category', 'serif', 'family', 'Merriweather, serif', 'sampleText', 'Cảm ơn Việt Nam')),
-  ('comfortaa', 'Comfortaa', 'Comfortaa:wght@600;700', null, true, jsonb_build_object('category', 'display', 'family', 'Comfortaa, cursive', 'sampleText', 'Cảm ơn Việt Nam')),
-  ('dancing-script', 'Dancing Script', 'Dancing+Script:wght@600;700', null, true, jsonb_build_object('category', 'handwriting', 'family', '"Dancing Script", cursive', 'sampleText', 'Cảm ơn Việt Nam')),
-  ('quicksand', 'Quicksand', 'Quicksand:wght@500;700', null, true, jsonb_build_object('category', 'sans', 'family', 'Quicksand, sans-serif', 'sampleText', 'Cảm ơn Việt Nam')),
-  ('pacifico', 'Pacifico', 'Pacifico', null, true, jsonb_build_object('category', 'handwriting', 'family', 'Pacifico, cursive', 'sampleText', 'Cảm ơn Việt Nam')),
-  ('caveat', 'Caveat', 'Caveat:wght@600;700', null, true, jsonb_build_object('category', 'handwriting', 'family', 'Caveat, cursive', 'sampleText', 'Cảm ơn Việt Nam')),
-  ('roboto', 'Roboto', 'Roboto:wght@400;700', null, true, jsonb_build_object('category', 'sans', 'family', 'Roboto, sans-serif', 'sampleText', 'Cảm ơn Việt Nam')),
-  ('old-typewriter', 'Old Typewriter', null, null, false, jsonb_build_object('category', 'display', 'family', '"Courier New", monospace', 'status', 'archived', 'sampleText', 'Cảm ơn Việt Nam')),
-  ('future-display', 'Future Display Draft', null, null, false, jsonb_build_object('category', 'display', 'family', 'sans-serif', 'status', 'draft', 'sampleText', 'Cảm ơn Việt Nam'))
+  ('be-vietnam-pro', 'Be Vietnam Pro', 'Be+Vietnam+Pro:wght@400;600;700', null, true, 'published', 1, now(), jsonb_build_object('category', 'sans', 'family', '"Be Vietnam Pro", system-ui, sans-serif', 'sampleText', 'Cảm ơn Việt Nam')),
+  ('lora', 'Lora', 'Lora:wght@500;600;700', null, true, 'published', 1, now(), jsonb_build_object('category', 'serif', 'family', 'Lora, Georgia, serif', 'sampleText', 'Cảm ơn Việt Nam')),
+  ('playfair-display', 'Playfair Display', 'Playfair+Display:wght@600;700', null, true, 'published', 1, now(), jsonb_build_object('category', 'display', 'family', '"Playfair Display", serif', 'sampleText', 'Cảm ơn Việt Nam')),
+  ('montserrat', 'Montserrat', 'Montserrat:wght@500;700', null, true, 'published', 1, now(), jsonb_build_object('category', 'sans', 'family', 'Montserrat, sans-serif', 'sampleText', 'Cảm ơn Việt Nam')),
+  ('merriweather', 'Merriweather', 'Merriweather:wght@400;700', null, true, 'published', 1, now(), jsonb_build_object('category', 'serif', 'family', 'Merriweather, serif', 'sampleText', 'Cảm ơn Việt Nam')),
+  ('comfortaa', 'Comfortaa', 'Comfortaa:wght@600;700', null, true, 'published', 1, now(), jsonb_build_object('category', 'display', 'family', 'Comfortaa, cursive', 'sampleText', 'Cảm ơn Việt Nam')),
+  ('dancing-script', 'Dancing Script', 'Dancing+Script:wght@600;700', null, true, 'published', 1, now(), jsonb_build_object('category', 'handwriting', 'family', '"Dancing Script", cursive', 'sampleText', 'Cảm ơn Việt Nam')),
+  ('quicksand', 'Quicksand', 'Quicksand:wght@500;700', null, true, 'published', 1, now(), jsonb_build_object('category', 'sans', 'family', 'Quicksand, sans-serif', 'sampleText', 'Cảm ơn Việt Nam')),
+  ('pacifico', 'Pacifico', 'Pacifico', null, true, 'published', 1, now(), jsonb_build_object('category', 'handwriting', 'family', 'Pacifico, cursive', 'sampleText', 'Cảm ơn Việt Nam')),
+  ('caveat', 'Caveat', 'Caveat:wght@600;700', null, true, 'published', 1, now(), jsonb_build_object('category', 'handwriting', 'family', 'Caveat, cursive', 'sampleText', 'Cảm ơn Việt Nam')),
+  ('roboto', 'Roboto', 'Roboto:wght@400;700', null, true, 'published', 1, now(), jsonb_build_object('category', 'sans', 'family', 'Roboto, sans-serif', 'sampleText', 'Cảm ơn Việt Nam')),
+  ('old-typewriter', 'Old Typewriter', null, null, false, 'archived', 1, now(), jsonb_build_object('category', 'display', 'family', '"Courier New", monospace', 'sampleText', 'Cảm ơn Việt Nam')),
+  ('future-display', 'Future Display Draft', null, null, false, 'draft', 1, null, jsonb_build_object('category', 'display', 'family', 'sans-serif', 'sampleText', 'Cảm ơn Việt Nam'))
 on conflict (id) do update set
   family_name = excluded.family_name,
   google_font = excluded.google_font,
   storage_path = excluded.storage_path,
   published = excluded.published,
+  status = excluded.status,
+  revision = excluded.revision,
+  ever_published_at = excluded.ever_published_at,
   metadata = excluded.metadata,
   updated_at = now();
-
 -- 5. Deterministic Projects & Design Versions for Inbox Testing
 insert into public.projects (id, owner_user_id, guest_key_hash, product_id, variant_id, status, current_working_revision)
 values
