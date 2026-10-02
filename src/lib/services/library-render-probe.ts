@@ -165,7 +165,7 @@ export async function probeLibraryBinary(
           const usedProbeFont = renderedFonts.some((f) =>
             f.familyName.toLowerCase().includes('probe') ||
             f.familyName.toLowerCase().includes(validatedFont.familyName.toLowerCase()) ||
-            (f.glyphCount && f.glyphCount > 0)
+            f.familyName.toLowerCase().includes(validatedFont.postscriptName.toLowerCase())
           );
           if (renderedFonts.length > 0 && !usedProbeFont) {
             failures.push({
