@@ -101,7 +101,7 @@ export function LibraryStickers({ userRole }: LibraryStickersProps) {
     } finally {
       setIsLoading(false);
     }
-  }, [page, pageSize, statusFilter, searchQuery]);
+  }, [page, pageSize, statusFilter, categoryFilter, searchQuery]);
 
   useEffect(() => {
     fetchStickers();
@@ -352,7 +352,10 @@ export function LibraryStickers({ userRole }: LibraryStickersProps) {
               type="text"
               placeholder="Tìm theo tên, thẻ..."
               value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
+              onChange={(e) => {
+                setSearchQuery(e.target.value);
+                setPage(1);
+              }}
               className="pl-9 text-xs h-9 bg-white"
             />
           </div>
