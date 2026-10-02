@@ -722,30 +722,45 @@ on conflict (template_id, version) do update set
   design_document = excluded.design_document;
 
 -- 4. Fonts (authoritative matching src/lib/fonts.ts)
-insert into public.fonts (id, family_name, google_font, storage_path, published, status, revision, ever_published_at, metadata)
+insert into public.fonts (id, family_name, display_name, google_font, storage_path, published, status, revision, ever_published_at, tags, search_keywords, metadata)
 values
-  ('be-vietnam-pro', 'Be Vietnam Pro', 'Be+Vietnam+Pro:wght@400;600;700', null, true, 'published', 1, now(), jsonb_build_object('category', 'sans', 'family', '"Be Vietnam Pro", system-ui, sans-serif', 'sampleText', 'Cảm ơn Việt Nam')),
-  ('lora', 'Lora', 'Lora:wght@500;600;700', null, true, 'published', 1, now(), jsonb_build_object('category', 'serif', 'family', 'Lora, Georgia, serif', 'sampleText', 'Cảm ơn Việt Nam')),
-  ('playfair-display', 'Playfair Display', 'Playfair+Display:wght@600;700', null, true, 'published', 1, now(), jsonb_build_object('category', 'display', 'family', '"Playfair Display", serif', 'sampleText', 'Cảm ơn Việt Nam')),
-  ('montserrat', 'Montserrat', 'Montserrat:wght@500;700', null, true, 'published', 1, now(), jsonb_build_object('category', 'sans', 'family', 'Montserrat, sans-serif', 'sampleText', 'Cảm ơn Việt Nam')),
-  ('merriweather', 'Merriweather', 'Merriweather:wght@400;700', null, true, 'published', 1, now(), jsonb_build_object('category', 'serif', 'family', 'Merriweather, serif', 'sampleText', 'Cảm ơn Việt Nam')),
-  ('comfortaa', 'Comfortaa', 'Comfortaa:wght@600;700', null, true, 'published', 1, now(), jsonb_build_object('category', 'display', 'family', 'Comfortaa, cursive', 'sampleText', 'Cảm ơn Việt Nam')),
-  ('dancing-script', 'Dancing Script', 'Dancing+Script:wght@600;700', null, true, 'published', 1, now(), jsonb_build_object('category', 'handwriting', 'family', '"Dancing Script", cursive', 'sampleText', 'Cảm ơn Việt Nam')),
-  ('quicksand', 'Quicksand', 'Quicksand:wght@500;700', null, true, 'published', 1, now(), jsonb_build_object('category', 'sans', 'family', 'Quicksand, sans-serif', 'sampleText', 'Cảm ơn Việt Nam')),
-  ('pacifico', 'Pacifico', 'Pacifico', null, true, 'published', 1, now(), jsonb_build_object('category', 'handwriting', 'family', 'Pacifico, cursive', 'sampleText', 'Cảm ơn Việt Nam')),
-  ('caveat', 'Caveat', 'Caveat:wght@600;700', null, true, 'published', 1, now(), jsonb_build_object('category', 'handwriting', 'family', 'Caveat, cursive', 'sampleText', 'Cảm ơn Việt Nam')),
-  ('roboto', 'Roboto', 'Roboto:wght@400;700', null, true, 'published', 1, now(), jsonb_build_object('category', 'sans', 'family', 'Roboto, sans-serif', 'sampleText', 'Cảm ơn Việt Nam')),
-  ('old-typewriter', 'Old Typewriter', null, null, false, 'archived', 1, now(), jsonb_build_object('category', 'display', 'family', '"Courier New", monospace', 'sampleText', 'Cảm ơn Việt Nam')),
-  ('future-display', 'Future Display Draft', null, null, false, 'draft', 1, null, jsonb_build_object('category', 'display', 'family', 'sans-serif', 'sampleText', 'Cảm ơn Việt Nam'))
+  ('be-vietnam-pro', 'Be Vietnam Pro', 'Be Vietnam Pro', 'Be+Vietnam+Pro:wght@400;600;700', null, true, 'published', 1, now(), array['sans', 'quốc dân', 'việt nam'], array['vietnam', 'sans', 'modern'], jsonb_build_object('category', 'sans', 'family', '"Be Vietnam Pro", system-ui, sans-serif', 'sampleText', 'Cảm ơn Việt Nam')),
+  ('lora', 'Lora', 'Lora Serif', 'Lora:wght@500;600;700', null, true, 'published', 1, now(), array['serif', 'cổ điển', 'thanh lịch'], array['lora', 'serif', 'classic'], jsonb_build_object('category', 'serif', 'family', 'Lora, Georgia, serif', 'sampleText', 'Cảm ơn Việt Nam')),
+  ('playfair-display', 'Playfair Display', 'Playfair Display', 'Playfair+Display:wght@600;700', null, true, 'published', 1, now(), array['display', 'tiêu đề', 'sang trọng'], array['playfair', 'display', 'luxury'], jsonb_build_object('category', 'display', 'family', '"Playfair Display", serif', 'sampleText', 'Cảm ơn Việt Nam')),
+  ('montserrat', 'Montserrat', 'Montserrat', 'Montserrat:wght@500;700', null, true, 'published', 1, now(), array['sans', 'hình học'], array['montserrat', 'geometric'], jsonb_build_object('category', 'sans', 'family', 'Montserrat, sans-serif', 'sampleText', 'Cảm ơn Việt Nam')),
+  ('merriweather', 'Merriweather', 'Merriweather', 'Merriweather:wght@400;700', null, true, 'published', 1, now(), array['serif', 'báo chí'], array['editorial', 'serif'], jsonb_build_object('category', 'serif', 'family', 'Merriweather, serif', 'sampleText', 'Cảm ơn Việt Nam')),
+  ('comfortaa', 'Comfortaa', 'Comfortaa Bo Tròn', 'Comfortaa:wght@600;700', null, true, 'published', 1, now(), array['display', 'bo tròn', 'đáng yêu'], array['rounded', 'cute'], jsonb_build_object('category', 'display', 'family', 'Comfortaa, cursive', 'sampleText', 'Cảm ơn Việt Nam')),
+  ('dancing-script', 'Dancing Script', 'Dancing Script Viết Tay', 'Dancing+Script:wght@600;700', null, true, 'published', 1, now(), array['handwriting', 'viết tay'], array['handwriting', 'script'], jsonb_build_object('category', 'handwriting', 'family', '"Dancing Script", cursive', 'sampleText', 'Cảm ơn Việt Nam')),
+  ('quicksand', 'Quicksand', 'Quicksand', 'Quicksand:wght@500;700', null, true, 'published', 1, now(), array['sans', 'nhẹ nhàng'], array['friendly', 'sans'], jsonb_build_object('category', 'sans', 'family', 'Quicksand, sans-serif', 'sampleText', 'Cảm ơn Việt Nam')),
+  ('pacifico', 'Pacifico', 'Pacifico Cọ Vẽ', 'Pacifico', null, true, 'published', 1, now(), array['handwriting', 'nét cọ'], array['brush', 'script'], jsonb_build_object('category', 'handwriting', 'family', 'Pacifico, cursive', 'sampleText', 'Cảm ơn Việt Nam')),
+  ('caveat', 'Caveat', 'Caveat Bút Dạ', 'Caveat:wght@600;700', null, true, 'published', 1, now(), array['handwriting', 'bút dạ'], array['marker', 'casual'], jsonb_build_object('category', 'handwriting', 'family', 'Caveat, cursive', 'sampleText', 'Cảm ơn Việt Nam')),
+  ('roboto', 'Roboto', 'Roboto', 'Roboto:wght@400;700', null, true, 'published', 1, now(), array['sans', 'tiêu chuẩn'], array['standard', 'sans'], jsonb_build_object('category', 'sans', 'family', 'Roboto, sans-serif', 'sampleText', 'Cảm ơn Việt Nam')),
+  ('old-typewriter', 'Old Typewriter', 'Máy Chữ Cổ Điển', null, null, false, 'archived', 1, now(), array['display', 'máy chữ'], array['typewriter', 'vintage'], jsonb_build_object('category', 'display', 'family', '"Courier New", monospace', 'sampleText', 'Cảm ơn Việt Nam')),
+  ('future-display', 'Future Display Draft', 'Future Display Bản Nháp', null, null, false, 'draft', 1, null, array['display'], array['future', 'draft'], jsonb_build_object('category', 'display', 'family', 'sans-serif', 'sampleText', 'Cảm ơn Việt Nam'))
 on conflict (id) do update set
   family_name = excluded.family_name,
+  display_name = excluded.display_name,
   google_font = excluded.google_font,
   storage_path = excluded.storage_path,
   published = excluded.published,
   status = excluded.status,
   revision = excluded.revision,
   ever_published_at = excluded.ever_published_at,
+  tags = excluded.tags,
+  search_keywords = excluded.search_keywords,
   metadata = excluded.metadata,
+  updated_at = now();
+
+-- 4b. Seed default font_faces for families
+insert into public.font_faces (id, family_id, css_family, format, weight_min, weight_max, style, internal_family, postscript_name, storage_bucket, storage_path, checksum, byte_size, mime_type, status, revision, ever_published_at)
+values
+  ('00000000-0000-4000-a000-000000000001', 'be-vietnam-pro', 'qt-face-be-vietnam-pro-regular', 'woff2', 400, 400, 'normal', 'Be Vietnam Pro', 'BeVietnamPro-Regular', 'fonts', 'fonts/be-vietnam-pro/regular.woff2', 'seed_chk_be_vietnam_pro_regular', 45000, 'font/woff2', 'published', 1, now()),
+  ('00000000-0000-4000-a000-000000000002', 'be-vietnam-pro', 'qt-face-be-vietnam-pro-bold', 'woff2', 700, 700, 'normal', 'Be Vietnam Pro', 'BeVietnamPro-Bold', 'fonts', 'fonts/be-vietnam-pro/bold.woff2', 'seed_chk_be_vietnam_pro_bold', 48000, 'font/woff2', 'published', 1, now()),
+  ('00000000-0000-4000-a000-000000000003', 'lora', 'qt-face-lora-regular', 'woff2', 400, 400, 'normal', 'Lora', 'Lora-Regular', 'fonts', 'fonts/lora/regular.woff2', 'seed_chk_lora_regular', 42000, 'font/woff2', 'published', 1, now()),
+  ('00000000-0000-4000-a000-000000000004', 'playfair-display', 'qt-face-playfair-display-regular', 'woff2', 400, 400, 'normal', 'Playfair Display', 'PlayfairDisplay-Regular', 'fonts', 'fonts/playfair-display/regular.woff2', 'seed_chk_playfair_regular', 44000, 'font/woff2', 'published', 1, now())
+on conflict (id) do update set
+  css_family = excluded.css_family,
+  status = excluded.status,
   updated_at = now();
 -- 5. Deterministic Projects & Design Versions for Inbox Testing
 insert into public.projects (id, owner_user_id, guest_key_hash, product_id, variant_id, status, current_working_revision)

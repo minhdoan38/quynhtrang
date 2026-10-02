@@ -77,15 +77,13 @@ test('runMigration executes updates only when apply is true', async () => {
   ];
 
   let updateCount = 0;
+  let insertCount = 0;
 
   const mockClient = {
     from(table: string) {
       return {
         select() {
           return {
-            limit() {
-              return Promise.resolve({ data: [], error: null });
-            },
             then(resolve: (val: unknown) => void) {
               if (table === 'fonts') resolve({ data: mockFonts, error: null });
               else if (table === 'font_faces') resolve({ data: [], error: null });
@@ -102,6 +100,10 @@ test('runMigration executes updates only when apply is true', async () => {
             },
           };
         },
+        insert() {
+          insertCount++;
+          return Promise.resolve({ error: null });
+        },
       };
     },
   } as unknown as NonNullable<Parameters<typeof runMigration>[0]>['client'];
@@ -112,6 +114,7 @@ test('runMigration executes updates only when apply is true', async () => {
     logger: { log: () => { } },
   });
 
-  assert.equal(manifest.appliedUpdates, 2, 'Apply mode updates unmigrated records');
+  assert.equal(manifest.appliedUpdates, 3, 'Apply mode updates unmigrated records and inserts missing faces');
   assert.equal(updateCount, 2, 'Two updates executed');
+  assert.equal(insertCount, 1, 'One font_face inserted');
 });

@@ -100,11 +100,10 @@ export async function runMigration(options: MigrationOptions = {}): Promise<Migr
 
   const unmigratedStickers = allStickers.filter((s) => !s.status || s.status === 'draft' && s.published === true);
 
-  // 4. Scan design_versions (read-only inventory)
+  // 4. Scan design_versions (read-only inventory, full scan)
   const { data: versionsData } = await supabase
     .from('design_versions')
-    .select('design_document')
-    .limit(100);
+    .select('design_document');
 
   const fontRefs = new Set<string>();
   const stickerRefs = new Set<string>();
@@ -146,6 +145,38 @@ export async function runMigration(options: MigrationOptions = {}): Promise<Migr
         .eq('id', font.id);
 
       if (!updateError) appliedUpdates++;
+    }
+
+    // Backfill missing font_faces for families without faces
+    for (const font of allFonts) {
+      if (!familyIdsWithFaces.has(font.id)) {
+        const cssAlias = `qt-face-${font.id}-regular`;
+        const isPublished = font.published === true;
+        const { error: faceInsertError } = await supabase
+          .from('font_faces')
+          .insert({
+            family_id: font.id,
+            css_family: cssAlias,
+            format: 'woff2',
+            weight_min: 400,
+            weight_max: 400,
+            style: 'normal',
+            internal_family: font.family_name,
+            postscript_name: font.family_name.replace(/\s+/g, ''),
+            storage_bucket: 'fonts',
+            storage_path: `fonts/${font.id}/regular.woff2`,
+            checksum: `migrated_${font.id}_regular`,
+            byte_size: 40000,
+            mime_type: 'font/woff2',
+            status: isPublished ? 'published' : 'draft',
+            revision: 1,
+            ever_published_at: isPublished ? new Date().toISOString() : null,
+          });
+        if (!faceInsertError) {
+          appliedUpdates++;
+          familyIdsWithFaces.add(font.id);
+        }
+      }
     }
 
     // Backfill sticker_assets
