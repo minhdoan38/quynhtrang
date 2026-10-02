@@ -428,7 +428,8 @@ export async function publishAsset(
       await repo.publish(actor.userId, key.requestId, 'font-face', ref.id, key.expectedRevision, validationId, publicObjects);
     } else {
       const stickerRecord = current as StickerRecord;
-      const ext = stickerRecord.binary.mimeType === 'image/svg+xml' ? 'svg' : (stickerRecord.binary.mimeType.split('/')[1] ?? 'png');
+      const mime = stickerRecord.binary?.mimeType || 'image/svg+xml';
+      const ext = mime.includes('svg') ? 'svg' : (mime.split('/')[1] || 'png');
       const destKey = `stickers/${stickerRecord.ref.id}/${stickerRecord.ref.checksum}.${ext}`;
       await repo.copyObject(stickerRecord.binary.bucket, stickerRecord.binary.key, 'sticker-library', destKey);
 
