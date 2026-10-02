@@ -43,6 +43,7 @@ export function LibraryStickers({ userRole }: LibraryStickersProps) {
   const [page, setPage] = useState(1);
   const [pageSize] = useState(40);
   const [statusFilter, setStatusFilter] = useState<string>('all');
+  const [categoryFilter, setCategoryFilter] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [isLoading, setIsLoading] = useState(true);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
@@ -84,6 +85,7 @@ export function LibraryStickers({ userRole }: LibraryStickersProps) {
       params.set('page', String(page));
       params.set('pageSize', String(pageSize));
       if (statusFilter !== 'all') params.set('status', statusFilter);
+      if (categoryFilter !== 'all') params.set('category', categoryFilter);
       if (searchQuery.trim()) params.set('q', searchQuery.trim());
 
       const res = await fetch(`/api/admin/content/stickers?${params.toString()}`);
@@ -370,6 +372,18 @@ export function LibraryStickers({ userRole }: LibraryStickersProps) {
               <option value="published">Đã xuất bản (Published)</option>
               <option value="archived">Lưu trữ (Archived)</option>
             </select>
+
+            <Input
+              type="text"
+              placeholder="Lọc danh mục..."
+              value={categoryFilter === 'all' ? '' : categoryFilter}
+              onChange={(e) => {
+                const val = e.target.value.trim();
+                setCategoryFilter(val || 'all');
+                setPage(1);
+              }}
+              className="h-9 w-28 text-xs bg-white"
+            />
           </div>
         </div>
 
@@ -396,7 +410,7 @@ export function LibraryStickers({ userRole }: LibraryStickersProps) {
           <span>Đang tải danh sách sticker...</span>
         </div>
       ) : errorMsg ? (
-        <div className="p-6 rounded-xl border border-red-200 bg-red-50 text-red-700 text-xs flex items-center gap-3">
+        <div role="alert" aria-live="polite" className="p-6 rounded-xl border border-red-200 bg-red-50 text-red-700 text-xs flex items-center gap-3">
           <AlertCircle className="w-5 h-5 shrink-0" />
           <div className="flex-1">{errorMsg}</div>
           <Button variant="outline" size="sm" onClick={fetchStickers} className="h-8 text-xs">
@@ -488,13 +502,13 @@ export function LibraryStickers({ userRole }: LibraryStickersProps) {
 
               {/* Status and Feedback Messages */}
               {actionError && (
-                <div className="p-3 rounded-lg border border-red-200 bg-red-50 text-red-700 text-xs flex items-center gap-2">
+                <div role="alert" aria-live="assertive" className="p-3 rounded-lg border border-red-200 bg-red-50 text-red-700 text-xs flex items-center gap-2">
                   <AlertCircle className="w-4 h-4 shrink-0" />
                   <span>{actionError}</span>
                 </div>
               )}
               {actionSuccess && (
-                <div className="p-3 rounded-lg border border-emerald-200 bg-emerald-50 text-emerald-800 text-xs flex items-center gap-2">
+                <div role="status" aria-live="polite" className="p-3 rounded-lg border border-emerald-200 bg-emerald-50 text-emerald-800 text-xs flex items-center gap-2">
                   <CheckCircle2 className="w-4 h-4 shrink-0" />
                   <span>{actionSuccess}</span>
                 </div>

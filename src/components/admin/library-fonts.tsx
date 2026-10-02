@@ -211,7 +211,7 @@ export function LibraryFonts({ userRole }: LibraryFontsProps) {
           <span>Đang tải danh sách họ phông chữ...</span>
         </div>
       ) : errorMsg ? (
-        <div className="p-6 rounded-xl border border-red-200 bg-red-50 text-red-700 text-xs flex items-center gap-3">
+        <div role="alert" aria-live="polite" className="p-6 rounded-xl border border-red-200 bg-red-50 text-red-700 text-xs flex items-center gap-3">
           <AlertCircle className="w-5 h-5 shrink-0" />
           <div className="flex-1">{errorMsg}</div>
           <Button variant="outline" size="sm" onClick={fetchFamilies} className="h-8 text-xs">
@@ -308,7 +308,7 @@ export function LibraryFonts({ userRole }: LibraryFontsProps) {
           </DialogHeader>
 
           {createError && (
-            <div className="p-3 rounded-lg border border-red-200 bg-red-50 text-red-700 text-xs flex items-center gap-2">
+            <div role="alert" aria-live="assertive" className="p-3 rounded-lg border border-red-200 bg-red-50 text-red-700 text-xs flex items-center gap-2">
               <AlertCircle className="w-4 h-4 shrink-0" />
               <span>{createError}</span>
             </div>

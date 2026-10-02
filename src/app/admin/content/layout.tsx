@@ -14,7 +14,7 @@ export default async function AdminContentLayout({
     '';
 
   const isFonts = pathname.includes('/admin/content/fonts');
-  const isStickers = !isFonts;
+  const isStickers = pathname.includes('/admin/content/stickers') || (!isFonts && pathname.includes('/admin/content'));
 
   return (
     <div className="space-y-6">
@@ -28,8 +28,8 @@ export default async function AdminContentLayout({
           <Link
             href="/admin/content/stickers"
             className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition ${isStickers
-                ? 'bg-stone-900 text-white shadow-xs'
-                : 'text-stone-600 hover:text-stone-900 hover:bg-stone-100'
+              ? 'bg-stone-900 text-white shadow-xs'
+              : 'text-stone-600 hover:text-stone-900 hover:bg-stone-100'
               }`}
           >
             Sticker
@@ -37,8 +37,8 @@ export default async function AdminContentLayout({
           <Link
             href="/admin/content/fonts"
             className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition ${isFonts
-                ? 'bg-stone-900 text-white shadow-xs'
-                : 'text-stone-600 hover:text-stone-900 hover:bg-stone-100'
+              ? 'bg-stone-900 text-white shadow-xs'
+              : 'text-stone-600 hover:text-stone-900 hover:bg-stone-100'
               }`}
           >
             Kiểu chữ (Fonts)

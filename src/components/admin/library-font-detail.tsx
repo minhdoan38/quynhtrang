@@ -328,7 +328,7 @@ export function LibraryFontDetail({ familyId, userRole }: LibraryFontDetailProps
 
   if (errorMsg || !family) {
     return (
-      <div className="p-6 rounded-xl border border-red-200 bg-red-50 text-red-700 text-xs flex items-center gap-3">
+      <div role="alert" aria-live="polite" className="p-6 rounded-xl border border-red-200 bg-red-50 text-red-700 text-xs flex items-center gap-3">
         <AlertCircle className="w-5 h-5 shrink-0" />
         <div className="flex-1">{errorMsg || 'Không tìm thấy họ phông chữ.'}</div>
         <Link href="/admin/content/fonts">
@@ -413,13 +413,13 @@ export function LibraryFontDetail({ familyId, userRole }: LibraryFontDetailProps
 
       {/* Notifications */}
       {actionError && (
-        <div className="p-3 rounded-lg border border-red-200 bg-red-50 text-red-700 text-xs flex items-center gap-2">
+        <div role="alert" aria-live="assertive" className="p-3 rounded-lg border border-red-200 bg-red-50 text-red-700 text-xs flex items-center gap-2">
           <AlertCircle className="w-4 h-4 shrink-0" />
           <span>{actionError}</span>
         </div>
       )}
       {actionSuccess && (
-        <div className="p-3 rounded-lg border border-emerald-200 bg-emerald-50 text-emerald-800 text-xs flex items-center gap-2">
+        <div role="status" aria-live="polite" className="p-3 rounded-lg border border-emerald-200 bg-emerald-50 text-emerald-800 text-xs flex items-center gap-2">
           <CheckCircle2 className="w-4 h-4 shrink-0" />
           <span>{actionSuccess}</span>
         </div>
@@ -543,7 +543,7 @@ export function LibraryFontDetail({ familyId, userRole }: LibraryFontDetailProps
           </DialogHeader>
 
           {uploadError && (
-            <div className="p-3 rounded-lg border border-red-200 bg-red-50 text-red-700 text-xs flex items-center gap-2">
+            <div role="alert" aria-live="assertive" className="p-3 rounded-lg border border-red-200 bg-red-50 text-red-700 text-xs flex items-center gap-2">
               <AlertCircle className="w-4 h-4 shrink-0" />
               <span>{uploadError}</span>
             </div>
