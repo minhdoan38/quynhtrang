@@ -31,8 +31,7 @@ pnpm build
 Chi tiết về biến môi trường, thứ tự triển khai SQL, phân quyền tài khoản quản trị viên và cơ chế lưu trữ được tài liệu hóa tại:
 [State 37 Supabase Runbook](docs/superpowers/state37-supabase-runbook.md).
 
-### Supabase Migrations & Testing (State 37, 38, 39, 40 & 41)
-
+### Supabase Migrations & Testing (State 37, 38, 39, 40, 41 & 42)
 ```sh
 # Triển khai migrations
 psql "$SUPABASE_DB_URL" -v ON_ERROR_STOP=1 -f supabase/migrations/0001_state37_core.sql
@@ -41,7 +40,7 @@ psql "$SUPABASE_DB_URL" -v ON_ERROR_STOP=1 -f supabase/migrations/0003_state38_o
 psql "$SUPABASE_DB_URL" -v ON_ERROR_STOP=1 -f supabase/migrations/0004_state39_design_revisions.sql
 psql "$SUPABASE_DB_URL" -v ON_ERROR_STOP=1 -f supabase/migrations/0005_state40_fulfillment_operations.sql
 psql "$SUPABASE_DB_URL" -v ON_ERROR_STOP=1 -f supabase/migrations/0006_state41_account_migration.sql
-
+psql "$SUPABASE_DB_URL" -v ON_ERROR_STOP=1 -f supabase/migrations/0007_state42_asset_library.sql
 # Nạp dữ liệu seed
 psql "$SUPABASE_DB_URL" -v ON_ERROR_STOP=1 -f supabase/seed.sql
 psql "$SUPABASE_DB_URL" -v ON_ERROR_STOP=1 -f supabase/seed_state39.sql
@@ -53,11 +52,20 @@ psql "$SUPABASE_DB_URL" -v ON_ERROR_STOP=1 -f supabase/tests/state38_order_opera
 psql "$SUPABASE_DB_URL" -v ON_ERROR_STOP=1 -f supabase/tests/state39_design_revisions.sql
 psql "$SUPABASE_DB_URL" -v ON_ERROR_STOP=1 -f supabase/tests/state40_fulfillment_operations.sql
 psql "$SUPABASE_DB_URL" -v ON_ERROR_STOP=1 -f supabase/tests/state41_account_migration.sql
+psql "$SUPABASE_DB_URL" -v ON_ERROR_STOP=1 -f supabase/tests/state42_asset_library.sql
+# Vận hành tác vụ nền & công cụ kiểm tra State 42
+node --experimental-strip-types scripts/state42-library-smoke.ts
+node --experimental-strip-types scripts/state42-library-migrate.ts --dry-run
+node --experimental-strip-types scripts/state42-library-cleanup.ts --dry-run
 
 # Vận hành tác vụ nền State 39
 node --experimental-strip-types scripts/state39-render-jobs.ts --once
 node --experimental-strip-types scripts/state39-asset-gc.ts --dry-run
 ```
+
+### State 42 Asset Library Runbook
+Chi tiết về vòng đời tài nguyên (draft/published/archived), bảo mật lưu trữ riêng tư, quy trình kiểm định in ấn và vận hành thư viện nội dung:
+[State 42 Asset Library Runbook](docs/superpowers/state42-asset-library-runbook.md).
 
 Mở <http://localhost:3000/> trên trình duyệt.
 
