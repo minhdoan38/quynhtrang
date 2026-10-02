@@ -644,6 +644,29 @@ export class AssetLibraryRepository {
     return data;
   }
 
+  async checkAssetUsage(ref: LibraryRef): Promise<boolean> {
+    try {
+      const { data: dv } = await this.client
+        .from('design_versions')
+        .select('id')
+        .or(`design_document.cs.{"elements":[{"data":{"libraryAssetId":"${ref.id}"}}]},design_document.cs.{"elements":[{"data":{"fontFaceId":"${ref.id}"}}]}`)
+        .limit(1);
+
+      if (dv && dv.length > 0) return true;
+
+      const { data: p } = await this.client
+        .from('projects')
+        .select('id')
+        .or(`working_document.cs.{"elements":[{"data":{"libraryAssetId":"${ref.id}"}}]},working_document.cs.{"elements":[{"data":{"fontFaceId":"${ref.id}"}}]}`)
+        .limit(1);
+
+      if (p && p.length > 0) return true;
+      return false;
+    } catch {
+      return false;
+    }
+  }
+
   async createFamily(actor: string, request: string, id: string, payload: unknown): Promise<unknown> {
     const { data, error } = await this.client.rpc('library_create_family', {
       p_actor: actor,

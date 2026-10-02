@@ -337,6 +337,15 @@ begin
   else raise exception 'INVALID_INPUT'; end if;
   if not found then raise exception 'NOT_FOUND'; end if;
   if v_next <> p_revision then raise exception 'REVISION_CONFLICT'; end if;
+  if exists (
+    select 1 from public.design_versions dv
+    where dv.design_document::text like '%"' || p_id || '"%'
+  ) or exists (
+    select 1 from public.projects pr
+    where pr.working_document::text like '%"' || p_id || '"%'
+  ) then
+    raise exception 'REFERENCED_DRAFT';
+  end if;
   insert into public.library_uploads(id, actor_user_id, kind, asset_id, request_id, storage_path, byte_size, state) values (v_intent, p_actor, p_kind, p_id, p_request, v_intent::text, 1, 'cleanup_pending');
   perform public.library_event(p_actor, p_request, p_kind, p_id, p_revision, p_revision, 'delete_prepared', '{}'::jsonb);
   return jsonb_build_object('ok', true, 'intent', v_intent);

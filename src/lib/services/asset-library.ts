@@ -649,6 +649,10 @@ export async function deleteDraftAsset(
     throw new LibraryServiceError('REVISION_CONFLICT', `Expected revision ${key.expectedRevision}, found ${current.revision}`);
   }
 
+  const isReferenced = await repo.checkAssetUsage?.(ref);
+  if (isReferenced) {
+    throw new LibraryServiceError('REFERENCED_DRAFT', 'Cannot delete draft asset currently referenced by active designs');
+  }
   try {
     const intentResult = (await repo.prepareDelete(
       ref,

@@ -314,7 +314,7 @@ async function validateSvgSticker(bytes: Uint8Array): Promise<ValidatedSticker> 
     return candidate.nodeType === 1 && typeof candidate.tagName === 'string' && typeof candidate.getAttribute === 'function';
   }
 
-  function validateNode(node: SvgNode, currentScopeId?: string): void {
+  function validateNode(node: SvgNode, ancestorIds: string[] = []): void {
     if (node.nodeType === 7) {
       throw new Error('SVG contains forbidden processing instruction');
     }
@@ -336,7 +336,7 @@ async function validateSvgSticker(bytes: Uint8Array): Promise<ValidatedSticker> 
     }
 
     const elementId = node.getAttribute('id');
-    let scopeId = currentScopeId;
+    const currentAncestors = elementId ? [...ancestorIds, elementId] : ancestorIds;
     if (elementId) {
       if (elementsById.has(elementId)) {
         throw new Error(`Duplicate element ID: #${elementId}`);
@@ -345,9 +345,10 @@ async function validateSvgSticker(bytes: Uint8Array): Promise<ValidatedSticker> 
       if (!idOutgoingRefs.has(elementId)) {
         idOutgoingRefs.set(elementId, new Set());
       }
-      scopeId = elementId;
+      for (const anc of ancestorIds) {
+        idOutgoingRefs.get(anc)?.add(elementId);
+      }
     }
-
     const attrs = node.attributes;
     for (let i = 0; i < attrs.length; i++) {
       const attr = attrs.item(i);
@@ -387,19 +388,24 @@ async function validateSvgSticker(bytes: Uint8Array): Promise<ValidatedSticker> 
           throw new Error(`External URL reference in "${attrName}" is forbidden: ${attrVal}`);
         }
         const targetId = attrVal.slice(1);
-        if (scopeId) {
-          idOutgoingRefs.get(scopeId)?.add(targetId);
+        if (currentAncestors.includes(targetId)) {
+          throw new Error(`Circular reference detected: element inside #${targetId} references #${targetId}`);
+        }
+        for (const anc of currentAncestors) {
+          idOutgoingRefs.get(anc)?.add(targetId);
         }
       }
 
       const urlMatches = attrVal.matchAll(/url\(\s*['"]?#([^'")]+)['"]?\s*\)/g);
       for (const match of urlMatches) {
         const targetId = match[1];
-        if (scopeId) {
-          idOutgoingRefs.get(scopeId)?.add(targetId);
+        if (currentAncestors.includes(targetId)) {
+          throw new Error(`Circular reference detected: element inside #${targetId} references #${targetId}`);
+        }
+        for (const anc of currentAncestors) {
+          idOutgoingRefs.get(anc)?.add(targetId);
         }
       }
-
       if (/url\(/i.test(attrVal)) {
         const invalidUrlMatch = attrVal.match(/url\(\s*['"]?(?!#)([^'")]+)['"]?\s*\)/i);
         if (invalidUrlMatch) {
@@ -412,7 +418,7 @@ async function validateSvgSticker(bytes: Uint8Array): Promise<ValidatedSticker> 
     for (let i = 0; i < children.length; i++) {
       const child = children.item(i);
       if (child) {
-        validateNode(child, scopeId);
+        validateNode(child, currentAncestors);
       }
     }
   }

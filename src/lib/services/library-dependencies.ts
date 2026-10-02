@@ -91,3 +91,17 @@ export function isLibraryAssetPath(pathOrUrl: string): boolean {
   return (bucket === 'sticker-library' && key.startsWith('stickers/'))
     || (bucket === 'fonts' && key.startsWith('fonts/'));
 }
+
+export function validateNoDraftDependencies(
+  document: DesignState,
+  libraryLookup?: ReadonlyMap<string, { status: string }>,
+): void {
+  const deps = extractLibraryDependencies(document);
+  if (!libraryLookup) return;
+  for (const dep of deps) {
+    const item = libraryLookup.get(`${dep.kind}:${dep.id}`);
+    if (item && item.status === 'draft') {
+      throw new Error(`Cannot save design referencing draft asset: ${dep.id}`);
+    }
+  }
+}

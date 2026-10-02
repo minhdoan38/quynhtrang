@@ -155,3 +155,17 @@ test('probeLibraryBinary captures failures for corrupted binaries', async () => 
   assert.equal(stickerReceipt.passed, false);
   assert.ok(stickerReceipt.failures.length > 0);
 });
+
+test('validateSticker rejects nested parent-child structural circular references', async () => {
+  const nestedCycleSvg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
+    <g id="A">
+      <g id="B">
+        <use href="#A"/>
+      </g>
+    </g>
+  </svg>`;
+  await assert.rejects(
+    () => validateSticker(Buffer.from(nestedCycleSvg)),
+    /Circular reference detected/i,
+  );
+});

@@ -116,6 +116,7 @@ export async function probeLibraryBinary(
     </style>
   </head>
   <body>
+    <div id="probe-text" style="font-family: 'ProbeFace'; font-size: 32px">Tiếng Việt: Thử nghiệm phông chữ sắc nét ă â đ ê ô ơ ư 123</div>
     <canvas id="probe-canvas" width="600" height="200"></canvas>
   </body>
 </html>`;
@@ -148,6 +149,35 @@ export async function probeLibraryBinary(
         });
       }
 
+      // Inspect actual platform fonts via Chrome DevTools Protocol
+      try {
+        const cdp = await page.context().newCDPSession(page);
+        await cdp.send('DOM.enable');
+        await cdp.send('CSS.enable');
+        const docNode = await cdp.send('DOM.getDocument');
+        const textNode = await cdp.send('DOM.querySelector', {
+          nodeId: docNode.root.nodeId,
+          selector: '#probe-text',
+        });
+        if (textNode.nodeId) {
+          const platformFonts = await cdp.send('CSS.getPlatformFontsForNode', { nodeId: textNode.nodeId });
+          const renderedFonts = platformFonts.fonts || [];
+          const usedProbeFont = renderedFonts.some((f) =>
+            f.familyName.toLowerCase().includes('probe') ||
+            f.familyName.toLowerCase().includes(validatedFont.familyName.toLowerCase()) ||
+            (f.glyphCount && f.glyphCount > 0)
+          );
+          if (renderedFonts.length > 0 && !usedProbeFont) {
+            failures.push({
+              code: 'PLATFORM_FONT_FALLBACK',
+              detail: `Platform used fallback font instead of ProbeFace: ${renderedFonts.map((f) => f.familyName).join(', ')}`,
+            });
+          }
+        }
+        await cdp.detach();
+      } catch {
+        // Fallback for environments where CDP session is not supported
+      }
       const screenshot = await page.locator('#probe-canvas').screenshot({
         type: 'png',
         animations: 'disabled',

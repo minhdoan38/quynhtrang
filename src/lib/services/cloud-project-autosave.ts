@@ -1,6 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { createBrowserSupabaseClient } from '../supabase/browser.ts';
 import type { DesignState } from '../product-state.ts';
+import { validateNoDraftDependencies } from './library-dependencies.ts';
 
 export interface AutosaveResponseResult {
   conflict: boolean;
@@ -38,6 +39,7 @@ export async function saveCustomerProjectRevision(
   client?: SupabaseClient
 ): Promise<AutosaveResponseResult> {
   const supabase = client ?? createBrowserSupabaseClient();
+  validateNoDraftDependencies(workingDocument);
 
   const { data, error } = await supabase.rpc('save_customer_project_revision', {
     p_project_id: projectId,
