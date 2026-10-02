@@ -26,6 +26,10 @@ export interface LibraryRouteDependencies {
   createPrivilegedRepository?: () => Promise<AssetLibraryRepository> | AssetLibraryRepository;
 }
 
+export type NonDynamicRouteContext = {
+  params?: Promise<Record<string, string>>;
+} & LibraryRouteDependencies;
+
 export class InvalidRouteInput extends Error {
   constructor(message: string) {
     super(message);

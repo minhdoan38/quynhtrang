@@ -12,15 +12,15 @@ import {
   InvalidRouteInput,
   parseMetadata,
   routeError,
-  type LibraryRouteDependencies,
+  type NonDynamicRouteContext,
 } from '../../_shared.ts';
 
 export async function POST(
   request: Request,
-  dependencies?: LibraryRouteDependencies,
+  context?: NonDynamicRouteContext,
 ) {
   try {
-    const { staff, repo } = await getStaffContext(request, dependencies);
+    const { staff, repo } = await getStaffContext(request, context);
     const contentType = request.headers.get('content-type') ?? '';
 
     if (contentType.includes('multipart/form-data')) {

@@ -1,21 +1,22 @@
 import { createHash } from 'node:crypto';
 import { createElement } from 'react';
-import { renderToStaticMarkup } from 'react-dom/server';
 import { chromium } from 'playwright';
 
-import { DocumentRenderSurface } from '../../components/customizer/document-render-surface.ts';
-import type { CardSurface, DesignState } from '../product-state.ts';
+import {
+  DocumentRenderSurface,
+  getDocumentRenderDimensions,
+  resolveDocumentRenderSurface,
+  type DocumentRenderDimensions,
+  type DocumentRenderOptions,
+} from '../../components/customizer/document-render-surface.ts';
+import type { DesignState } from '../product-state.ts';
 
-export interface DocumentRenderOptions {
-  surface?: string;
-  widthPx?: number;
-  heightPx?: number;
-}
-
-export interface DocumentRenderDimensions {
-  width: number;
-  height: number;
-}
+export {
+  getDocumentRenderDimensions,
+  resolveDocumentRenderSurface,
+  type DocumentRenderDimensions,
+  type DocumentRenderOptions,
+};
 
 export interface DocumentRenderResult {
   png: Uint8Array;
@@ -23,73 +24,13 @@ export interface DocumentRenderResult {
   engineFingerprint: string;
 }
 
-const CARD_SURFACE_LOOKUP: Record<CardSurface, true> = {
-  front: true,
-  inside: true,
-  back: true,
-};
 
-const MAX_RENDER_DIMENSION = 4096;
-
-export function resolveDocumentRenderSurface(design: DesignState, requestedSurface?: string): CardSurface {
-  const candidate = requestedSurface ?? design.productOptions.surface;
-  if (typeof candidate === 'string' && candidate in CARD_SURFACE_LOOKUP) {
-    return candidate as CardSurface;
-  }
-  return 'front';
-}
-
-export function getDocumentRenderDimensions(
+export async function generateDocumentRenderMarkup(
   design: DesignState,
   options: DocumentRenderOptions = {},
-): DocumentRenderDimensions {
-  const surface = resolveDocumentRenderSurface(design, options.surface);
-  const isVertical = design.variantId === 'vertical'
-    || design.productOptions.orientation === 'vertical'
-    || design.productOptions.variant === 'vertical';
-
-  let naturalDimensions: DocumentRenderDimensions;
-  switch (design.productId) {
-    case 'card':
-      naturalDimensions = isVertical
-        ? { width: surface === 'inside' ? 840 : 420, height: 592 }
-        : { width: surface === 'inside' ? 1184 : 592, height: 420 };
-      break;
-    case 'wrapping':
-      naturalDimensions = { width: 600, height: 600 };
-      break;
-    case 'sticker':
-      naturalDimensions = { width: 400, height: 400 };
-      break;
-    case 'notebook':
-      naturalDimensions = { width: 592, height: 840 };
-      break;
-    default:
-      throw new Error(`Unsupported product: ${String((design as DesignState).productId)}`);
-  }
-
-  const width = options.widthPx ?? naturalDimensions.width;
-  const height = options.heightPx ?? naturalDimensions.height;
-
-  if (
-    !Number.isInteger(width)
-    || width < 2
-    || width > MAX_RENDER_DIMENSION
-    || !Number.isInteger(height)
-    || height < 2
-    || height > MAX_RENDER_DIMENSION
-  ) {
-    throw new RangeError(`Render dimensions must be integers from 2 to ${MAX_RENDER_DIMENSION}`);
-  }
-
-  return { width, height };
-}
-
-export function generateDocumentRenderMarkup(
-  design: DesignState,
-  options: DocumentRenderOptions = {},
-): string {
+): Promise<string> {
   const dimensions = getDocumentRenderDimensions(design, options);
+  const { renderToStaticMarkup } = await import('react-dom/server');
   return renderToStaticMarkup(
     createElement(DocumentRenderSurface, {
       document: design,
@@ -126,12 +67,12 @@ body{font-family:Arial,sans-serif}
 `;
 }
 
-export function generateDocumentRenderHtml(
+export async function generateDocumentRenderHtml(
   design: DesignState,
   options: DocumentRenderOptions = {},
-): string {
+): Promise<string> {
   const { width, height } = getDocumentRenderDimensions(design, options);
-  const markup = generateDocumentRenderMarkup(design, options);
+  const markup = await generateDocumentRenderMarkup(design, options);
   return `<!doctype html><html><head><meta charset="utf-8"><style>${getDocumentRenderCss()}</style></head><body><div id="render-container" style="width:${width}px;height:${height}px">${markup}</div></body></html>`;
 }
 
@@ -148,7 +89,8 @@ export async function renderDocument(
       deviceScaleFactor: 1,
     });
 
-    await page.setContent(generateDocumentRenderHtml(design, options), {
+    const html = await generateDocumentRenderHtml(design, options);
+    await page.setContent(html, {
       waitUntil: 'domcontentloaded',
     });
 

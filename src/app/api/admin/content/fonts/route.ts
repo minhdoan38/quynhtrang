@@ -10,15 +10,15 @@ import {
   parseListQuery,
   readJsonObject,
   routeError,
-  type LibraryRouteDependencies,
+  type NonDynamicRouteContext,
 } from '../_shared.ts';
 
 export async function GET(
   request: Request,
-  dependencies?: LibraryRouteDependencies,
+  context?: NonDynamicRouteContext,
 ) {
   try {
-    const { repo } = await getStaffContext(request, dependencies);
+    const { repo } = await getStaffContext(request, context);
     const query = parseListQuery(request);
     const result = await repo.listFontFamilies(query);
     return NextResponse.json(result);
@@ -29,10 +29,10 @@ export async function GET(
 
 export async function POST(
   request: Request,
-  dependencies?: LibraryRouteDependencies,
+  context?: NonDynamicRouteContext,
 ) {
   try {
-    const { staff, repo } = await getStaffContext(request, dependencies);
+    const { staff, repo } = await getStaffContext(request, context);
     const body = await readJsonObject(request);
 
     const familyName = typeof body.familyName === 'string'
