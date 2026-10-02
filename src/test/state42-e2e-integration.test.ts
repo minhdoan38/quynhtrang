@@ -313,6 +313,10 @@ test('State 42 End-to-End Integration Contracts', async (t) => {
     assert.equal(published.revision, 2);
     assert.ok(published.everPublishedAt !== null);
 
+    // Step 3b: Customer catalog query includes published sticker
+    const catalogBeforeArchive = await mockRepo.listStickers({ status: 'published' });
+    assert.equal(catalogBeforeArchive.items.length, 1);
+    assert.equal(catalogBeforeArchive.items[0].ref.id, draft.ref.id);
     // Step 4: Archive asset requires valid reason
     await assert.rejects(
       () => archiveAsset(draft.ref, { expectedRevision: 2, requestId: 'req-e2e-arch-fail' }, 'no', editorActor, mockRepo),
@@ -329,6 +333,9 @@ test('State 42 End-to-End Integration Contracts', async (t) => {
     assert.equal(archived.status, 'archived');
     assert.equal(archived.revision, 3);
 
+    // Step 4b: Customer catalog query excludes archived sticker
+    const catalogAfterArchive = await mockRepo.listStickers({ status: 'published' });
+    assert.equal(catalogAfterArchive.items.length, 0, 'Archived sticker is excluded from published catalog');
     // Step 5: Exact reference resolver resolves archived asset by checksum
     const resolvedMap = await resolveLibraryRefs([draft.ref], mockRepo);
     assert.equal(resolvedMap.size, 1);
@@ -352,5 +359,21 @@ test('State 42 End-to-End Integration Contracts', async (t) => {
       () => deleteDraftAsset(draft.ref, { expectedRevision: 3, requestId: 'req-del-adm' }, adminActor, mockRepo),
       (err: unknown) => err instanceof LibraryServiceError && err.code === 'IMMUTABLE_BINARY',
     );
+
+    // Step 8: Successful Admin deletion of an eligible never-published draft
+    const draft2 = await createStickerDraft(
+      {
+        bytes: safeSvgBytes,
+        filename: 'e2e-draft-to-delete.svg',
+        metadata: { displayName: 'Temporary Draft', category: 'test', tags: [] },
+        requestId: 'req-e2e-create-temp',
+      },
+      editorActor,
+      mockRepo,
+    );
+    assert.equal(draft2.status, 'draft');
+    await deleteDraftAsset(draft2.ref, { expectedRevision: 1, requestId: 'req-e2e-del-admin' }, adminActor, mockRepo);
+    const deletedRecord = await mockRepo.getRecord(draft2.ref);
+    assert.equal(deletedRecord, null, 'Never-published draft is deleted by admin');
   });
 });
