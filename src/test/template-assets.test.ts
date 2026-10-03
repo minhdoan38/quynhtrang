@@ -4,17 +4,18 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import sharp from 'sharp';
 
 import type { StaffIdentity } from '../lib/domain/order.ts';
-import type {
-  AttachTemplateAssetInput,
-  CreateTemplateRepoInput,
-  EligibleSourceProject,
-  SourceProjectDetail,
-  TemplateAssetRecord,
-  TemplateDraftRecord,
-  TemplateRecord,
-  TemplateRepoResult,
+import {
+  TemplateServiceError,
+  type AttachTemplateAssetInput,
+  type CreateTemplateRepoInput,
+  type EligibleSourceProject,
+  type SourceProjectDetail,
+  type TemplateAssetRecord,
+  type TemplateDraftRecord,
+  type TemplateRecord,
+  type TemplateRepoResult,
 } from '../lib/domain/template.ts';
-import { createInitialState } from '../lib/product-state.ts';
+import { createInitialState, type DesignState } from '../lib/product-state.ts';
 import { createTemplateTarget } from '../lib/template-target.ts';
 import { isTemplateAssetPath, promoteDesignAssets } from '../lib/asset-store.ts';
 import {
@@ -144,6 +145,9 @@ function createMockRepository() {
       return { ok: true, value: { template, draft } };
     },
     async attachAsset(actor: string, input: AttachTemplateAssetInput): Promise<TemplateRepoResult<TemplateAssetRecord>> {
+      if (!templates.has(input.templateId)) {
+        return { ok: false, code: 'NOT_FOUND', message: 'Template not found' };
+      }
       const asset: TemplateAssetRecord = {
         id: input.storagePath.split('/')[1]?.split('.')[0] || 'mock-asset-id',
         templateId: input.templateId,
@@ -162,6 +166,29 @@ function createMockRepository() {
       };
       assets.set(asset.id, asset);
       return { ok: true, value: asset };
+    },
+    async acquireLease(actor: string, input: { requestId: string; draftId: string; sessionId: string }) {
+      const draft = Array.from(drafts.values()).find((d) => d.id === input.draftId || d.templateId === input.draftId);
+      if (!draft) return { ok: false, code: 'NOT_FOUND', message: 'Draft not found' };
+      draft.editorUserId = actor;
+      draft.leaseSessionId = input.sessionId;
+      draft.leaseExpiresAt = new Date(Date.now() + 120_000).toISOString();
+      return { ok: true, value: draft };
+    },
+    async saveDraft(actor: string, input: { requestId: string; draftId: string; expectedRevision: number; sessionId: string; leaseEpoch: number; document: DesignState }) {
+      const draft = Array.from(drafts.values()).find((d) => d.id === input.draftId || d.templateId === input.draftId);
+      if (!draft) return { ok: false, code: 'NOT_FOUND', message: 'Draft not found' };
+      draft.designDocument = input.document;
+      draft.draftRevision = input.expectedRevision + 1;
+      draft.updatedAt = new Date().toISOString();
+      return { ok: true, value: { revision: draft.draftRevision, updatedAt: draft.updatedAt, requestId: input.requestId } };
+    },
+    async cleanupDraftAsset(actor: string, assetId: string, options: { requestId?: string; maxAgeHours?: number } = {}) {
+      const asset = assets.get(assetId);
+      if (!asset) return { success: false, reason: 'NOT_FOUND' };
+      if (asset.isPublished) return { success: false, reason: 'EVER_PUBLISHED' };
+      assets.delete(assetId);
+      return { success: true, storagePath: asset.storageKey, storageBucket: asset.storageBucket };
     },
     async getAsset(assetId: string) {
       return assets.get(assetId) ?? null;
@@ -614,6 +641,105 @@ describe('State 43 Task 10: Template Assets, Safe Delivery, and Source Cloning',
       const originalProj = mock.projects.get('source-proj-1');
       assert.equal(JSON.stringify(originalProj?.workingDocument), sourceSnapshot);
     });
+
+    it('fails clone and rejects when project asset is missing in storage', async () => {
+      const mock = createMockRepository();
+      const editor = createMockEditor();
+
+      const sourceDoc = createInitialState('card');
+      sourceDoc.image = {
+        src: '/api/assets/missing-asset-404',
+        name: 'missing.png',
+        type: 'image/png',
+        size: 100,
+        width: 200,
+        height: 200,
+      };
+      mock.projects.set('proj-missing-asset', {
+        id: 'proj-missing-asset',
+        ownerUserId: editor.userId,
+        productId: 'card',
+        variantId: 'horizontal',
+        currentWorkingRevision: 1,
+        workingDocument: sourceDoc as unknown as Record<string, unknown>,
+        createdAt: '2026-10-01T00:00:00Z',
+        updatedAt: '2026-10-01T00:00:00Z',
+        eligible: true,
+        blockedReason: null,
+      });
+
+      await assert.rejects(
+        () => createTemplateFromProject(
+          editor,
+          {
+            sourceProjectId: 'proj-missing-asset',
+            expectedSourceRevision: 1,
+            target: { productId: 'card', variantId: 'horizontal', mode: null, shape: null },
+            name: 'Missing Asset Template',
+            rightsAcknowledged: true,
+            requestId: 'req-clone-missing',
+          },
+          { repo: mock.repo },
+        ),
+        (err: unknown) => {
+          assert.ok(err instanceof TemplateServiceError);
+          assert.equal(err.code, 'INVALID_INPUT');
+          assert.match(err.message, /Failed to copy private project asset/);
+          return true;
+        },
+      );
+    });
+
+    it('fails clone and rejects when project asset is corrupt', async () => {
+      const mock = createMockRepository();
+      const editor = createMockEditor();
+
+      const sourceDoc = createInitialState('card');
+      sourceDoc.image = {
+        src: '/api/assets/corrupt-asset-1',
+        name: 'corrupt.png',
+        type: 'image/png',
+        size: 5,
+        width: 200,
+        height: 200,
+      };
+      // Upload corrupt bytes
+      mock.storage.set('customer-assets/proj-corrupt/corrupt-asset-1', new Uint8Array([1, 2, 3, 4, 5]));
+
+      mock.projects.set('proj-corrupt', {
+        id: 'proj-corrupt',
+        ownerUserId: editor.userId,
+        productId: 'card',
+        variantId: 'horizontal',
+        currentWorkingRevision: 1,
+        workingDocument: sourceDoc as unknown as Record<string, unknown>,
+        createdAt: '2026-10-01T00:00:00Z',
+        updatedAt: '2026-10-01T00:00:00Z',
+        eligible: true,
+        blockedReason: null,
+      });
+
+      await assert.rejects(
+        () => createTemplateFromProject(
+          editor,
+          {
+            sourceProjectId: 'proj-corrupt',
+            expectedSourceRevision: 1,
+            target: { productId: 'card', variantId: 'horizontal', mode: null, shape: null },
+            name: 'Corrupt Asset Template',
+            rightsAcknowledged: true,
+            requestId: 'req-clone-corrupt',
+          },
+          { repo: mock.repo },
+        ),
+        (err: unknown) => {
+          assert.ok(err instanceof TemplateServiceError);
+          assert.equal(err.code, 'INVALID_INPUT');
+          assert.match(err.message, /Failed to copy private project asset/);
+          return true;
+        },
+      );
+    });
   });
 
   describe('TemplateManagementService integration', () => {
@@ -936,6 +1062,21 @@ describe('State 43 Task 10: Template Assets, Safe Delivery, and Source Cloning',
               },
             };
           },
+        },
+        async rpc(fn: string, params: Record<string, unknown>) {
+          if (fn === 'template_cleanup_draft_asset') {
+            const assetId = String(params.p_asset_id);
+            deletedAssetIds.push(assetId);
+            return {
+              data: {
+                success: true,
+                storage_path: 'tmpl-clean/asset-unref-old.png',
+                storage_bucket: 'template-drafts',
+              },
+              error: null,
+            };
+          }
+          return { data: null, error: null };
         },
       } as unknown as SupabaseClient;
 

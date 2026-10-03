@@ -3,7 +3,7 @@ import sharp, { type Metadata } from 'sharp';
 import type { SupabaseClient } from '@supabase/supabase-js';
 
 import type { StaffIdentity } from '../domain/order.ts';
-import type { DesignState } from '../product-state.ts';
+import { createInitialState, type DesignState } from '../product-state.ts';
 import {
   TemplateServiceError,
   type AttachTemplateAssetInput,
@@ -476,7 +476,40 @@ export async function createTemplateFromProject(
   const rawDocument = project.workingDocument as unknown as DesignState;
   const docClone = JSON.parse(JSON.stringify(rawDocument)) as DesignState;
 
-  // Find all assets in project and copy to template-drafts
+  const targetSnapshot: Record<string, unknown> = {
+    productId: input.target.productId,
+    variantId: input.target.variantId,
+    mode: input.target.mode ?? null,
+    shape: input.target.shape ?? null,
+  };
+
+  // Step 1: Create template and draft in DB first with initial target document
+  const initialBlankDoc = createInitialState(input.target.productId);
+  initialBlankDoc.variantId = input.target.variantId;
+  initialBlankDoc.templateId = templateId;
+  initialBlankDoc.elements = [];
+
+  const createResult = await repo.createTemplate(actor.userId, {
+    requestId: input.requestId,
+    id: templateId,
+    name: input.name,
+    productId: input.target.productId,
+    variantId: input.target.variantId,
+    productMode: input.target.mode ?? null,
+    fixedStickerShape: input.target.shape ?? null,
+    categoryId: input.categoryId ?? null,
+    tags: input.tags ?? [],
+    sortOrder: input.sortOrder ?? 0,
+    targetSnapshot,
+    initialDocument: initialBlankDoc,
+  });
+
+  if (!createResult.ok) {
+    throw new TemplateServiceError(createResult.code, createResult.message);
+  }
+
+  const { template: createdTemplate, draft: createdDraft } = createResult.value;
+  // Step 2: Find all assets in project, download, validate, upload, and attach
   let copiedAssetsCount = 0;
   const urlMapping = new Map<string, string>();
 
@@ -514,28 +547,50 @@ export async function createTemplateFromProject(
         bytes = null;
       }
     }
-    if (bytes) {
-      const validated = await validateTemplateRasterImage(bytes);
-      const newAssetId = randomUUID();
-      const newPath = `${templateId}/${newAssetId}.${validated.ext}`;
-      await repo.uploadStorageObject('template-drafts', newPath, validated.canonicalBytes, validated.mimeType);
 
-      await repo.attachAsset(actor.userId, {
-        templateId,
-        storageBucket: 'template-drafts',
-        storagePath: newPath,
-        checksum: validated.checksum,
-        mimeType: validated.mimeType,
-        byteSize: validated.byteSize,
-        pixelWidth: validated.width,
-        pixelHeight: validated.height,
-        uploadStatus: 'attached',
-      });
-
-      const newUrl = `/api/admin/content/templates/${templateId}/assets/${newAssetId}`;
-      urlMapping.set(url, newUrl);
-      copiedAssetsCount++;
+    if (!bytes) {
+      throw new TemplateServiceError(
+        'INVALID_INPUT',
+        `Failed to copy private project asset: asset ${assetId} not found in customer storage`,
+        400,
+      );
     }
+
+    let validated;
+    try {
+      validated = await validateTemplateRasterImage(bytes);
+    } catch (err: unknown) {
+      throw new TemplateServiceError(
+        'INVALID_INPUT',
+        `Failed to copy private project asset: ${err instanceof Error ? err.message : 'validation failed'}`,
+        400,
+      );
+    }
+
+    const newAssetId = randomUUID();
+    const newPath = `${templateId}/${newAssetId}.${validated.ext}`;
+    await repo.uploadStorageObject('template-drafts', newPath, validated.canonicalBytes, validated.mimeType);
+
+    const attachRes = await repo.attachAsset(actor.userId, {
+      templateId,
+      draftId: createdDraft.id,
+      storageBucket: 'template-drafts',
+      storagePath: newPath,
+      checksum: validated.checksum,
+      mimeType: validated.mimeType,
+      byteSize: validated.byteSize,
+      pixelWidth: validated.width,
+      pixelHeight: validated.height,
+      uploadStatus: 'attached',
+    });
+
+    if (!attachRes.ok) {
+      throw new TemplateServiceError(attachRes.code, attachRes.message);
+    }
+
+    const newUrl = `/api/admin/content/templates/${templateId}/assets/${newAssetId}`;
+    urlMapping.set(url, newUrl);
+    copiedAssetsCount++;
   }
 
   if (docClone.image?.src) {
@@ -554,39 +609,48 @@ export async function createTemplateFromProject(
     }
   }
 
+  // Step 3: Rewrite document image URLs with new attached asset URLs
   const rewrittenDoc = rewriteDesignUrls(docClone, urlMapping);
   rewrittenDoc.templateId = templateId;
   delete (rewrittenDoc as unknown as Record<string, unknown>).sourceTemplate;
 
-  const targetSnapshot: Record<string, unknown> = {
-    productId: input.target.productId,
-    variantId: input.target.variantId,
-    mode: input.target.mode ?? null,
-    shape: input.target.shape ?? null,
-  };
+  // Final sanity assertion verifying NO /api/assets/ URLs remain
+  const docJson = JSON.stringify(rewrittenDoc);
+  if (/(?:^|\/)api\/assets\/[a-zA-Z0-9_-]+/.test(docJson) || docJson.includes('/api/assets/')) {
+    throw new TemplateServiceError('INVALID_INPUT', 'Private customer asset reference detected in template', 400);
+  }
 
-  const createResult = await repo.createTemplate(actor.userId, {
-    requestId: input.requestId,
-    id: templateId,
-    name: input.name,
-    productId: input.target.productId,
-    variantId: input.target.variantId,
-    productMode: input.target.mode ?? null,
-    fixedStickerShape: input.target.shape ?? null,
-    categoryId: input.categoryId ?? null,
-    tags: input.tags ?? [],
-    sortOrder: input.sortOrder ?? 0,
-    targetSnapshot,
-    initialDocument: rewrittenDoc,
+  // Step 4: Save the updated rewritten document into the draft via repo.saveDraft(...)
+  const sessionId = randomUUID();
+  if (typeof repo.acquireLease === 'function') {
+    await repo.acquireLease(actor.userId, {
+      requestId: `${input.requestId}-lease`,
+      draftId: createdDraft.id,
+      sessionId,
+    });
+  }
+
+  const saveResult = await repo.saveDraft(actor.userId, {
+    requestId: `${input.requestId}-save`,
+    draftId: createdDraft.id,
+    expectedRevision: createdDraft.draftRevision,
+    sessionId,
+    leaseEpoch: createdDraft.leaseEpoch ?? 0,
+    document: rewrittenDoc,
   });
 
-  if (!createResult.ok) {
-    throw new TemplateServiceError(createResult.code, createResult.message);
+  if (!saveResult.ok) {
+    throw new TemplateServiceError(saveResult.code, saveResult.message);
   }
 
   return {
-    template: createResult.value.template,
-    draft: createResult.value.draft,
+    template: createdTemplate,
+    draft: {
+      ...createdDraft,
+      designDocument: rewrittenDoc,
+      draftRevision: saveResult.value.revision,
+      updatedAt: saveResult.value.updatedAt,
+    },
     copiedAssetsCount,
   };
 }

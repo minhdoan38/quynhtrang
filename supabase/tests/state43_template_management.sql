@@ -1023,6 +1023,90 @@ begin
       if v_count <> 0 then
         raise exception 'Discarded draft was not deleted';
       end if;
+
+      -- 9.11 template_cleanup_draft_asset RPC tests
+      declare
+        v_asset_clean_id uuid := gen_random_uuid();
+        v_asset_recent_id uuid := gen_random_uuid();
+        v_asset_ref_id uuid := gen_random_uuid();
+        v_asset_pub_id uuid := gen_random_uuid();
+        v_clean_res jsonb;
+        v_test_draft_id uuid;
+      begin
+        -- Old unreferenced asset (48h old)
+        insert into public.template_assets (
+          id, template_id, storage_bucket, storage_path, checksum,
+          mime_type, byte_size, upload_status, status, is_published, created_at
+        ) values (
+          v_asset_clean_id, v_tmpl_id, 'template-drafts', 'test/clean-old.png', 'chk-clean',
+          'image/png', 1024, 'attached', 'draft', false, now() - interval '48 hours'
+        );
+
+        -- Recent asset (1h old)
+        insert into public.template_assets (
+          id, template_id, storage_bucket, storage_path, checksum,
+          mime_type, byte_size, upload_status, status, is_published, created_at
+        ) values (
+          v_asset_recent_id, v_tmpl_id, 'template-drafts', 'test/recent.png', 'chk-recent',
+          'image/png', 1024, 'attached', 'draft', false, now() - interval '1 hour'
+        );
+
+        -- Referenced asset (48h old but referenced in draft)
+        insert into public.template_assets (
+          id, template_id, storage_bucket, storage_path, checksum,
+          mime_type, byte_size, upload_status, status, is_published, created_at
+        ) values (
+          v_asset_ref_id, v_tmpl_id, 'template-drafts', 'test/ref-old.png', 'chk-ref',
+          'image/png', 1024, 'attached', 'draft', false, now() - interval '48 hours'
+        );
+
+        -- Create draft referencing v_asset_ref_id
+        insert into public.template_drafts (
+          template_id, based_on_version_id, design_document, document_schema_version,
+          draft_revision, source_document_hash, created_by, updated_by
+        ) values (
+          v_tmpl_id, null, jsonb_build_object('elements', jsonb_build_array(jsonb_build_object('id', '1', 'url', '/api/templates/assets/' || v_asset_ref_id::text))), 1,
+          1, 'hash-ref', v_adm_id, v_adm_id
+        ) returning id into v_test_draft_id;
+
+        -- Published asset
+        insert into public.template_assets (
+          id, template_id, storage_bucket, storage_path, checksum,
+          mime_type, byte_size, upload_status, status, is_published, ever_published_at, created_at
+        ) values (
+          v_asset_pub_id, v_tmpl_id, 'template-assets', 'test/pub.png', 'chk-pub',
+          'image/png', 1024, 'verified', 'published', true, now() - interval '48 hours', now() - interval '48 hours'
+        );
+
+        -- Test 1: Recent asset -> fails with TOO_RECENT
+        v_clean_res := public.template_cleanup_draft_asset(v_adm_id, 'req-clean-recent', v_asset_recent_id, 24);
+        if (v_clean_res->>'success')::boolean is not false or v_clean_res->>'reason' <> 'TOO_RECENT' then
+          raise exception 'Expected TOO_RECENT for recent asset, got %', v_clean_res;
+        end if;
+
+        -- Test 2: Referenced asset -> fails with REFERENCED_IN_DRAFT
+        v_clean_res := public.template_cleanup_draft_asset(v_adm_id, 'req-clean-ref', v_asset_ref_id, 24);
+        if (v_clean_res->>'success')::boolean is not false or v_clean_res->>'reason' <> 'REFERENCED_IN_DRAFT' then
+          raise exception 'Expected REFERENCED_IN_DRAFT for referenced asset, got %', v_clean_res;
+        end if;
+
+        -- Test 3: Published asset -> fails with EVER_PUBLISHED_OR_NOT_DRAFT
+        v_clean_res := public.template_cleanup_draft_asset(v_adm_id, 'req-clean-pub', v_asset_pub_id, 24);
+        if (v_clean_res->>'success')::boolean is not false or v_clean_res->>'reason' <> 'EVER_PUBLISHED_OR_NOT_DRAFT' then
+          raise exception 'Expected EVER_PUBLISHED_OR_NOT_DRAFT for published asset, got %', v_clean_res;
+        end if;
+
+        -- Test 4: Eligible unreferenced old asset -> succeeds and deletes row
+        v_clean_res := public.template_cleanup_draft_asset(v_adm_id, 'req-clean-ok', v_asset_clean_id, 24);
+        if (v_clean_res->>'success')::boolean is not true or v_clean_res->>'storage_path' <> 'test/clean-old.png' then
+          raise exception 'Expected success for eligible old unreferenced asset, got %', v_clean_res;
+        end if;
+
+        select count(*) into v_count from public.template_assets where id = v_asset_clean_id;
+        if v_count <> 0 then
+          raise exception 'Cleaned asset was not deleted from template_assets';
+        end if;
+      end;
     end;
   end;
 end $$;

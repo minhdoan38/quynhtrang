@@ -89,6 +89,8 @@ export interface DatabaseAssetRow {
   pixel_width?: number | null;
   pixel_height?: number | null;
   upload_status?: string | null;
+  status?: string;
+  ever_published_at?: string | null;
   is_published: boolean;
   created_at: string;
   created_by?: string | null;
@@ -836,7 +838,7 @@ export class TemplateRepository {
   async markAssetPublished(assetId: string): Promise<void> {
     const { error } = await this.client
       .from('template_assets')
-      .update({ is_published: true, upload_status: 'verified' })
+      .update({ is_published: true, status: 'published', ever_published_at: new Date().toISOString(), upload_status: 'verified' })
       .eq('id', assetId);
 
     if (error) throw new Error(error.message);
@@ -870,5 +872,30 @@ export class TemplateRepository {
       .eq('id', assetId);
 
     if (error) throw new Error(error.message);
+  }
+
+  async cleanupDraftAsset(
+    actor: string,
+    assetId: string,
+    options: { requestId?: string; maxAgeHours?: number } = {},
+  ): Promise<{ success: boolean; storagePath?: string; storageBucket?: string; reason?: string }> {
+    const { data, error } = await this.client.rpc('template_cleanup_draft_asset', {
+      p_actor: actor,
+      p_request: options.requestId ?? `cleanup-${Date.now()}`,
+      p_asset_id: assetId,
+      p_max_age_hours: options.maxAgeHours ?? 24,
+    });
+
+    if (error) {
+      throw new Error(`Failed to cleanup draft asset: ${error.message}`);
+    }
+
+    const resp = data as { success?: boolean; storage_path?: string; storage_bucket?: string; reason?: string } | null;
+    return {
+      success: Boolean(resp?.success),
+      storagePath: resp?.storage_path,
+      storageBucket: resp?.storage_bucket,
+      reason: resp?.reason,
+    };
   }
 }

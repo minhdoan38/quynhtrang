@@ -168,12 +168,17 @@ create table if not exists public.template_assets (
   pixel_width integer null check (pixel_width is null or pixel_width > 0),
   pixel_height integer null check (pixel_height is null or pixel_height > 0),
   upload_status text not null default 'pending' check (upload_status in ('pending', 'uploaded', 'attached', 'verified', 'cleanup_pending', 'cleaned', 'failed')),
+  status text not null default 'draft' check (status in ('draft', 'published', 'archived', 'cleaned')),
+  ever_published_at timestamptz null,
   expires_at timestamptz null,
   is_published boolean not null default false,
   created_by uuid references auth.users(id) on delete set null,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
+alter table public.template_assets add column if not exists status text not null default 'draft' check (status in ('draft', 'published', 'archived', 'cleaned'));
+alter table public.template_assets add column if not exists ever_published_at timestamptz null;
+
 
 create index if not exists idx_template_assets_template on public.template_assets(template_id);
 create index if not exists idx_template_assets_draft on public.template_assets(draft_id);
@@ -1594,6 +1599,91 @@ begin
 end;
 $$;
 
+-- 18.13 template_cleanup_draft_asset RPC (State 43 Task 10)
+create or replace function public.template_cleanup_draft_asset(
+  p_actor uuid,
+  p_request text,
+  p_asset_id uuid,
+  p_max_age_hours integer default 24
+)
+returns jsonb
+language plpgsql
+security invoker
+set search_path = public, extensions, pg_temp
+as $$
+declare
+  v_asset record;
+  v_age_interval interval;
+  v_now timestamptz := clock_timestamp();
+  v_max_age integer;
+begin
+  perform public.template_authorize_actor(p_actor, 'editor');
+
+  if p_asset_id is null then
+    return jsonb_build_object('success', false, 'reason', 'INVALID_INPUT: asset_id required');
+  end if;
+
+  v_max_age := coalesce(p_max_age_hours, 24);
+  v_age_interval := (v_max_age || ' hours')::interval;
+
+  -- 1. Lock the template_assets row FOR UPDATE
+  select * into v_asset from public.template_assets where id = p_asset_id for update;
+  if not found then
+    return jsonb_build_object('success', false, 'reason', 'NOT_FOUND');
+  end if;
+
+  -- 2. Verify status = 'draft' and ever_published_at IS NULL
+  if coalesce(v_asset.status, 'draft') <> 'draft' or v_asset.ever_published_at is not null or v_asset.is_published is true then
+    return jsonb_build_object('success', false, 'reason', 'EVER_PUBLISHED_OR_NOT_DRAFT');
+  end if;
+
+  -- 3. Verify created_at <= now() - (p_max_age_hours || ' hours')::interval
+  if v_asset.created_at > (v_now - v_age_interval) then
+    return jsonb_build_object('success', false, 'reason', 'TOO_RECENT');
+  end if;
+
+  -- 4. Verify that id::text and storage_path are NOT referenced in:
+  --    template_drafts.design_document
+  if exists (
+    select 1 from public.template_drafts
+    where design_document::text like '%' || p_asset_id::text || '%'
+       or design_document::text like '%' || v_asset.storage_path || '%'
+  ) then
+    return jsonb_build_object('success', false, 'reason', 'REFERENCED_IN_DRAFT');
+  end if;
+
+  --    template_versions.design_document
+  if exists (
+    select 1 from public.template_versions
+    where design_document::text like '%' || p_asset_id::text || '%'
+       or design_document::text like '%' || v_asset.storage_path || '%'
+  ) then
+    return jsonb_build_object('success', false, 'reason', 'REFERENCED_IN_VERSION');
+  end if;
+
+  --    template_version_assets
+  if exists (
+    select 1 from public.template_version_assets
+    where asset_id = p_asset_id
+  ) then
+    return jsonb_build_object('success', false, 'reason', 'REFERENCED_IN_VERSION_ASSETS');
+  end if;
+
+  -- 5. Updates status to 'cleaned', deletes the row, and returns success
+  update public.template_assets
+  set status = 'cleaned', upload_status = 'cleaned', updated_at = v_now
+  where id = p_asset_id;
+
+  delete from public.template_assets where id = p_asset_id;
+
+  return jsonb_build_object(
+    'success', true,
+    'storage_path', v_asset.storage_path,
+    'storage_bucket', v_asset.storage_bucket
+  );
+end;
+$$;
+
 revoke all on function public.template_acquire_draft_lease(uuid, text, uuid, uuid) from public, anon, authenticated;
 grant execute on function public.template_acquire_draft_lease(uuid, text, uuid, uuid) to service_role;
 
@@ -1614,3 +1704,6 @@ grant execute on function public.template_attach_asset(uuid, text, uuid, text, t
 
 revoke all on function public.template_list_eligible_source_projects(uuid, text) from public, anon, authenticated;
 grant execute on function public.template_list_eligible_source_projects(uuid, text) to service_role;
+
+revoke all on function public.template_cleanup_draft_asset(uuid, text, uuid, integer) from public, anon, authenticated;
+grant execute on function public.template_cleanup_draft_asset(uuid, text, uuid, integer) to service_role;
