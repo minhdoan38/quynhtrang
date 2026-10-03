@@ -943,3 +943,398 @@ grant execute on function public.template_create_draft(uuid, text, text, bigint,
 
 revoke all on function public.template_patch_metadata(uuid, text, text, bigint, jsonb) from public, anon, authenticated;
 grant execute on function public.template_patch_metadata(uuid, text, text, bigint, jsonb) to service_role;
+
+-- 18.6 template_acquire_draft_lease RPC
+create or replace function public.template_acquire_draft_lease(
+  p_actor uuid,
+  p_request text,
+  p_draft_id uuid,
+  p_session_id uuid
+)
+returns jsonb
+language plpgsql
+security invoker
+set search_path = public, pg_temp
+as $$
+declare
+  v_draft record;
+  v_updated_draft record;
+  v_now timestamptz := clock_timestamp();
+  v_lease_duration interval := interval '120 seconds';
+begin
+  perform public.template_authorize_actor(p_actor, 'editor');
+
+  if p_request is null or btrim(p_request) = '' then
+    raise exception 'INVALID_REQUEST_ID' using errcode = 'P0001';
+  end if;
+  if p_draft_id is null or p_session_id is null then
+    raise exception 'INVALID_INPUT: draft_id and session_id required' using errcode = 'P0001';
+  end if;
+
+  select * into v_draft from public.template_drafts where id = p_draft_id for update;
+  if not found then
+    raise exception 'NOT_FOUND: draft not found' using errcode = 'P0001';
+  end if;
+
+  if v_draft.lease_expires_at is not null and v_draft.lease_expires_at > v_now then
+    if v_draft.editor_user_id = p_actor and v_draft.lease_session_id = p_session_id then
+      update public.template_drafts
+      set
+        lease_expires_at = v_now + v_lease_duration,
+        last_activity_at = v_now,
+        updated_at = v_now
+      where id = p_draft_id
+      returning * into v_updated_draft;
+      return jsonb_build_object('ok', true, 'draft', to_jsonb(v_updated_draft));
+    else
+      raise exception 'LEASE_CONFLICT: lease is currently held by another session' using errcode = 'P0001';
+    end if;
+  else
+    if v_draft.lease_session_id is not null and (v_draft.editor_user_id is distinct from p_actor or v_draft.lease_session_id is distinct from p_session_id) then
+      raise exception 'LEASE_EXPIRED: lease has expired and must be taken over by admin' using errcode = 'P0001';
+    end if;
+
+    update public.template_drafts
+    set
+      editor_user_id = p_actor,
+      lease_session_id = p_session_id,
+      lease_expires_at = v_now + v_lease_duration,
+      last_activity_at = v_now,
+      updated_at = v_now
+    where id = p_draft_id
+    returning * into v_updated_draft;
+
+    return jsonb_build_object('ok', true, 'draft', to_jsonb(v_updated_draft));
+  end if;
+end;
+$$;
+
+-- 18.7 template_heartbeat_draft_lease RPC
+create or replace function public.template_heartbeat_draft_lease(
+  p_actor uuid,
+  p_request text,
+  p_draft_id uuid,
+  p_session_id uuid,
+  p_epoch bigint
+)
+returns jsonb
+language plpgsql
+security invoker
+set search_path = public, pg_temp
+as $$
+declare
+  v_draft record;
+  v_now timestamptz := clock_timestamp();
+  v_expires_at timestamptz;
+begin
+  perform public.template_authorize_actor(p_actor, 'editor');
+
+  if p_draft_id is null or p_session_id is null or p_epoch is null then
+    raise exception 'INVALID_INPUT' using errcode = 'P0001';
+  end if;
+
+  select * into v_draft from public.template_drafts where id = p_draft_id for update;
+  if not found then
+    raise exception 'NOT_FOUND: draft not found' using errcode = 'P0001';
+  end if;
+
+  if v_draft.editor_user_id is distinct from p_actor or v_draft.lease_session_id is distinct from p_session_id or v_draft.lease_epoch <> p_epoch then
+    raise exception 'LEASE_LOST: lease held by another session or epoch changed' using errcode = 'P0001';
+  end if;
+
+  if v_draft.lease_expires_at is null or v_draft.lease_expires_at <= v_now then
+    raise exception 'LEASE_EXPIRED: lease expired' using errcode = 'P0001';
+  end if;
+
+  v_expires_at := v_now + interval '120 seconds';
+
+  update public.template_drafts
+  set
+    lease_expires_at = v_expires_at,
+    last_activity_at = v_now,
+    updated_at = v_now
+  where id = p_draft_id;
+
+  return jsonb_build_object(
+    'ok', true,
+    'value', jsonb_build_object(
+      'sessionId', p_session_id,
+      'epoch', p_epoch,
+      'expiresAt', v_expires_at
+    )
+  );
+end;
+$$;
+
+-- 18.8 template_save_draft RPC
+create or replace function public.template_save_draft(
+  p_actor uuid,
+  p_request text,
+  p_draft_id uuid,
+  p_expected_revision bigint,
+  p_session_id uuid,
+  p_epoch bigint,
+  p_document jsonb,
+  p_document_schema_version integer default 1
+)
+returns jsonb
+language plpgsql
+security invoker
+set search_path = public, pg_temp
+as $$
+declare
+  v_payload_hash text;
+  v_op record;
+  v_draft record;
+  v_next_revision bigint;
+  v_schema_version integer;
+  v_now timestamptz := clock_timestamp();
+  v_result jsonb;
+begin
+  perform public.template_authorize_actor(p_actor, 'editor');
+
+  if p_request is null or btrim(p_request) = '' then
+    raise exception 'INVALID_REQUEST_ID' using errcode = 'P0001';
+  end if;
+  if p_draft_id is null or p_session_id is null or p_expected_revision is null or p_epoch is null or p_document is null then
+    raise exception 'INVALID_INPUT' using errcode = 'P0001';
+  end if;
+
+  v_payload_hash := md5(jsonb_build_object(
+    'draftId', p_draft_id,
+    'expectedRevision', p_expected_revision,
+    'sessionId', p_session_id,
+    'epoch', p_epoch,
+    'document', p_document,
+    'schemaVersion', p_document_schema_version
+  )::text);
+
+  -- Check idempotency
+  select * into v_op from public.template_operations where request_id = p_request;
+  if found then
+    if v_op.actor_user_id is distinct from p_actor or v_op.payload_hash <> v_payload_hash then
+      raise exception 'OPERATION_CONFLICT' using errcode = 'P0001';
+    end if;
+    return v_op.result;
+  end if;
+
+  select * into v_draft from public.template_drafts where id = p_draft_id for update;
+  if not found then
+    raise exception 'NOT_FOUND: draft not found' using errcode = 'P0001';
+  end if;
+
+  if v_draft.editor_user_id is distinct from p_actor or v_draft.lease_session_id is distinct from p_session_id or v_draft.lease_epoch <> p_epoch then
+    raise exception 'LEASE_LOST: lease held by another session or epoch changed' using errcode = 'P0001';
+  end if;
+
+  if v_draft.lease_expires_at is null or v_draft.lease_expires_at <= v_now then
+    raise exception 'LEASE_EXPIRED: lease expired' using errcode = 'P0001';
+  end if;
+
+  if v_draft.draft_revision <> p_expected_revision then
+    raise exception 'REVISION_CONFLICT' using errcode = 'P0001';
+  end if;
+
+  v_next_revision := v_draft.draft_revision + 1;
+  v_schema_version := coalesce(p_document_schema_version, v_draft.document_schema_version, 1);
+
+  update public.template_drafts
+  set
+    design_document = p_document,
+    document_schema_version = v_schema_version,
+    draft_revision = v_next_revision,
+    lease_expires_at = v_now + interval '120 seconds',
+    last_activity_at = v_now,
+    updated_by = p_actor,
+    updated_at = v_now
+  where id = p_draft_id;
+
+  v_result := jsonb_build_object(
+    'ok', true,
+    'value', jsonb_build_object(
+      'revision', v_next_revision,
+      'updatedAt', v_now,
+      'requestId', p_request
+    )
+  );
+
+  insert into public.template_operations (
+    request_id, actor_user_id, operation, template_id, payload_hash, status, result
+  ) values (
+    p_request, p_actor, 'save_draft', v_draft.template_id, v_payload_hash, 'completed', v_result
+  );
+
+  return v_result;
+end;
+$$;
+
+-- 18.9 template_takeover_draft RPC
+create or replace function public.template_takeover_draft(
+  p_actor uuid,
+  p_request text,
+  p_draft_id uuid,
+  p_expected_revision bigint,
+  p_expected_epoch bigint,
+  p_new_session_id uuid,
+  p_reason text
+)
+returns jsonb
+language plpgsql
+security invoker
+set search_path = public, pg_temp
+as $$
+declare
+  v_draft record;
+  v_updated_draft record;
+  v_next_epoch bigint;
+  v_prev_editor uuid;
+  v_now timestamptz := clock_timestamp();
+  v_reason text;
+begin
+  perform public.template_authorize_actor(p_actor, 'admin');
+
+  if p_request is null or btrim(p_request) = '' then
+    raise exception 'INVALID_REQUEST_ID' using errcode = 'P0001';
+  end if;
+  if p_draft_id is null or p_expected_revision is null or p_expected_epoch is null or p_new_session_id is null then
+    raise exception 'INVALID_INPUT' using errcode = 'P0001';
+  end if;
+
+  v_reason := btrim(coalesce(p_reason, ''));
+  if char_length(v_reason) < 3 or char_length(v_reason) > 500 then
+    raise exception 'INVALID_INPUT: takeover reason must be 3 to 500 characters' using errcode = 'P0001';
+  end if;
+
+  select * into v_draft from public.template_drafts where id = p_draft_id for update;
+  if not found then
+    raise exception 'NOT_FOUND: draft not found' using errcode = 'P0001';
+  end if;
+
+  if v_draft.draft_revision <> p_expected_revision then
+    raise exception 'REVISION_CONFLICT' using errcode = 'P0001';
+  end if;
+
+  if v_draft.lease_epoch <> p_expected_epoch then
+    raise exception 'REVISION_CONFLICT: draft epoch mismatch' using errcode = 'P0001';
+  end if;
+
+  if v_draft.lease_expires_at is not null and v_draft.lease_expires_at > v_now then
+    raise exception 'LEASE_ACTIVE: cannot take over active lease' using errcode = 'P0001';
+  end if;
+
+  v_next_epoch := v_draft.lease_epoch + 1;
+  v_prev_editor := v_draft.editor_user_id;
+
+  update public.template_drafts
+  set
+    editor_user_id = p_actor,
+    lease_session_id = p_new_session_id,
+    lease_epoch = v_next_epoch,
+    lease_expires_at = v_now + interval '120 seconds',
+    last_activity_at = v_now,
+    updated_by = p_actor,
+    updated_at = v_now
+  where id = p_draft_id
+  returning * into v_updated_draft;
+
+  insert into public.asset_events (
+    actor_user_id, request_id, kind, target_id, before_revision, after_revision, event, metadata_diff
+  ) values (
+    p_actor,
+    case when p_request ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' then p_request::uuid else null end,
+    'template',
+    v_draft.template_id,
+    v_draft.draft_revision,
+    v_draft.draft_revision,
+    'draft_taken_over',
+    jsonb_build_object(
+      'draft_id', p_draft_id,
+      'previous_editor_id', v_prev_editor,
+      'new_editor_id', p_actor,
+      'previous_epoch', v_draft.lease_epoch,
+      'epoch', v_next_epoch,
+      'reason', v_reason
+    )
+  );
+
+  return jsonb_build_object('ok', true, 'draft', to_jsonb(v_updated_draft));
+end;
+$$;
+
+-- 18.10 template_discard_draft RPC
+create or replace function public.template_discard_draft(
+  p_actor uuid,
+  p_request text,
+  p_draft_id uuid,
+  p_expected_revision bigint,
+  p_session_id uuid,
+  p_epoch bigint
+)
+returns jsonb
+language plpgsql
+security invoker
+set search_path = public, pg_temp
+as $$
+declare
+  v_draft record;
+  v_now timestamptz := clock_timestamp();
+begin
+  perform public.template_authorize_actor(p_actor, 'editor');
+
+  if p_request is null or btrim(p_request) = '' then
+    raise exception 'INVALID_REQUEST_ID' using errcode = 'P0001';
+  end if;
+  if p_draft_id is null or p_session_id is null or p_expected_revision is null or p_epoch is null then
+    raise exception 'INVALID_INPUT' using errcode = 'P0001';
+  end if;
+
+  select * into v_draft from public.template_drafts where id = p_draft_id for update;
+  if not found then
+    raise exception 'NOT_FOUND: draft not found' using errcode = 'P0001';
+  end if;
+
+  if v_draft.editor_user_id is distinct from p_actor or v_draft.lease_session_id is distinct from p_session_id or v_draft.lease_epoch <> p_epoch then
+    raise exception 'LEASE_LOST: lease held by another session or epoch changed' using errcode = 'P0001';
+  end if;
+
+  if v_draft.lease_expires_at is null or v_draft.lease_expires_at <= v_now then
+    raise exception 'LEASE_EXPIRED: lease expired' using errcode = 'P0001';
+  end if;
+
+  if v_draft.draft_revision <> p_expected_revision then
+    raise exception 'REVISION_CONFLICT' using errcode = 'P0001';
+  end if;
+
+  insert into public.asset_events (
+    actor_user_id, request_id, kind, target_id, before_revision, after_revision, event, metadata_diff
+  ) values (
+    p_actor,
+    case when p_request ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' then p_request::uuid else null end,
+    'template',
+    v_draft.template_id,
+    v_draft.draft_revision,
+    null,
+    'draft_discarded',
+    jsonb_build_object('draft_id', p_draft_id)
+  );
+
+  delete from public.template_drafts where id = p_draft_id;
+
+  return jsonb_build_object('ok', true, 'draftId', p_draft_id, 'discarded', true);
+end;
+$$;
+
+revoke all on function public.template_acquire_draft_lease(uuid, text, uuid, uuid) from public, anon, authenticated;
+grant execute on function public.template_acquire_draft_lease(uuid, text, uuid, uuid) to service_role;
+
+revoke all on function public.template_heartbeat_draft_lease(uuid, text, uuid, uuid, bigint) from public, anon, authenticated;
+grant execute on function public.template_heartbeat_draft_lease(uuid, text, uuid, uuid, bigint) to service_role;
+
+revoke all on function public.template_save_draft(uuid, text, uuid, bigint, uuid, bigint, jsonb, integer) from public, anon, authenticated;
+grant execute on function public.template_save_draft(uuid, text, uuid, bigint, uuid, bigint, jsonb, integer) to service_role;
+
+revoke all on function public.template_takeover_draft(uuid, text, uuid, bigint, bigint, uuid, text) from public, anon, authenticated;
+grant execute on function public.template_takeover_draft(uuid, text, uuid, bigint, bigint, uuid, text) to service_role;
+
+revoke all on function public.template_discard_draft(uuid, text, uuid, bigint, uuid, bigint) from public, anon, authenticated;
+grant execute on function public.template_discard_draft(uuid, text, uuid, bigint, uuid, bigint) to service_role;

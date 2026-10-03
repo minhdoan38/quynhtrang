@@ -594,7 +594,7 @@ begin
     v_new_rev bigint;
     v_before_doc jsonb;
     v_after_doc jsonb;
-    v_test_ver_id uuid := '43000000-0000-0000-0000-0000000000v1';
+      v_test_ver_id uuid := '43000000-0000-0000-0000-000000000101';
   begin
     v_payload := jsonb_build_object(
       'id', v_tmpl_id,
@@ -713,7 +713,237 @@ begin
     if (v_rpc_res->>'ok')::boolean is not true then
       raise exception 'template_create_draft failed';
     end if;
+    -- 9. Section 9: State 43 Task 6 RPCs (lease acquire, heartbeat, save, takeover, discard)
+    declare
+      v_sess_1 uuid := '43000000-0000-0000-0000-0000000000a1'::uuid;
+      v_sess_2 uuid := '43000000-0000-0000-0000-0000000000a2'::uuid;
+      v_sess_3 uuid := '43000000-0000-0000-0000-0000000000a3'::uuid;
+      v_cur_draft_id uuid;
+      v_lease_res jsonb;
+      v_save_res jsonb;
+      v_takeover_res jsonb;
+      v_discard_res jsonb;
+      v_ex_raised boolean;
+    begin
+      select id into v_cur_draft_id from public.template_drafts where template_id = v_tmpl_id;
+
+      -- 9.1 Acquire lease as Editor (Session 1)
+      v_lease_res := public.template_acquire_draft_lease(
+        v_ed_id,
+        '43000000-0000-0000-0000-0000000000l1',
+        v_cur_draft_id,
+        v_sess_1
+      );
+      if (v_lease_res->>'ok')::boolean is not true then
+        raise exception 'template_acquire_draft_lease failed';
+      end if;
+
+      -- 9.2 Same user, different session (Session 2) denied while lease is active
+      v_ex_raised := false;
+      begin
+        perform public.template_acquire_draft_lease(
+          v_ed_id,
+          '43000000-0000-0000-0000-0000000000l2',
+          v_cur_draft_id,
+          v_sess_2
+        );
+      exception when sqlstate 'P0001' then
+        if sqlerrm = 'LEASE_CONFLICT: lease is currently held by another session' then
+          v_ex_raised := true;
+        else
+          raise;
+        end if;
+      end;
+      if not v_ex_raised then
+        raise exception 'Different session acquire did not raise LEASE_CONFLICT';
+      end if;
+
+      -- 9.3 Heartbeat extends lease
+      v_lease_res := public.template_heartbeat_draft_lease(
+        v_ed_id,
+        '43000000-0000-0000-0000-0000000000h1',
+        v_cur_draft_id,
+        v_sess_1,
+        0 -- initial epoch
+      );
+      if (v_lease_res->>'ok')::boolean is not true then
+        raise exception 'template_heartbeat_draft_lease failed';
+      end if;
+
+      -- 9.4 Save draft as Editor (Session 1, Epoch 0, Rev 1)
+      v_save_res := public.template_save_draft(
+        v_ed_id,
+        '43000000-0000-0000-0000-0000000000b1',
+        v_cur_draft_id,
+        1, -- expectedRevision
+        v_sess_1,
+        0, -- epoch
+        '{"elements": [{"id": "el1", "type": "text", "text": "v1"}]}'::jsonb,
+        1
+      );
+      if (v_save_res->>'ok')::boolean is not true or (v_save_res->'value'->>'revision')::bigint <> 2 then
+        raise exception 'template_save_draft failed or did not advance to revision 2: %', v_save_res;
+      end if;
+
+      -- 9.5 Stale revision save denied
+      v_ex_raised := false;
+      begin
+        perform public.template_save_draft(
+          v_ed_id,
+          '43000000-0000-0000-0000-0000000000b2',
+          v_cur_draft_id,
+          1, -- stale revision (current is 2)
+          v_sess_1,
+          0,
+          '{"elements": []}'::jsonb,
+          1
+        );
+      exception when sqlstate 'P0001' then
+        if sqlerrm = 'REVISION_CONFLICT' then
+          v_ex_raised := true;
+        else
+          raise;
+        end if;
+      end;
+      if not v_ex_raised then
+        raise exception 'Stale revision save did not raise REVISION_CONFLICT';
+      end if;
+
+      -- 9.6 Save with wrong session denied
+      v_ex_raised := false;
+      begin
+        perform public.template_save_draft(
+          v_ed_id,
+          '43000000-0000-0000-0000-0000000000b3',
+          v_cur_draft_id,
+          2,
+          v_sess_2, -- wrong session
+          0,
+          '{"elements": []}'::jsonb,
+          1
+        );
+      exception when sqlstate 'P0001' then
+        if sqlerrm like 'LEASE_LOST%' then
+          v_ex_raised := true;
+        else
+          raise;
+        end if;
+      end;
+      if not v_ex_raised then
+        raise exception 'Wrong session save did not raise LEASE_LOST';
+      end if;
+
+      -- 9.7 Takeover rejected while lease is still active
+      v_ex_raised := false;
+      begin
+        perform public.template_takeover_draft(
+          v_adm_id,
+          '43000000-0000-0000-0000-0000000000b4',
+          v_cur_draft_id,
+          2,
+          0,
+          v_sess_3,
+          'Takeover reason valid'
+        );
+      exception when sqlstate 'P0001' then
+        if sqlerrm like 'LEASE_ACTIVE%' then
+          v_ex_raised := true;
+        else
+          raise;
+        end if;
+      end;
+      if not v_ex_raised then
+        raise exception 'Takeover of active lease did not raise LEASE_ACTIVE';
+      end if;
+
+      -- Takeover by non-admin denied
+      v_ex_raised := false;
+      begin
+        perform public.template_takeover_draft(
+          v_ed_id, -- Editor, not Admin!
+          '43000000-0000-0000-0000-0000000000b5',
+          v_cur_draft_id,
+          2,
+          0,
+          v_sess_3,
+          'Editor takeover attempt'
+        );
+      exception when sqlstate 'P0001' then
+        if sqlerrm = 'FORBIDDEN' then
+          v_ex_raised := true;
+        else
+          raise;
+        end if;
+      end;
+      if not v_ex_raised then
+        raise exception 'Non-admin takeover did not raise FORBIDDEN';
+      end if;
+
+      -- Simulate lease expiry
+      update public.template_drafts
+      set lease_expires_at = clock_timestamp() - interval '1 second'
+      where id = v_cur_draft_id;
+
+      -- 9.8 Admin takeover of expired lease succeeds and advances epoch to 1
+      v_takeover_res := public.template_takeover_draft(
+        v_adm_id,
+        '43000000-0000-0000-0000-0000000000b6',
+        v_cur_draft_id,
+        2,
+        0, -- expected epoch 0
+        v_sess_3,
+        'Taking over stale abandoned editing session'
+      );
+      if (v_takeover_res->>'ok')::boolean is not true then
+        raise exception 'template_takeover_draft failed: %', v_takeover_res;
+      end if;
+      if (v_takeover_res->'draft'->>'lease_epoch')::bigint <> 1 then
+        raise exception 'template_takeover_draft did not increment epoch to 1';
+      end if;
+
+      -- 9.9 Old session / epoch 0 now denied on save
+      v_ex_raised := false;
+      begin
+        perform public.template_save_draft(
+          v_ed_id,
+          '43000000-0000-0000-0000-0000000000b7',
+          v_cur_draft_id,
+          2,
+          v_sess_1,
+          0, -- old epoch
+          '{"elements": []}'::jsonb,
+          1
+        );
+      exception when sqlstate 'P0001' then
+        if sqlerrm like 'LEASE_LOST%' then
+          v_ex_raised := true;
+        else
+          raise;
+        end if;
+      end;
+      if not v_ex_raised then
+        raise exception 'Save with old epoch after takeover did not raise LEASE_LOST';
+      end if;
+
+      -- 9.10 Discard draft as Admin (current lease holder: Session 3, Epoch 1, Rev 2)
+      v_discard_res := public.template_discard_draft(
+        v_adm_id,
+        '43000000-0000-0000-0000-0000000000d1',
+        v_cur_draft_id,
+        2,
+        v_sess_3,
+        1
+      );
+      if (v_discard_res->>'ok')::boolean is not true or (v_discard_res->>'discarded')::boolean is not true then
+        raise exception 'template_discard_draft failed';
+      end if;
+
+      -- Draft should now be deleted
+      select count(*) into v_count from public.template_drafts where id = v_cur_draft_id;
+      if v_count <> 0 then
+        raise exception 'Discarded draft was not deleted';
+      end if;
+    end;
   end;
 end $$;
-
 rollback;

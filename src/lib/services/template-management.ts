@@ -8,6 +8,7 @@ import {
   TemplateServiceError,
   type AdminTemplateListQuery,
   type CreateTemplateRepoInput,
+  type SaveTemplateDraftInput,
   type TemplateDraftRecord,
   type TemplateMetadataPatch,
   type TemplateMutation,
@@ -402,5 +403,192 @@ export class TemplateManagementService {
     query?: AdminTemplateListQuery,
   ): Promise<{ items: TemplateRecord[]; total: number }> {
     return this.repo.listAdminTemplates(query);
+  }
+
+  async acquireDraftLease(
+    actor: StaffIdentity,
+    input: { requestId: string; draftId: string; sessionId: string },
+  ): Promise<TemplateDraftRecord> {
+    if (!actor || !actor.userId) {
+      throw new TemplateServiceError('UNAUTHENTICATED', 'Staff identity required', 401);
+    }
+    if (!input.draftId?.trim() || !input.sessionId?.trim() || !input.requestId?.trim()) {
+      throw new TemplateServiceError('INVALID_INPUT', 'draftId, sessionId, and requestId are required', 400);
+    }
+
+    const result = await this.repo.acquireLease(actor.userId, {
+      requestId: input.requestId.trim(),
+      draftId: input.draftId.trim(),
+      sessionId: input.sessionId.trim(),
+    });
+
+    if (!result.ok) {
+      throw new TemplateServiceError(result.code, result.message);
+    }
+
+    return result.value;
+  }
+
+  async heartbeatDraftLease(
+    actor: StaffIdentity,
+    input: { requestId: string; draftId: string; sessionId: string; epoch: number },
+  ): Promise<{ sessionId: string; epoch: number; expiresAt: string }> {
+    if (!actor || !actor.userId) {
+      throw new TemplateServiceError('UNAUTHENTICATED', 'Staff identity required', 401);
+    }
+    if (
+      !input.draftId?.trim() ||
+      !input.sessionId?.trim() ||
+      !input.requestId?.trim() ||
+      typeof input.epoch !== 'number' ||
+      !Number.isInteger(input.epoch) ||
+      input.epoch < 0
+    ) {
+      throw new TemplateServiceError(
+        'INVALID_INPUT',
+        'draftId, sessionId, requestId, and valid epoch are required',
+        400,
+      );
+    }
+
+    const result = await this.repo.heartbeatLease(actor.userId, {
+      requestId: input.requestId.trim(),
+      draftId: input.draftId.trim(),
+      sessionId: input.sessionId.trim(),
+      epoch: input.epoch,
+    });
+
+    if (!result.ok) {
+      throw new TemplateServiceError(result.code, result.message);
+    }
+
+    return result.value;
+  }
+
+  async saveDraft(
+    actor: StaffIdentity,
+    input: SaveTemplateDraftInput,
+  ): Promise<{ revision: number; updatedAt: string; requestId: string }> {
+    if (!actor || !actor.userId) {
+      throw new TemplateServiceError('UNAUTHENTICATED', 'Staff identity required', 401);
+    }
+    if (!input.draftId?.trim() || !input.sessionId?.trim() || !input.requestId?.trim()) {
+      throw new TemplateServiceError('INVALID_INPUT', 'draftId, sessionId, and requestId are required', 400);
+    }
+    if (!Number.isInteger(input.expectedRevision) || input.expectedRevision < 1) {
+      throw new TemplateServiceError('INVALID_INPUT', 'expectedRevision must be a positive integer', 400);
+    }
+    if (!Number.isInteger(input.leaseEpoch) || input.leaseEpoch < 0) {
+      throw new TemplateServiceError('INVALID_INPUT', 'leaseEpoch must be a non-negative integer', 400);
+    }
+    if (!input.document || typeof input.document !== 'object') {
+      throw new TemplateServiceError('INVALID_INPUT', 'document is required', 400);
+    }
+
+    const jsonStr = JSON.stringify(input.document);
+    if (jsonStr.length > MAX_DOCUMENT_BYTES) {
+      throw new TemplateServiceError('INVALID_INPUT', 'Document exceeds max size of 2 MiB', 400);
+    }
+    if ((input.document.elements?.length ?? 0) > MAX_ELEMENT_COUNT) {
+      throw new TemplateServiceError('INVALID_INPUT', `Document element count exceeds ${MAX_ELEMENT_COUNT}`, 400);
+    }
+
+    const result = await this.repo.saveDraft(actor.userId, {
+      ...input,
+      draftId: input.draftId.trim(),
+      sessionId: input.sessionId.trim(),
+      requestId: input.requestId.trim(),
+    });
+
+    if (!result.ok) {
+      throw new TemplateServiceError(result.code, result.message);
+    }
+
+    return result.value;
+  }
+
+  async takeoverDraft(
+    actor: StaffIdentity,
+    input: {
+      requestId: string;
+      draftId: string;
+      expectedRevision: number;
+      expectedEpoch: number;
+      newSessionId: string;
+      reason: string;
+    },
+  ): Promise<TemplateDraftRecord> {
+    if (!actor || !actor.userId) {
+      throw new TemplateServiceError('UNAUTHENTICATED', 'Staff identity required', 401);
+    }
+    if (actor.role !== 'admin') {
+      throw new TemplateServiceError('FORBIDDEN', 'Only administrators can take over draft leases', 403);
+    }
+    if (!input.draftId?.trim() || !input.newSessionId?.trim() || !input.requestId?.trim()) {
+      throw new TemplateServiceError('INVALID_INPUT', 'draftId, newSessionId, and requestId are required', 400);
+    }
+    if (!Number.isInteger(input.expectedRevision) || input.expectedRevision < 1) {
+      throw new TemplateServiceError('INVALID_INPUT', 'expectedRevision must be a positive integer', 400);
+    }
+    if (!Number.isInteger(input.expectedEpoch) || input.expectedEpoch < 0) {
+      throw new TemplateServiceError('INVALID_INPUT', 'expectedEpoch must be a non-negative integer', 400);
+    }
+    const trimmedReason = (input.reason ?? '').trim();
+    if (trimmedReason.length < 3 || trimmedReason.length > 500) {
+      throw new TemplateServiceError('INVALID_INPUT', 'Takeover reason must be between 3 and 500 characters', 400);
+    }
+
+    const result = await this.repo.takeoverDraft(actor.userId, {
+      requestId: input.requestId.trim(),
+      draftId: input.draftId.trim(),
+      expectedRevision: input.expectedRevision,
+      expectedEpoch: input.expectedEpoch,
+      newSessionId: input.newSessionId.trim(),
+      reason: trimmedReason,
+    });
+
+    if (!result.ok) {
+      throw new TemplateServiceError(result.code, result.message);
+    }
+
+    return result.value;
+  }
+
+  async discardDraft(
+    actor: StaffIdentity,
+    input: {
+      requestId: string;
+      draftId: string;
+      expectedRevision: number;
+      sessionId: string;
+      epoch: number;
+    },
+  ): Promise<{ draftId: string; discarded: boolean }> {
+    if (!actor || !actor.userId) {
+      throw new TemplateServiceError('UNAUTHENTICATED', 'Staff identity required', 401);
+    }
+    if (!input.draftId?.trim() || !input.sessionId?.trim() || !input.requestId?.trim()) {
+      throw new TemplateServiceError('INVALID_INPUT', 'draftId, sessionId, and requestId are required', 400);
+    }
+    if (!Number.isInteger(input.expectedRevision) || input.expectedRevision < 1) {
+      throw new TemplateServiceError('INVALID_INPUT', 'expectedRevision must be a positive integer', 400);
+    }
+    if (!Number.isInteger(input.epoch) || input.epoch < 0) {
+      throw new TemplateServiceError('INVALID_INPUT', 'epoch must be a non-negative integer', 400);
+    }
+
+    const result = await this.repo.discardDraft(actor.userId, {
+      requestId: input.requestId.trim(),
+      draftId: input.draftId.trim(),
+      expectedRevision: input.expectedRevision,
+      sessionId: input.sessionId.trim(),
+      epoch: input.epoch,
+    });
+
+    if (!result.ok) {
+      throw new TemplateServiceError(result.code, result.message);
+    }
+
+    return result.value;
   }
 }

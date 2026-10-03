@@ -1,0 +1,288 @@
+export type SaveStatus =
+  | 'idle'
+  | 'dirty'
+  | 'saving'
+  | 'saved'
+  | 'conflict'
+  | 'error'
+  | 'stopped';
+
+export class DraftAutosaveError extends Error {
+  readonly code?: string;
+
+  constructor(message: string, code?: string) {
+    super(message);
+    this.name = 'DraftAutosaveError';
+    this.code = code;
+  }
+}
+
+export interface DraftSaveTransportResult {
+  revision: number;
+  updatedAt?: string;
+  requestId?: string;
+}
+
+export type DraftSaveResult =
+  | { ok: true; value: DraftSaveTransportResult }
+  | { ok: false; code?: string; message?: string };
+
+export type DraftTimerId = NodeJS.Timeout | number | unknown;
+
+export interface DraftAutosaveOptions<TDocument> {
+  initialRevision: number;
+  debounceMs?: number;
+  maxWaitMs?: number;
+  saveTransport: (input: {
+    document: TDocument;
+    expectedRevision: number;
+    requestId: string;
+  }) => Promise<DraftSaveResult>;
+  onStatusChange?: (
+    status: SaveStatus,
+    details?: { code?: string; message?: string; revision?: number }
+  ) => void;
+  now?: () => number;
+  timer?: {
+    setTimeout: (cb: () => void, ms: number) => DraftTimerId;
+    clearTimeout: (id: DraftTimerId) => void;
+  };
+  generateRequestId?: (expectedRevision: number) => string;
+}
+
+interface FlushWaiter {
+  resolve: (res: { revision: number }) => void;
+  reject: (err: Error) => void;
+}
+
+export class DraftAutosaveQueue<TDocument> {
+  private readonly debounceMs: number;
+  private readonly maxWaitMs: number;
+  private readonly saveTransport: (input: {
+    document: TDocument;
+    expectedRevision: number;
+    requestId: string;
+  }) => Promise<DraftSaveResult>;
+  private readonly onStatusChange?: (
+    status: SaveStatus,
+    details?: { code?: string; message?: string; revision?: number }
+  ) => void;
+  private readonly now: () => number;
+  private readonly timer: {
+    setTimeout: (cb: () => void, ms: number) => DraftTimerId;
+    clearTimeout: (id: DraftTimerId) => void;
+  };
+  private readonly generateRequestId?: (expectedRevision: number) => string;
+
+  private revision: number;
+  private status: SaveStatus = 'idle';
+  private latestDocument: TDocument | null = null;
+  private pendingDocument: TDocument | null = null;
+  private inFlightPromise: Promise<void> | null = null;
+  private debounceTimer: DraftTimerId = null;
+  private firstDirtyAt: number | null = null;
+  private reqCounter = 0;
+  private flushWaiters: FlushWaiter[] = [];
+  private lastErrorDetails?: { code?: string; message?: string };
+
+  constructor(options: DraftAutosaveOptions<TDocument>) {
+    this.revision = options.initialRevision;
+    this.debounceMs = options.debounceMs ?? 800;
+    this.maxWaitMs = options.maxWaitMs ?? 5000;
+    this.saveTransport = options.saveTransport;
+    this.onStatusChange = options.onStatusChange;
+    this.now = options.now ?? Date.now;
+    this.timer = options.timer ?? {
+      setTimeout: (cb, ms) => setTimeout(cb, ms),
+      clearTimeout: (id) => clearTimeout(id as NodeJS.Timeout),
+    };
+    this.generateRequestId = options.generateRequestId;
+  }
+
+  enqueue(document: TDocument): void {
+    if (this.status === 'conflict' || this.status === 'stopped') {
+      return;
+    }
+
+    this.latestDocument = document;
+    this.pendingDocument = document;
+
+    const currentTime = this.now();
+    if (this.firstDirtyAt === null) {
+      this.firstDirtyAt = currentTime;
+    }
+
+    this.setStatus('dirty');
+
+    if (this.debounceTimer !== null) {
+      this.timer.clearTimeout(this.debounceTimer);
+      this.debounceTimer = null;
+    }
+
+    const elapsed = currentTime - this.firstDirtyAt;
+    const remainingMaxWait = this.maxWaitMs - elapsed;
+
+    if (remainingMaxWait <= 0) {
+      this.triggerSave();
+    } else {
+      const waitTime = Math.min(this.debounceMs, remainingMaxWait);
+      this.debounceTimer = this.timer.setTimeout(() => {
+        this.debounceTimer = null;
+        this.triggerSave();
+      }, waitTime);
+    }
+  }
+
+  async flush(): Promise<{ revision: number }> {
+    if (this.status === 'conflict' || this.status === 'stopped') {
+      const code = this.lastErrorDetails?.code ?? this.status;
+      const msg = this.lastErrorDetails?.message ?? `Draft queue is halted (${this.status})`;
+      throw new DraftAutosaveError(msg, code);
+    }
+
+    if (this.debounceTimer !== null) {
+      this.timer.clearTimeout(this.debounceTimer);
+      this.debounceTimer = null;
+    }
+
+    if (this.pendingDocument !== null && this.inFlightPromise === null) {
+      this.triggerSave();
+    }
+
+    if (this.inFlightPromise === null && this.pendingDocument === null) {
+      if (this.status === 'error') {
+        const code = this.lastErrorDetails?.code ?? 'SAVE_ERROR';
+        const msg = this.lastErrorDetails?.message ?? 'Draft save failed';
+        throw new DraftAutosaveError(msg, code);
+      }
+      return { revision: this.revision };
+    }
+
+    const { promise, resolve, reject } = Promise.withResolvers<{ revision: number }>();
+    this.flushWaiters.push({ resolve, reject });
+    return promise;
+  }
+
+  stop(reason?: string): void {
+    if (this.debounceTimer !== null) {
+      this.timer.clearTimeout(this.debounceTimer);
+      this.debounceTimer = null;
+    }
+    this.lastErrorDetails = { code: 'STOPPED', message: reason };
+    this.setStatus('stopped', { message: reason });
+    this.drainFlushWaiters(new DraftAutosaveError(reason ?? 'Queue stopped', 'STOPPED'));
+  }
+
+  getRevision(): number {
+    return this.revision;
+  }
+
+  getStatus(): SaveStatus {
+    return this.status;
+  }
+
+  getLatestDocument(): TDocument | null {
+    return this.latestDocument;
+  }
+
+  dispose(): void {
+    if (this.debounceTimer !== null) {
+      this.timer.clearTimeout(this.debounceTimer);
+      this.debounceTimer = null;
+    }
+    this.drainFlushWaiters(new DraftAutosaveError('Queue disposed', 'DISPOSED'));
+  }
+
+  private setStatus(
+    status: SaveStatus,
+    details?: { code?: string; message?: string; revision?: number }
+  ): void {
+    this.status = status;
+    this.onStatusChange?.(status, details);
+  }
+
+  private drainFlushWaiters(err?: Error): void {
+    const waiters = this.flushWaiters;
+    this.flushWaiters = [];
+    for (const waiter of waiters) {
+      if (err) {
+        waiter.reject(err);
+      } else {
+        waiter.resolve({ revision: this.revision });
+      }
+    }
+  }
+
+  private triggerSave(): void {
+    if (this.inFlightPromise !== null || this.pendingDocument === null) {
+      return;
+    }
+
+    const docToSave = this.pendingDocument;
+    this.pendingDocument = null;
+    this.firstDirtyAt = null;
+
+    const expectedRev = this.revision;
+    const reqId = this.generateRequestId
+      ? this.generateRequestId(expectedRev)
+      : `req:${expectedRev}:${this.now()}:${++this.reqCounter}`;
+
+    this.setStatus('saving');
+
+    const savePromise = (async () => {
+      try {
+        const res = await this.saveTransport({
+          document: docToSave,
+          expectedRevision: expectedRev,
+          requestId: reqId,
+        });
+
+        if (res.ok) {
+          this.revision = res.value.revision;
+          this.lastErrorDetails = undefined;
+          if (this.pendingDocument !== null) {
+            this.inFlightPromise = null;
+            this.triggerSave();
+          } else {
+            this.setStatus('saved', { revision: this.revision });
+            this.drainFlushWaiters();
+          }
+        } else {
+          this.lastErrorDetails = { code: res.code, message: res.message };
+          const isConflict =
+            res.code === 'REVISION_CONFLICT' ||
+            res.code === 'LEASE_LOST' ||
+            res.code === 'LEASE_CONFLICT' ||
+            res.code === 'LEASE_EXPIRED' ||
+            res.code === 'ORDER_LOCKED' ||
+            res.code === 'PRODUCTION_CHANGED';
+
+          this.pendingDocument = docToSave;
+          if (isConflict) {
+            this.setStatus('conflict', { code: res.code, message: res.message });
+          } else {
+            this.setStatus('error', { code: res.code, message: res.message });
+          }
+
+          const err = new DraftAutosaveError(
+            res.message ?? `Save failed with code ${res.code}`,
+            res.code,
+          );
+          this.drainFlushWaiters(err);
+        }
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : 'Save connection failure';
+        this.lastErrorDetails = { code: 'NETWORK_ERROR', message: msg };
+        this.pendingDocument = docToSave;
+        this.setStatus('error', { message: msg });
+
+        const errorObj = new DraftAutosaveError(msg, 'NETWORK_ERROR');
+        this.drainFlushWaiters(errorObj);
+      } finally {
+        this.inFlightPromise = null;
+      }
+    })();
+
+    this.inFlightPromise = savePromise;
+  }
+}

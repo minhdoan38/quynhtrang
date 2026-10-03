@@ -185,6 +185,15 @@ function parseRpcError(error: unknown): { code: TemplateErrorCode | string; mess
   if (msg.includes('OPERATION_CONFLICT') || msg.includes('REVISION_CONFLICT')) {
     return { code: 'REVISION_CONFLICT', message: msg };
   }
+  if (msg.includes('LEASE_CONFLICT') || msg.includes('LEASE_LOST')) {
+    return { code: 'LEASE_CONFLICT', message: msg };
+  }
+  if (msg.includes('LEASE_EXPIRED')) {
+    return { code: 'LEASE_EXPIRED', message: msg };
+  }
+  if (msg.includes('LEASE_ACTIVE')) {
+    return { code: 'FORBIDDEN', message: msg };
+  }
   if (msg.includes('UNAUTHENTICATED')) {
     return { code: 'UNAUTHENTICATED', message: msg };
   }
@@ -418,6 +427,201 @@ export class TemplateRepository {
       return {
         ok: true,
         value: mapTemplateRow(tmplRow),
+      };
+    } catch (err: unknown) {
+      const parsed = parseRpcError(err);
+      return { ok: false, code: parsed.code, message: parsed.message };
+    }
+  }
+
+  async acquireLease(
+    actor: string,
+    input: { requestId: string; draftId: string; sessionId: string },
+  ): Promise<TemplateRepoResult<TemplateDraftRecord>> {
+    try {
+      const { data, error } = await this.client.rpc('template_acquire_draft_lease', {
+        p_actor: actor,
+        p_request: input.requestId,
+        p_draft_id: input.draftId,
+        p_session_id: input.sessionId,
+      });
+
+      if (error) {
+        const parsed = parseRpcError(error);
+        return { ok: false, code: parsed.code, message: parsed.message };
+      }
+
+      const resp = data && typeof data === 'object' ? (data as Record<string, unknown>) : null;
+      if (!resp || !resp.ok || !resp.draft) {
+        const errCode = typeof resp?.code === 'string' ? (resp.code as TemplateErrorCode) : 'INTERNAL_ERROR';
+        const errMsg = typeof resp?.message === 'string' ? resp.message : 'Failed to acquire lease';
+        return { ok: false, code: errCode, message: errMsg };
+      }
+
+      const draftRow = resp.draft as DatabaseDraftRow;
+      return { ok: true, value: mapDraftRow(draftRow) };
+    } catch (err: unknown) {
+      const parsed = parseRpcError(err);
+      return { ok: false, code: parsed.code, message: parsed.message };
+    }
+  }
+
+  async heartbeatLease(
+    actor: string,
+    input: { requestId: string; draftId: string; sessionId: string; epoch: number },
+  ): Promise<TemplateRepoResult<{ sessionId: string; epoch: number; expiresAt: string }>> {
+    try {
+      const { data, error } = await this.client.rpc('template_heartbeat_draft_lease', {
+        p_actor: actor,
+        p_request: input.requestId,
+        p_draft_id: input.draftId,
+        p_session_id: input.sessionId,
+        p_epoch: input.epoch,
+      });
+
+      if (error) {
+        const parsed = parseRpcError(error);
+        return { ok: false, code: parsed.code, message: parsed.message };
+      }
+
+      const resp = data && typeof data === 'object' ? (data as Record<string, unknown>) : null;
+      if (!resp || !resp.ok || !resp.value) {
+        const errCode = typeof resp?.code === 'string' ? (resp.code as TemplateErrorCode) : 'INTERNAL_ERROR';
+        const errMsg = typeof resp?.message === 'string' ? resp.message : 'Failed to heartbeat lease';
+        return { ok: false, code: errCode, message: errMsg };
+      }
+
+      const val = resp.value as { sessionId: string; epoch: number; expiresAt: string };
+      return { ok: true, value: val };
+    } catch (err: unknown) {
+      const parsed = parseRpcError(err);
+      return { ok: false, code: parsed.code, message: parsed.message };
+    }
+  }
+
+  async saveDraft(
+    actor: string,
+    input: {
+      requestId: string;
+      draftId: string;
+      expectedRevision: number;
+      sessionId: string;
+      leaseEpoch: number;
+      document: DesignState;
+    },
+  ): Promise<TemplateRepoResult<{ revision: number; updatedAt: string; requestId: string }>> {
+    try {
+      const { data, error } = await this.client.rpc('template_save_draft', {
+        p_actor: actor,
+        p_request: input.requestId,
+        p_draft_id: input.draftId,
+        p_expected_revision: input.expectedRevision,
+        p_session_id: input.sessionId,
+        p_epoch: input.leaseEpoch,
+        p_document: input.document,
+        p_document_schema_version: 1,
+      });
+
+      if (error) {
+        const parsed = parseRpcError(error);
+        return { ok: false, code: parsed.code, message: parsed.message };
+      }
+
+      const resp = data && typeof data === 'object' ? (data as Record<string, unknown>) : null;
+      if (!resp || !resp.ok || !resp.value) {
+        const errCode = typeof resp?.code === 'string' ? (resp.code as TemplateErrorCode) : 'INTERNAL_ERROR';
+        const errMsg = typeof resp?.message === 'string' ? resp.message : 'Failed to save draft';
+        return { ok: false, code: errCode, message: errMsg };
+      }
+
+      const val = resp.value as { revision: number; updatedAt: string; requestId: string };
+      return { ok: true, value: val };
+    } catch (err: unknown) {
+      const parsed = parseRpcError(err);
+      return { ok: false, code: parsed.code, message: parsed.message };
+    }
+  }
+
+  async takeoverDraft(
+    actor: string,
+    input: {
+      requestId: string;
+      draftId: string;
+      expectedRevision: number;
+      expectedEpoch: number;
+      newSessionId: string;
+      reason: string;
+    },
+  ): Promise<TemplateRepoResult<TemplateDraftRecord>> {
+    try {
+      const { data, error } = await this.client.rpc('template_takeover_draft', {
+        p_actor: actor,
+        p_request: input.requestId,
+        p_draft_id: input.draftId,
+        p_expected_revision: input.expectedRevision,
+        p_expected_epoch: input.expectedEpoch,
+        p_new_session_id: input.newSessionId,
+        p_reason: input.reason,
+      });
+
+      if (error) {
+        const parsed = parseRpcError(error);
+        return { ok: false, code: parsed.code, message: parsed.message };
+      }
+
+      const resp = data && typeof data === 'object' ? (data as Record<string, unknown>) : null;
+      if (!resp || !resp.ok || !resp.draft) {
+        const errCode = typeof resp?.code === 'string' ? (resp.code as TemplateErrorCode) : 'INTERNAL_ERROR';
+        const errMsg = typeof resp?.message === 'string' ? resp.message : 'Failed to take over draft';
+        return { ok: false, code: errCode, message: errMsg };
+      }
+
+      const draftRow = resp.draft as DatabaseDraftRow;
+      return { ok: true, value: mapDraftRow(draftRow) };
+    } catch (err: unknown) {
+      const parsed = parseRpcError(err);
+      return { ok: false, code: parsed.code, message: parsed.message };
+    }
+  }
+
+  async discardDraft(
+    actor: string,
+    input: {
+      requestId: string;
+      draftId: string;
+      expectedRevision: number;
+      sessionId: string;
+      epoch: number;
+    },
+  ): Promise<TemplateRepoResult<{ draftId: string; discarded: boolean }>> {
+    try {
+      const { data, error } = await this.client.rpc('template_discard_draft', {
+        p_actor: actor,
+        p_request: input.requestId,
+        p_draft_id: input.draftId,
+        p_expected_revision: input.expectedRevision,
+        p_session_id: input.sessionId,
+        p_epoch: input.epoch,
+      });
+
+      if (error) {
+        const parsed = parseRpcError(error);
+        return { ok: false, code: parsed.code, message: parsed.message };
+      }
+
+      const resp = data && typeof data === 'object' ? (data as Record<string, unknown>) : null;
+      if (!resp || !resp.ok) {
+        const errCode = typeof resp?.code === 'string' ? (resp.code as TemplateErrorCode) : 'INTERNAL_ERROR';
+        const errMsg = typeof resp?.message === 'string' ? resp.message : 'Failed to discard draft';
+        return { ok: false, code: errCode, message: errMsg };
+      }
+
+      return {
+        ok: true,
+        value: {
+          draftId: String(resp.draftId ?? input.draftId),
+          discarded: Boolean(resp.discarded ?? true),
+        },
       };
     } catch (err: unknown) {
       const parsed = parseRpcError(err);
