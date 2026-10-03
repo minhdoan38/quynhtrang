@@ -578,6 +578,142 @@ begin
   end;
   if not v_denied then raise exception 'Deleting asset_events unexpectedly succeeded'; end if;
 
+
+  -- 8. Section 8: State 43 Task 5 RPCs (template_create, template_create_draft, template_patch_metadata)
+  -- 8.1 template_create with incomplete draft allowed and idempotent replay
+  declare
+    v_rpc_res jsonb;
+    v_rpc_res_replay jsonb;
+    v_conflict_raised boolean := false;
+    v_invalid_target_raised boolean := false;
+    v_tmpl_id text := 't5-test-template-1';
+    v_req_id text := '43000000-0000-0000-0000-0000000000c1';
+    v_payload jsonb;
+    v_changed_payload jsonb;
+    v_old_rev bigint;
+    v_new_rev bigint;
+    v_before_doc jsonb;
+    v_after_doc jsonb;
+    v_test_ver_id uuid := '43000000-0000-0000-0000-0000000000v1';
+  begin
+    v_payload := jsonb_build_object(
+      'id', v_tmpl_id,
+      'name', 'State 43 Test Template',
+      'productId', 'card',
+      'variantId', 'horizontal',
+      'categoryId', 'birthday',
+      'tags', jsonb_build_array('card', 'birthday'),
+      'sortOrder', 5,
+      'targetSnapshot', jsonb_build_object('productId', 'card', 'variantId', 'horizontal'),
+      'initialDocument', jsonb_build_object('elements', '[]'::jsonb, 'incomplete', true)
+    );
+
+    -- Create template as Editor
+    v_rpc_res := public.template_create(v_ed_id, v_req_id, v_payload);
+    if (v_rpc_res->>'ok')::boolean is not true then
+      raise exception 'template_create failed: %', v_rpc_res;
+    end if;
+    if v_rpc_res->'draft' is null then
+      raise exception 'template_create did not return draft';
+    end if;
+
+    -- Idempotent retry: same request ID, same actor, same payload
+    v_rpc_res_replay := public.template_create(v_ed_id, v_req_id, v_payload);
+    if v_rpc_res_replay <> v_rpc_res then
+      raise exception 'template_create idempotent replay returned different result';
+    end if;
+
+    -- Conflict: same request ID, changed payload
+    v_changed_payload := jsonb_set(v_payload, '{name}', '"Changed Template Name"');
+    begin
+      perform public.template_create(v_ed_id, v_req_id, v_changed_payload);
+    exception when sqlstate 'P0001' then
+      if sqlerrm = 'OPERATION_CONFLICT' then
+        v_conflict_raised := true;
+      else
+        raise;
+      end if;
+    end;
+    if not v_conflict_raised then
+      raise exception 'Changed payload with same request_id did not raise OPERATION_CONFLICT';
+    end if;
+
+    -- Invalid target: missing productId
+    begin
+      perform public.template_create(v_ed_id, '43000000-0000-0000-0000-0000000000c2', jsonb_build_object('id', 'inv-tmpl', 'name', 'Inv'));
+    exception when sqlstate 'P0001' then
+      v_invalid_target_raised := true;
+    end;
+    if not v_invalid_target_raised then
+      raise exception 'template_create with invalid target unexpectedly succeeded';
+    end if;
+
+    -- 8.2 Verify published artwork immutability during metadata patch
+    -- Insert published version for fixture template
+    insert into public.template_versions (id, template_id, version, design_document, published_by)
+    values (v_test_ver_id, v_tmpl_id, 1, '{"version": 1, "artwork": "published_immutable"}'::jsonb, v_ed_id);
+
+    update public.templates
+    set current_published_version_id = v_test_ver_id, status = 'published', published = true
+    where id = v_tmpl_id;
+
+    -- Record before document and revision
+    select design_document into v_before_doc from public.template_versions where id = v_test_ver_id;
+    select revision into v_old_rev from public.templates where id = v_tmpl_id;
+
+    -- Patch metadata as Editor
+    v_rpc_res := public.template_patch_metadata(
+      v_ed_id,
+      '43000000-0000-0000-0000-0000000000p1',
+      v_tmpl_id,
+      v_old_rev,
+      jsonb_build_object('name', 'Patched Template Name', 'sortOrder', 10)
+    );
+
+    select design_document into v_after_doc from public.template_versions where id = v_test_ver_id;
+    select revision into v_new_rev from public.templates where id = v_tmpl_id;
+
+    -- DB transaction assertions
+    if v_before_doc is distinct from v_after_doc then
+      raise exception 'metadata edit changed published artwork';
+    end if;
+    if v_new_rev <> v_old_rev + 1 then
+      raise exception 'metadata CAS did not advance once';
+    end if;
+
+    -- CAS rejection on stale revision
+    begin
+      v_conflict_raised := false;
+      perform public.template_patch_metadata(
+        v_ed_id,
+        '43000000-0000-0000-0000-0000000000p2',
+        v_tmpl_id,
+        v_old_rev, -- stale revision!
+        jsonb_build_object('name', 'Stale Patch')
+      );
+    exception when sqlstate 'P0001' then
+      if sqlerrm = 'REVISION_CONFLICT' then
+        v_conflict_raised := true;
+      else
+        raise;
+      end if;
+    end;
+    if not v_conflict_raised then
+      raise exception 'Stale expected revision did not raise REVISION_CONFLICT';
+    end if;
+
+    -- 8.3 template_create_draft: existing draft returned unchanged
+    v_rpc_res := public.template_create_draft(
+      v_ed_id,
+      '43000000-0000-0000-0000-0000000000d1',
+      v_tmpl_id,
+      v_new_rev,
+      v_test_ver_id
+    );
+    if (v_rpc_res->>'ok')::boolean is not true then
+      raise exception 'template_create_draft failed';
+    end if;
+  end;
 end $$;
 
 rollback;

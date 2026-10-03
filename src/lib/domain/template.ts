@@ -27,6 +27,49 @@ export interface TemplateMutation {
   requestId: string;
 }
 
+export interface TemplateMetadataPatch {
+  name?: string;
+  categoryId?: string | null;
+  tags?: string[];
+  sortOrder?: number;
+}
+
+export interface CreateTemplateRepoInput {
+  requestId: string;
+  id: string;
+  name: string;
+  productId: ProductId;
+  variantId: string;
+  productMode: 'pattern' | 'full-sheet' | null;
+  fixedStickerShape: FixedStickerShape | null;
+  categoryId?: string | null;
+  tags?: string[];
+  sortOrder?: number;
+  targetSnapshot: Record<string, unknown>;
+  initialDocument: DesignState;
+}
+
+export interface AdminTemplateListQuery {
+  status?: TemplateStatus;
+  productId?: string;
+  categoryId?: string;
+  search?: string;
+  page?: number;
+  pageSize?: number;
+}
+
+export interface TemplateVersionSummary {
+  id: string;
+  version: number;
+  publishedAt: string;
+  publishedBy: string | null;
+  revisionNote: string | null;
+}
+
+export type TemplateRepoResult<T> =
+  | { ok: true; value: T }
+  | { ok: false; code: TemplateErrorCode | string; message: string };
+
 export interface TemplateDraftGuard {
   templateId: string;
   draftId: string;

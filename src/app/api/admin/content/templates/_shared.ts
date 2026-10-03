@@ -11,10 +11,18 @@ import {
   templateServiceStatuses,
   type TemplateErrorCode,
 } from '../../../../../lib/domain/template.ts';
+import { TemplateRepository } from '../../../../../lib/repositories/template-repository.ts';
+import { TemplateManagementService } from '../../../../../lib/services/template-management.ts';
+import { createPrivilegedSupabaseClient } from '../../../../../lib/supabase/admin.ts';
 
-export { AuthorizationError, TemplateServiceError, templateServiceStatuses };
+export {
+  AuthorizationError,
+  TemplateServiceError,
+  templateServiceStatuses,
+  TemplateRepository,
+  TemplateManagementService,
+};
 export type { TemplateErrorCode };
-
 export class InvalidRouteInput extends Error {
   constructor(message: string) {
     super(message);
@@ -44,10 +52,16 @@ export function requiredRoleForAction(action: TemplateAction): 'admin' | 'editor
 
 export interface TemplateRouteDependencies {
   requireStaff?: (request?: Request, requiredRole?: 'admin' | 'editor') => Promise<StaffIdentity>;
-  createRepository?: () => Promise<unknown> | unknown;
+  createRepository?: () => Promise<TemplateRepository> | TemplateRepository;
+  createPrivilegedRepository?: () => Promise<TemplateRepository> | TemplateRepository;
+  createService?: () => Promise<TemplateManagementService> | TemplateManagementService;
   supabaseClient?: SupabaseClient;
+  service?: TemplateManagementService;
 }
 
+export type NonDynamicRouteContext = {
+  params?: Promise<Record<string, string>>;
+} & TemplateRouteDependencies;
 export function assertTemplateOrigin(request: Request): void {
   const method = request.method ? request.method.toUpperCase() : 'GET';
   if (method === 'GET' || method === 'HEAD' || method === 'OPTIONS') {
@@ -101,7 +115,12 @@ export async function getStaffTemplateContext(
   request?: Request,
   dependencies: TemplateRouteDependencies = {},
   requiredRole?: 'admin' | 'editor',
-): Promise<{ staff: StaffIdentity; repo?: unknown; supabaseClient?: SupabaseClient }> {
+): Promise<{
+  staff: StaffIdentity;
+  repo?: TemplateRepository;
+  service?: TemplateManagementService;
+  supabaseClient?: SupabaseClient;
+}> {
   if (request) {
     assertTemplateOrigin(request);
   }
@@ -110,14 +129,32 @@ export async function getStaffTemplateContext(
     ? await dependencies.requireStaff(request, requiredRole)
     : await authorizeStaff(request, requiredRole, { supabaseClient: dependencies.supabaseClient });
 
-  // ponytail: T05 wires TemplateRepository instance; until then, inject or undefined
-  const repo = dependencies.createRepository
-    ? await dependencies.createRepository()
-    : undefined;
+  let repo: TemplateRepository | undefined;
+  if (dependencies.createRepository) {
+    repo = await dependencies.createRepository();
+  } else if (dependencies.createPrivilegedRepository) {
+    repo = await dependencies.createPrivilegedRepository();
+  } else if (dependencies.supabaseClient) {
+    repo = new TemplateRepository(dependencies.supabaseClient);
+  } else {
+    try {
+      repo = new TemplateRepository(createPrivilegedSupabaseClient());
+    } catch {
+      repo = undefined;
+    }
+  }
+
+  const service = dependencies.service
+    ?? (dependencies.createService
+      ? await dependencies.createService()
+      : repo
+        ? new TemplateManagementService(repo)
+        : undefined);
 
   return {
     staff,
     repo,
+    service,
     supabaseClient: dependencies.supabaseClient,
   };
 }

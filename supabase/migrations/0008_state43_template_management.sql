@@ -510,3 +510,436 @@ grant select on table
   public.template_validation_runs,
   public.template_operations
 to anon, authenticated;
+
+-- 18. Template Management RPCs (State 43 Task 5)
+alter table public.templates add column if not exists updated_by uuid references auth.users(id) on delete set null;
+
+alter table public.template_operations drop constraint if exists template_operations_operation_check;
+alter table public.template_operations add constraint template_operations_operation_check
+  check (operation in ('create', 'create_draft', 'publish', 'clone', 'duplicate', 'archive', 'republish', 'discard', 'takeover', 'delete', 'patch_metadata', 'save_draft'));
+
+-- 18.1 Authorize actor helper
+create or replace function public.template_authorize_actor(p_actor uuid, p_required_role text default 'editor')
+returns void
+language plpgsql
+security invoker
+set search_path = public, pg_temp
+as $$
+declare
+  v_role text;
+begin
+  if p_actor is null then
+    raise exception 'UNAUTHENTICATED' using errcode = 'P0001';
+  end if;
+  select role into v_role from public.staff_roles where user_id = p_actor;
+  if v_role is null or (p_required_role = 'admin' and v_role <> 'admin') or (p_required_role = 'editor' and v_role not in ('admin', 'editor')) then
+    raise exception 'FORBIDDEN' using errcode = 'P0001';
+  end if;
+end;
+$$;
+
+-- 18.2 template_create RPC
+create or replace function public.template_create(
+  p_actor uuid,
+  p_request text,
+  p_payload jsonb
+)
+returns jsonb
+language plpgsql
+security invoker
+set search_path = public, pg_temp
+as $$
+declare
+  v_payload_hash text;
+  v_op record;
+  v_id text;
+  v_name text;
+  v_product_id text;
+  v_variant_id text;
+  v_product_mode text;
+  v_fixed_sticker_shape text;
+  v_category_id text;
+  v_tags text[];
+  v_sort_order integer;
+  v_target_snapshot jsonb;
+  v_initial_document jsonb;
+  v_template record;
+  v_draft record;
+  v_result jsonb;
+begin
+  perform public.template_authorize_actor(p_actor, 'editor');
+
+  if p_request is null or btrim(p_request) = '' then
+    raise exception 'INVALID_REQUEST_ID' using errcode = 'P0001';
+  end if;
+
+  v_payload_hash := md5(p_payload::text);
+
+  -- Check template_operations for idempotency
+  select * into v_op from public.template_operations where request_id = p_request;
+  if found then
+    if v_op.actor_user_id is distinct from p_actor or v_op.payload_hash <> v_payload_hash then
+      raise exception 'OPERATION_CONFLICT' using errcode = 'P0001';
+    end if;
+    return v_op.result;
+  end if;
+
+  -- Extract fields
+  v_id := btrim(coalesce(p_payload->>'id', p_payload->>'templateId', ''));
+  if v_id = '' then
+    raise exception 'INVALID_INPUT: id is required' using errcode = 'P0001';
+  end if;
+
+  v_name := btrim(coalesce(p_payload->>'name', ''));
+  if char_length(v_name) < 1 or char_length(v_name) > 120 then
+    raise exception 'INVALID_INPUT: name must be 1 to 120 characters' using errcode = 'P0001';
+  end if;
+
+  v_product_id := coalesce(p_payload->>'productId', p_payload->>'product_id');
+  v_variant_id := coalesce(p_payload->>'variantId', p_payload->>'variant_id');
+  v_product_mode := coalesce(p_payload->>'productMode', p_payload->>'product_mode');
+  v_fixed_sticker_shape := coalesce(p_payload->>'fixedStickerShape', p_payload->>'fixed_sticker_shape');
+
+  if v_product_id is null or v_variant_id is null then
+    raise exception 'INVALID_INPUT: target productId and variantId required' using errcode = 'P0001';
+  end if;
+
+  v_category_id := coalesce(p_payload->>'categoryId', p_payload->>'category_id');
+  if v_category_id is not null and v_category_id <> '' then
+    if not exists (select 1 from public.template_categories where id = v_category_id) then
+      raise exception 'INVALID_CATEGORY' using errcode = 'P0001';
+    end if;
+  else
+    v_category_id := null;
+  end if;
+
+  v_tags := coalesce(array(select jsonb_array_elements_text(coalesce(p_payload->'tags', '[]'::jsonb))), '{}'::text[]);
+  if cardinality(v_tags) > 20 then
+    raise exception 'INVALID_INPUT: tags cannot exceed 20' using errcode = 'P0001';
+  end if;
+
+  v_sort_order := coalesce((p_payload->>'sortOrder')::integer, (p_payload->>'sort_order')::integer, 0);
+  v_target_snapshot := coalesce(p_payload->'targetSnapshot', p_payload->'target_snapshot', '{}'::jsonb);
+  v_initial_document := coalesce(p_payload->'initialDocument', p_payload->'initial_document', '{}'::jsonb);
+
+  -- Insert into templates
+  insert into public.templates (
+    id, name, product_id, variant_id, product_mode, fixed_sticker_shape,
+    category_id, tags, sort_order, target_snapshot, status, revision,
+    created_by, updated_by, created_at, updated_at
+  ) values (
+    v_id, v_name, v_product_id, v_variant_id, v_product_mode, v_fixed_sticker_shape,
+    v_category_id, v_tags, v_sort_order, v_target_snapshot, 'draft', 1,
+    p_actor, p_actor, now(), now()
+  ) returning * into v_template;
+
+  -- Insert initial draft
+  insert into public.template_drafts (
+    template_id, based_on_version_id, design_document, document_schema_version,
+    draft_revision, created_by, updated_by, created_at, updated_at
+  ) values (
+    v_id, null, v_initial_document, 1,
+    1, p_actor, p_actor, now(), now()
+  ) returning * into v_draft;
+
+  -- Insert asset_event
+  insert into public.asset_events (
+    actor_user_id, request_id, kind, target_id, before_revision, after_revision, event, metadata_diff
+  ) values (
+    p_actor,
+    case when p_request ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' then p_request::uuid else null end,
+    'template',
+    v_id,
+    null,
+    1,
+    'created',
+    jsonb_build_object('name', v_name, 'productId', v_product_id, 'variantId', v_variant_id)
+  );
+
+  v_result := jsonb_build_object(
+    'ok', true,
+    'template', to_jsonb(v_template),
+    'draft', to_jsonb(v_draft)
+  );
+
+  -- Record template_operations
+  insert into public.template_operations (
+    request_id, actor_user_id, operation, template_id, payload_hash, status, result
+  ) values (
+    p_request, p_actor, 'create', v_id, v_payload_hash, 'completed', v_result
+  );
+
+  return v_result;
+end;
+$$;
+
+-- 18.3 template_create_draft RPC
+create or replace function public.template_create_draft(
+  p_actor uuid,
+  p_request text,
+  p_template_id text,
+  p_expected_catalog_revision bigint default null,
+  p_expected_base_version_id uuid default null
+)
+returns jsonb
+language plpgsql
+security invoker
+set search_path = public, pg_temp
+as $$
+declare
+  v_payload_hash text;
+  v_op record;
+  v_draft record;
+  v_template record;
+  v_version record;
+  v_result jsonb;
+begin
+  perform public.template_authorize_actor(p_actor, 'editor');
+
+  if p_request is null or btrim(p_request) = '' then
+    raise exception 'INVALID_REQUEST_ID' using errcode = 'P0001';
+  end if;
+
+  v_payload_hash := md5(jsonb_build_object(
+    'templateId', p_template_id,
+    'expectedCatalogRevision', p_expected_catalog_revision,
+    'expectedBaseVersionId', p_expected_base_version_id
+  )::text);
+
+  -- Check template_operations for idempotency
+  select * into v_op from public.template_operations where request_id = p_request;
+  if found then
+    if v_op.actor_user_id is distinct from p_actor or v_op.payload_hash <> v_payload_hash then
+      raise exception 'OPERATION_CONFLICT' using errcode = 'P0001';
+    end if;
+    return v_op.result;
+  end if;
+
+  -- If draft already exists, return it unchanged (unique template_id catches racing open)
+  select * into v_draft from public.template_drafts where template_id = p_template_id;
+  if found then
+    v_result := jsonb_build_object('ok', true, 'draft', to_jsonb(v_draft));
+    insert into public.template_operations (
+      request_id, actor_user_id, operation, template_id, payload_hash, status, result
+    ) values (
+      p_request, p_actor, 'create_draft', p_template_id, v_payload_hash, 'completed', v_result
+    );
+    return v_result;
+  end if;
+
+  -- Template must exist
+  select * into v_template from public.templates where id = p_template_id;
+  if not found then
+    raise exception 'NOT_FOUND: template not found' using errcode = 'P0001';
+  end if;
+
+  if p_expected_catalog_revision is not null and v_template.revision <> p_expected_catalog_revision then
+    raise exception 'REVISION_CONFLICT' using errcode = 'P0001';
+  end if;
+
+  -- Select base version: explicit version ID or template's current_published_version_id
+  if p_expected_base_version_id is not null then
+    select * into v_version
+    from public.template_versions
+    where template_id = p_template_id and id = p_expected_base_version_id;
+    if not found then
+      raise exception 'NOT_FOUND: base version not found' using errcode = 'P0001';
+    end if;
+  elsif v_template.current_published_version_id is not null then
+    select * into v_version
+    from public.template_versions
+    where template_id = p_template_id and id = v_template.current_published_version_id;
+    if not found then
+      raise exception 'NOT_FOUND: current published version not found' using errcode = 'P0001';
+    end if;
+  else
+    raise exception 'INVALID_TRANSITION: template has no published version to base draft on' using errcode = 'P0001';
+  end if;
+
+  -- Insert new draft from version immutable json
+  insert into public.template_drafts (
+    template_id, based_on_version_id, design_document, document_schema_version,
+    draft_revision, created_by, updated_by, created_at, updated_at
+  ) values (
+    p_template_id, v_version.id, v_version.design_document, coalesce(v_version.document_schema_version, 1),
+    1, p_actor, p_actor, now(), now()
+  )
+  on conflict (template_id) do nothing
+  returning * into v_draft;
+
+  if v_draft is null then
+    -- Conflict caught racing open
+    select * into v_draft from public.template_drafts where template_id = p_template_id;
+  else
+    -- Log draft_created event
+    insert into public.asset_events (
+      actor_user_id, request_id, kind, target_id, before_revision, after_revision, event, metadata_diff
+    ) values (
+      p_actor,
+      case when p_request ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' then p_request::uuid else null end,
+      'template',
+      p_template_id,
+      null,
+      1,
+      'draft_created',
+      jsonb_build_object('basedOnVersionId', v_version.id)
+    );
+  end if;
+
+  v_result := jsonb_build_object('ok', true, 'draft', to_jsonb(v_draft));
+
+  insert into public.template_operations (
+    request_id, actor_user_id, operation, template_id, payload_hash, status, result
+  ) values (
+    p_request, p_actor, 'create_draft', p_template_id, v_payload_hash, 'completed', v_result
+  );
+
+  return v_result;
+end;
+$$;
+
+-- 18.4 template_patch_metadata RPC
+create or replace function public.template_patch_metadata(
+  p_actor uuid,
+  p_request text,
+  p_template_id text,
+  p_expected_revision bigint,
+  p_patch jsonb
+)
+returns jsonb
+language plpgsql
+security invoker
+set search_path = public, pg_temp
+as $$
+declare
+  v_payload_hash text;
+  v_op record;
+  v_template record;
+  v_updated record;
+  v_name text;
+  v_category_id text;
+  v_tags text[];
+  v_sort_order integer;
+  v_result jsonb;
+begin
+  perform public.template_authorize_actor(p_actor, 'editor');
+
+  if p_request is null or btrim(p_request) = '' then
+    raise exception 'INVALID_REQUEST_ID' using errcode = 'P0001';
+  end if;
+
+  v_payload_hash := md5(jsonb_build_object(
+    'expectedRevision', p_expected_revision,
+    'patch', p_patch
+  )::text);
+
+  -- Check template_operations for idempotency
+  select * into v_op from public.template_operations where request_id = p_request;
+  if found then
+    if v_op.actor_user_id is distinct from p_actor or v_op.payload_hash <> v_payload_hash then
+      raise exception 'OPERATION_CONFLICT' using errcode = 'P0001';
+    end if;
+    return v_op.result;
+  end if;
+
+  -- Lock template for update
+  select * into v_template from public.templates where id = p_template_id for update;
+  if not found then
+    raise exception 'NOT_FOUND' using errcode = 'P0001';
+  end if;
+
+  -- CAS check
+  if v_template.revision <> p_expected_revision then
+    raise exception 'REVISION_CONFLICT' using errcode = 'P0001';
+  end if;
+
+  -- Validate patch fields
+  if p_patch ? 'name' then
+    v_name := btrim(coalesce(p_patch->>'name', ''));
+    if char_length(v_name) < 1 or char_length(v_name) > 120 then
+      raise exception 'INVALID_INPUT: name must be 1 to 120 characters' using errcode = 'P0001';
+    end if;
+  else
+    v_name := v_template.name;
+  end if;
+
+  if p_patch ? 'categoryId' or p_patch ? 'category_id' then
+    v_category_id := coalesce(p_patch->>'categoryId', p_patch->>'category_id');
+    if v_category_id is not null and v_category_id <> '' then
+      if not exists (select 1 from public.template_categories where id = v_category_id) then
+        raise exception 'INVALID_CATEGORY' using errcode = 'P0001';
+      end if;
+    else
+      v_category_id := null;
+    end if;
+  else
+    v_category_id := v_template.category_id;
+  end if;
+
+  if p_patch ? 'tags' then
+    v_tags := coalesce(array(select jsonb_array_elements_text(coalesce(p_patch->'tags', '[]'::jsonb))), '{}'::text[]);
+    if cardinality(v_tags) > 20 then
+      raise exception 'INVALID_INPUT: tags cannot exceed 20' using errcode = 'P0001';
+    end if;
+  else
+    v_tags := v_template.tags;
+  end if;
+
+  if p_patch ? 'sortOrder' or p_patch ? 'sort_order' then
+    v_sort_order := coalesce((p_patch->>'sortOrder')::integer, (p_patch->>'sort_order')::integer, 0);
+  else
+    v_sort_order := v_template.sort_order;
+  end if;
+
+  -- Update template
+  update public.templates
+  set
+    name = v_name,
+    category_id = v_category_id,
+    tags = v_tags,
+    sort_order = v_sort_order,
+    revision = revision + 1,
+    updated_by = p_actor,
+    updated_at = now()
+  where id = p_template_id
+  returning * into v_updated;
+
+  -- Log asset_event
+  insert into public.asset_events (
+    actor_user_id, request_id, kind, target_id, before_revision, after_revision, event, metadata_diff
+  ) values (
+    p_actor,
+    case when p_request ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' then p_request::uuid else null end,
+    'template',
+    p_template_id,
+    p_expected_revision,
+    p_expected_revision + 1,
+    'metadata_patched',
+    p_patch
+  );
+
+  v_result := jsonb_build_object('ok', true, 'template', to_jsonb(v_updated));
+
+  -- Record template_operations
+  insert into public.template_operations (
+    request_id, actor_user_id, operation, template_id, payload_hash, status, result
+  ) values (
+    p_request, p_actor, 'patch_metadata', p_template_id, v_payload_hash, 'completed', v_result
+  );
+
+  return v_result;
+end;
+$$;
+
+-- 18.5 Revoke from public, anon, authenticated; grant strictly to service_role
+revoke all on function public.template_authorize_actor(uuid, text) from public, anon, authenticated;
+grant execute on function public.template_authorize_actor(uuid, text) to service_role;
+
+revoke all on function public.template_create(uuid, text, jsonb) from public, anon, authenticated;
+grant execute on function public.template_create(uuid, text, jsonb) to service_role;
+
+revoke all on function public.template_create_draft(uuid, text, text, bigint, uuid) from public, anon, authenticated;
+grant execute on function public.template_create_draft(uuid, text, text, bigint, uuid) to service_role;
+
+revoke all on function public.template_patch_metadata(uuid, text, text, bigint, jsonb) from public, anon, authenticated;
+grant execute on function public.template_patch_metadata(uuid, text, text, bigint, jsonb) to service_role;
