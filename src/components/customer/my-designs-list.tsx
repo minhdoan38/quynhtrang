@@ -83,9 +83,18 @@ export function MyDesignsList({ projects }: MyDesignsListProps) {
                   {doc.productId === 'sticker' && 'Sticker dán'}
                   {doc.productId === 'notebook' && 'Bìa sổ tay'}
                 </h3>
-                <div className="flex items-center gap-1.5 text-xs text-[#666A6D] mt-0.5">
-                  <Clock className="w-3.5 h-3.5" />
+                <div className="flex items-center gap-1.5 text-xs text-[#666A6D] mt-0.5 flex-wrap">
+                  <Clock className="w-3.5 h-3.5 shrink-0" />
                   <span>Cập nhật {timeAgo}</span>
+                  {(doc.sourceTemplate?.templateId || project.templateId) && (
+                    <>
+                      <span>•</span>
+                      <span className="inline-flex items-center gap-1 text-[#8C6226]">
+                        <Sparkles className="w-3 h-3" />
+                        <span>Mẫu thiết kế</span>
+                      </span>
+                    </>
+                  )}
                 </div>
               </div>
 

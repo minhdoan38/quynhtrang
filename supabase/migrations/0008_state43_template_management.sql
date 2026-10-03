@@ -3237,3 +3237,220 @@ $$;
 
 revoke all on function public.library_prepare_delete(uuid, uuid, text, text, bigint) from public, anon;
 grant execute on function public.library_prepare_delete(uuid, uuid, text, text, bigint) to authenticated;
+
+-- 29. clone_template_into_project RPC (State 43 Task 17)
+create or replace function public.clone_template_into_project(
+  p_actor uuid,
+  p_request text,
+  p_template_id text,
+  p_expected_version_id uuid,
+  p_target jsonb default null
+)
+returns jsonb
+language plpgsql
+security invoker
+set search_path = public, pg_temp
+as $$
+declare
+  v_payload_hash text;
+  v_op record;
+  v_existing_project record;
+  v_template record;
+  v_version record;
+  v_cloned_doc jsonb;
+  v_new_project record;
+  v_result jsonb;
+begin
+  -- 1. Actor authorization
+  if p_actor is null then
+    raise exception 'UNAUTHENTICATED' using errcode = 'P0001';
+  end if;
+
+  if auth.uid() is not null and auth.uid() <> p_actor then
+    raise exception 'FORBIDDEN: cannot clone template for another user' using errcode = 'P0001';
+  end if;
+
+  -- 2. Request validation
+  if p_request is null or btrim(p_request) = '' then
+    raise exception 'INVALID_REQUEST_ID' using errcode = 'P0001';
+  end if;
+
+  if p_template_id is null or btrim(p_template_id) = '' or p_expected_version_id is null then
+    raise exception 'INVALID_INPUT' using errcode = 'P0001';
+  end if;
+
+  v_payload_hash := md5(jsonb_build_object(
+    'templateId', p_template_id,
+    'expectedVersionId', p_expected_version_id,
+    'target', p_target
+  )::text);
+
+  -- 3. Idempotency check: project row
+  select id, current_working_revision, working_document
+  into v_existing_project
+  from public.projects
+  where owner_user_id = p_actor and clone_request_key = p_request;
+
+  if found then
+    return jsonb_build_object(
+      'project_id', v_existing_project.id,
+      'revision', v_existing_project.current_working_revision,
+      'document', v_existing_project.working_document
+    );
+  end if;
+
+  -- 4. Idempotency check: template_operations
+  select * into v_op from public.template_operations where request_id = p_request;
+  if found then
+    if v_op.actor_user_id is distinct from p_actor or v_op.payload_hash <> v_payload_hash then
+      raise exception 'OPERATION_CONFLICT' using errcode = 'P0001';
+    end if;
+    return v_op.result;
+  end if;
+
+  -- 5. Lock template FOR UPDATE
+  select * into v_template
+  from public.templates
+  where id = p_template_id
+  for update;
+
+  if not found then
+    raise exception 'NOT_FOUND: template not found' using errcode = 'P0001';
+  end if;
+
+  -- 6. Check template status and archived state
+  if v_template.status <> 'published' or v_template.archived_at is not null then
+    raise exception 'TEMPLATE_UNAVAILABLE: template is not available for cloning' using errcode = 'P0001';
+  end if;
+
+  -- 7. Check current published version
+  if v_template.current_published_version_id is distinct from p_expected_version_id then
+    raise exception 'TEMPLATE_CHANGED: expected version does not match current published version' using errcode = 'P0001';
+  end if;
+
+  -- 8. Fetch immutable version
+  select * into v_version
+  from public.template_versions
+  where id = p_expected_version_id;
+
+  if not found then
+    raise exception 'NOT_FOUND: template version not found' using errcode = 'P0001';
+  end if;
+
+  -- 9. Validate target if provided
+  if p_target is not null and p_target ? 'productId' and v_version.product_id <> (p_target->>'productId') then
+    raise exception 'TARGET_MISMATCH: target product does not match template' using errcode = 'P0001';
+  end if;
+
+  -- 10. Check dependencies availability
+  if exists (
+    select 1
+    from public.template_version_dependencies tvd
+    left join public.fonts f on tvd.family_id is not null and f.id = tvd.family_id
+    left join public.font_faces ff on tvd.asset_id is not null and tvd.asset_type = 'font_face' and ff.id::text = tvd.asset_id
+    left join public.sticker_assets sa on tvd.asset_id is not null and tvd.asset_type = 'sticker' and sa.id = tvd.asset_id
+    where tvd.version_id = p_expected_version_id
+      and (
+        (tvd.family_id is not null and (f.id is null or f.status = 'archived'))
+        or (tvd.asset_type = 'font_face' and (ff.id is null or ff.status = 'archived'))
+        or (tvd.asset_type = 'sticker' and (sa.id is null or sa.status = 'archived'))
+      )
+  ) then
+    raise exception 'TEMPLATE_UNAVAILABLE: template has blocked dependencies' using errcode = 'P0001';
+  end if;
+
+  -- 11. Clone version document, set sourceTemplate and documentSchemaVersion, preserving customerLocked
+  v_cloned_doc := v_version.design_document;
+  v_cloned_doc := jsonb_set(v_cloned_doc, '{templateId}', to_jsonb(p_template_id));
+  v_cloned_doc := jsonb_set(v_cloned_doc, '{sourceTemplate}', jsonb_build_object(
+    'templateId', p_template_id,
+    'templateVersionId', p_expected_version_id
+  ));
+  v_cloned_doc := jsonb_set(v_cloned_doc, '{documentSchemaVersion}', coalesce(to_jsonb(v_version.document_schema_version), '1'::jsonb));
+  v_cloned_doc := jsonb_set(v_cloned_doc, '{productId}', to_jsonb(v_version.product_id));
+  if v_version.variant_id is not null then
+    v_cloned_doc := jsonb_set(v_cloned_doc, '{variantId}', to_jsonb(v_version.variant_id));
+  end if;
+
+  -- 12. Insert into public.projects
+  insert into public.projects (
+    owner_user_id,
+    product_id,
+    variant_id,
+    status,
+    current_working_revision,
+    working_document,
+    source_template_id,
+    source_template_version_id,
+    clone_request_key,
+    created_at,
+    updated_at
+  ) values (
+    p_actor,
+    v_version.product_id,
+    v_version.variant_id,
+    'editing',
+    1,
+    v_cloned_doc,
+    p_template_id,
+    p_expected_version_id,
+    p_request,
+    now(),
+    now()
+  ) returning * into v_new_project;
+
+  -- 13. Log metadata-only template_used in asset_events
+  insert into public.asset_events (
+    actor_user_id,
+    request_id,
+    kind,
+    target_id,
+    before_revision,
+    after_revision,
+    event,
+    metadata_diff
+  ) values (
+    p_actor,
+    case when p_request ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' then p_request::uuid else null end,
+    'template',
+    p_template_id,
+    v_template.revision,
+    v_template.revision,
+    'template_used',
+    jsonb_build_object(
+      'project_id', v_new_project.id,
+      'version_id', p_expected_version_id
+    )
+  );
+
+  v_result := jsonb_build_object(
+    'project_id', v_new_project.id,
+    'revision', v_new_project.current_working_revision,
+    'document', v_new_project.working_document
+  );
+
+  -- 14. Record in template_operations
+  insert into public.template_operations (
+    request_id,
+    actor_user_id,
+    operation,
+    template_id,
+    payload_hash,
+    status,
+    result
+  ) values (
+    p_request,
+    p_actor,
+    'clone',
+    p_template_id,
+    v_payload_hash,
+    'completed',
+    v_result
+  );
+
+  return v_result;
+end;
+$$;
+
+revoke all on function public.clone_template_into_project(uuid, text, text, uuid, jsonb) from public, anon;
+grant execute on function public.clone_template_into_project(uuid, text, text, uuid, jsonb) to authenticated, service_role;

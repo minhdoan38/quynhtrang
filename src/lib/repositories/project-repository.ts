@@ -1,6 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 
-import type { ProductId } from '../product-state.ts';
+import type { DesignState, ProductId } from '../product-state.ts';
 
 export interface ProjectRecord {
   id: string;
@@ -10,6 +10,10 @@ export interface ProjectRecord {
   variantId?: string | null;
   status: 'editing' | 'ready' | 'approved' | 'archived';
   currentWorkingRevision: number;
+  workingDocument?: DesignState | null;
+  sourceTemplateId?: string | null;
+  sourceTemplateVersionId?: string | null;
+  cloneRequestKey?: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -21,6 +25,10 @@ export interface CreateProjectInput {
   guestKeyHash?: string | null;
   status?: ProjectRecord['status'];
   currentWorkingRevision?: number;
+  workingDocument?: DesignState | null;
+  sourceTemplateId?: string | null;
+  sourceTemplateVersionId?: string | null;
+  cloneRequestKey?: string | null;
 }
 
 export class ProjectRepository {
@@ -38,6 +46,10 @@ export class ProjectRepository {
       guest_key_hash: input.guestKeyHash ?? null,
       status: input.status ?? 'editing',
       current_working_revision: input.currentWorkingRevision ?? 1,
+      working_document: input.workingDocument ?? null,
+      source_template_id: input.sourceTemplateId ?? null,
+      source_template_version_id: input.sourceTemplateVersionId ?? null,
+      clone_request_key: input.cloneRequestKey ?? null,
     };
 
     const { data, error } = await this.client
@@ -64,11 +76,29 @@ export class ProjectRepository {
     return this.mapRow(data);
   }
 
-  async updateRevision(id: string, revision: number, status?: ProjectRecord['status']): Promise<ProjectRecord> {
+  async getByOwnerAndCloneRequestKey(ownerUserId: string, cloneRequestKey: string): Promise<ProjectRecord | null> {
+    const { data, error } = await this.client
+      .from('projects')
+      .select('*')
+      .eq('owner_user_id', ownerUserId)
+      .eq('clone_request_key', cloneRequestKey)
+      .maybeSingle();
+
+    if (error || !data) return null;
+    return this.mapRow(data);
+  }
+
+  async updateRevision(
+    id: string,
+    revision: number,
+    status?: ProjectRecord['status'],
+    workingDocument?: DesignState,
+  ): Promise<ProjectRecord> {
     const updates: Record<string, unknown> = {
       current_working_revision: revision,
     };
     if (status) updates.status = status;
+    if (workingDocument !== undefined) updates.working_document = workingDocument;
 
     const { data, error } = await this.client
       .from('projects')
@@ -94,6 +124,10 @@ export class ProjectRepository {
       variantId: (r.variant_id as string | null) ?? null,
       status: (r.status as ProjectRecord['status']) ?? 'editing',
       currentWorkingRevision: Number(r.current_working_revision ?? 1),
+      workingDocument: (r.working_document as DesignState | null) ?? null,
+      sourceTemplateId: (r.source_template_id as string | null) ?? null,
+      sourceTemplateVersionId: (r.source_template_version_id as string | null) ?? null,
+      cloneRequestKey: (r.clone_request_key as string | null) ?? null,
       createdAt: String(r.created_at),
       updatedAt: String(r.updated_at),
     };

@@ -149,6 +149,22 @@ export async function cloneTemplateIntoProject(
     }
   }
 
+  const actorUser = actor as { userId?: string } | null;
+  if (actorUser?.userId) {
+    const cloudResult = await repo.cloneTemplateIntoProject(actorUser.userId, {
+      ...input,
+      templateId: template ? template.id : input.templateId.trim(),
+      expectedVersionId: input.expectedVersionId.trim(),
+    });
+
+    return {
+      kind: 'cloud',
+      projectId: cloudResult.projectId,
+      revision: cloudResult.revision,
+      document: cloudResult.document,
+    };
+  }
+
   if (!template || template.status !== 'published' || template.archivedAt) {
     throw new TemplateServiceError('TEMPLATE_UNAVAILABLE', 'Mẫu này hiện không còn khả dụng.', 409);
   }
@@ -175,26 +191,20 @@ export async function cloneTemplateIntoProject(
     throw new TemplateServiceError('TARGET_MISMATCH', 'Sản phẩm mục tiêu không khớp với mẫu', 422);
   }
 
-  const actorUser = actor as { userId?: string } | null;
-  if (!actorUser || !actorUser.userId) {
-    const useReceipt = createUseReceipt(
-      {
-        versionId: version.versionId,
-        requestId: input.requestId.trim(),
-        exp: Date.now() + 15 * 60 * 1000,
-      },
-      options?.secret,
-    );
+  const useReceipt = createUseReceipt(
+    {
+      versionId: version.versionId,
+      requestId: input.requestId.trim(),
+      exp: Date.now() + 15 * 60 * 1000,
+    },
+    options?.secret,
+  );
 
-    return {
-      kind: 'guest',
-      payload: version,
-      useReceipt,
-    };
-  }
-
-  // ponytail: authenticated cloud project clone → skipped: cloud project row creation, add when Task 17 implemented.
-  throw new TemplateServiceError('NOT_FOUND', 'Cloud clone is handled in Task 17', 501);
+  return {
+    kind: 'guest',
+    payload: version,
+    useReceipt,
+  };
 }
 
 export interface ResolveTemplateForUseOptions {

@@ -31,7 +31,9 @@ import {
   type TemplateValidationReceipt,
   type TemplateVersionPayload,
   type TemplateVersionSummary,
+  type UseTemplateInput,
 } from '../domain/template.ts';
+import { readDesignDocument } from '../design-document.ts';
 
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -1768,5 +1770,72 @@ export class TemplateRepository {
     }
 
     throw new TemplateServiceError('FORBIDDEN', 'Access to historical template version denied', 403);
+  }
+
+  async cloneTemplateIntoProject(
+    actor: string,
+    input: UseTemplateInput,
+  ): Promise<{ projectId: string; revision: number; document: DesignState }> {
+    const { data, error } = await this.client.rpc('clone_template_into_project', {
+      p_actor: actor,
+      p_request: input.requestId,
+      p_template_id: input.templateId,
+      p_expected_version_id: input.expectedVersionId,
+      p_target: input.target
+        ? {
+          productId: input.target.productId,
+          variantId: input.target.variantId,
+          mode: input.target.mode ?? null,
+          shape: input.target.shape ?? null,
+        }
+        : null,
+    });
+
+    if (error || !data) {
+      const message = error?.message || 'Failed to clone template into project';
+      if (message.includes('UNAUTHENTICATED')) {
+        throw new TemplateServiceError('UNAUTHENTICATED', 'Yêu cầu đăng nhập tài khoản', 401);
+      }
+      if (message.includes('FORBIDDEN')) {
+        throw new TemplateServiceError('FORBIDDEN', 'Bạn không có quyền thực hiện thao tác này', 403);
+      }
+      if (message.includes('NOT_FOUND')) {
+        throw new TemplateServiceError('NOT_FOUND', 'Không tìm thấy mẫu hoặc phiên bản mẫu', 404);
+      }
+      if (message.includes('TEMPLATE_UNAVAILABLE')) {
+        throw new TemplateServiceError('TEMPLATE_UNAVAILABLE', 'Mẫu này hiện không còn khả dụng.', 409);
+      }
+      if (message.includes('TEMPLATE_CHANGED')) {
+        throw new TemplateServiceError('TEMPLATE_CHANGED', 'Phiên bản mẫu đã thay đổi, vui lòng tải lại.', 409);
+      }
+      if (message.includes('TARGET_MISMATCH')) {
+        throw new TemplateServiceError('TARGET_MISMATCH', 'Sản phẩm mục tiêu không khớp với mẫu', 422);
+      }
+      if (message.includes('OPERATION_CONFLICT')) {
+        throw new TemplateServiceError('OPERATION_CONFLICT', 'Thao tác xung đột với yêu cầu trước đó', 409);
+      }
+      throw new TemplateServiceError('INTERNAL_ERROR', message, 500);
+    }
+
+    const payload = data as {
+      project_id?: string;
+      projectId?: string;
+      revision?: number;
+      document?: unknown;
+    };
+    const projectId = String(payload.project_id || payload.projectId);
+    const revision = Number(payload.revision ?? 1);
+    const docObj = (payload.document ?? {}) as Record<string, unknown>;
+    const schemaVersion =
+      typeof docObj.documentSchemaVersion === 'number'
+        ? docObj.documentSchemaVersion
+        : 1;
+    const document = readDesignDocument(payload.document, schemaVersion);
+
+    return {
+      projectId,
+      revision,
+      document,
+    };
   }
 }

@@ -3,7 +3,7 @@ import { createServerSupabaseClient } from '@/lib/supabase/server.ts';
 import { CustomerNavHeader } from '@/components/layout/customer-nav-header.tsx';
 import { MyDesignsList, type CustomerProjectItem } from '@/components/customer/my-designs-list.tsx';
 import type { DesignState, ProductId } from '@/lib/product-state.ts';
-
+import { readDesignDocument } from '@/lib/design-document.ts';
 export default async function MyDesignsPage() {
   const supabase = await createServerSupabaseClient();
   const { data: authData } = await supabase.auth.getUser();
@@ -18,24 +18,48 @@ export default async function MyDesignsPage() {
     .eq('owner_user_id', authData.user.id)
     .order('updated_at', { ascending: false });
 
-  const projects: CustomerProjectItem[] = (projectsData || []).map((p: any) => {
-    const doc = (p.working_document || p.current_design_document || {}) as DesignState;
+  interface ProjectRow {
+    id: string;
+    product_id?: ProductId | null;
+    variant_id?: string | null;
+    current_working_revision?: number | null;
+    working_document?: unknown;
+    current_design_document?: unknown;
+    updated_at: string;
+  }
+
+  const projects: CustomerProjectItem[] = ((projectsData ?? []) as unknown as ProjectRow[]).map((p) => {
+    const raw = (p.working_document || p.current_design_document || {}) as Record<string, unknown>;
+    const productId = p.product_id || (raw.productId as ProductId) || 'wrapping';
+    const variantId = p.variant_id || (typeof raw.variantId === 'string' ? raw.variantId : 'default');
+    const normalizedRaw = { ...raw, productId, variantId };
+
+    let document: DesignState;
+    try {
+      const schemaVer = typeof raw.documentSchemaVersion === 'number' ? raw.documentSchemaVersion : 0;
+      document = readDesignDocument(normalizedRaw, schemaVer);
+    } catch {
+      document = {
+        productId,
+        variantId,
+        templateId: typeof raw.templateId === 'string' ? raw.templateId : null,
+        text: typeof raw.text === 'string' ? raw.text : '',
+        color: typeof raw.color === 'string' ? raw.color : '#000000',
+        backgroundColor: typeof raw.backgroundColor === 'string' ? raw.backgroundColor : '#ffffff',
+        image: (raw.image as DesignState['image']) ?? null,
+        productOptions: (raw.productOptions as Record<string, unknown>) || {},
+        elements: (raw.elements as DesignState['elements']) || [],
+        quantity: typeof raw.quantity === 'number' ? raw.quantity : 1,
+        sourceTemplate: raw.sourceTemplate as DesignState['sourceTemplate'],
+        documentSchemaVersion: typeof raw.documentSchemaVersion === 'number' ? raw.documentSchemaVersion : 1,
+      };
+    }
     return {
       id: p.id,
-      productId: (p.product_id as ProductId) || doc.productId || 'wrapping',
-      variantId: p.variant_id || doc.variantId || 'a1',
-      document: {
-        productId: (p.product_id as ProductId) || doc.productId || 'wrapping',
-        variantId: p.variant_id || doc.variantId || 'a1',
-        templateId: doc.templateId ?? null,
-        text: doc.text || '',
-        color: doc.color || '#000000',
-        backgroundColor: doc.backgroundColor || '#ffffff',
-        image: doc.image || null,
-        productOptions: doc.productOptions || {},
-        elements: doc.elements,
-        quantity: doc.quantity || 1,
-      },
+      productId: (p.product_id as ProductId) || document.productId,
+      variantId: p.variant_id || document.variantId,
+      templateId: document.templateId ?? document.sourceTemplate?.templateId ?? null,
+      document,
       revision: p.current_working_revision || 1,
       updatedAt: p.updated_at,
     };

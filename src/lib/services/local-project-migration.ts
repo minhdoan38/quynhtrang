@@ -6,7 +6,7 @@ import {
   RECENT_PROJECT_RETENTION_MS,
 } from '../storage.ts';
 import type { DesignState } from '../product-state.ts';
-
+import { readDesignDocument } from '../design-document.ts';
 export interface LocalProjectItem {
   id: string;
   updatedAt: number;
@@ -72,11 +72,18 @@ export async function migrateLocalProjects(
         continue;
       }
 
-      // Reconstruct document
-      const doc: DesignState = local.design
-        ? structuredClone(local.design)
-        : {
-          productId: local.productId as DesignState['productId'],
+      // Reconstruct document preserving customerLocked and provenance
+      let doc: DesignState;
+      if (local.design) {
+        try {
+          const schemaVer = typeof local.design.documentSchemaVersion === 'number' ? local.design.documentSchemaVersion : 0;
+          doc = readDesignDocument(local.design, schemaVer);
+        } catch {
+          doc = structuredClone(local.design);
+        }
+      } else {
+        doc = {
+          productId: (local.productId as DesignState['productId']) || 'wrapping',
           variantId: local.variantId ?? '',
           templateId: local.templateId ?? null,
           text: local.text ?? '',
@@ -84,9 +91,35 @@ export async function migrateLocalProjects(
           backgroundColor: local.backgroundColor ?? '',
           image: (local.image ?? null) as DesignState['image'],
           productOptions: local.productOptions || {},
-          elements: local.elements as DesignState['elements'],
+          elements: (local.elements as DesignState['elements']) || [],
           quantity: 1,
+          documentSchemaVersion: 1,
         };
+      }
+
+      // Verify provenance against database before assigning FK columns
+      let sourceTemplateId: string | null = null;
+      let sourceTemplateVersionId: string | null = null;
+      const candTmplId = doc.sourceTemplate?.templateId;
+      const candVerId = doc.sourceTemplate?.templateVersionId;
+
+      if (candTmplId && candVerId) {
+        try {
+          const { data: verRow } = await supabase
+            .from('template_versions')
+            .select('id, template_id')
+            .eq('id', candVerId)
+            .eq('template_id', candTmplId)
+            .maybeSingle();
+
+          if (verRow) {
+            sourceTemplateId = verRow.template_id;
+            sourceTemplateVersionId = verRow.id;
+          }
+        } catch {
+          // Table might be unavailable or unqueryable; keep null
+        }
+      }
 
       // 2. Insert into cloud projects
       const { data: createdProject, error: insertError } = await supabase
@@ -94,11 +127,13 @@ export async function migrateLocalProjects(
         .insert({
           owner_user_id: authenticatedUserId,
           origin_local_project_id: local.id,
-          product_id: local.productId,
-          variant_id: local.variantId,
+          product_id: doc.productId || local.productId,
+          variant_id: doc.variantId || local.variantId,
           status: 'editing',
           current_working_revision: 1,
           working_document: doc,
+          source_template_id: sourceTemplateId,
+          source_template_version_id: sourceTemplateVersionId,
           updated_at: new Date().toISOString(),
         })
         .select('id, current_working_revision')

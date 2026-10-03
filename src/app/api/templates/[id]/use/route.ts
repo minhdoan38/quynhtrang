@@ -5,9 +5,12 @@ import { cloneTemplateIntoProject, resolveTemplateForUse } from '../../../../../
 import { createPrivilegedSupabaseClient } from '../../../../../lib/supabase/admin.ts';
 import { getSupabaseConfig } from '../../../../../lib/supabase/config.ts';
 import { createClient } from '@supabase/supabase-js';
+import { createServerSupabaseClient } from '../../../../../lib/supabase/server.ts';
 
 export interface TemplateUseRouteDependencies {
   repo?: TemplateRepository;
+  actor?: { userId: string } | null;
+  getActor?: () => Promise<{ userId: string } | null>;
 }
 
 function resolveRepo(dependencies?: TemplateUseRouteDependencies): TemplateRepository {
@@ -26,6 +29,25 @@ function resolveRepo(dependencies?: TemplateUseRouteDependencies): TemplateRepos
     }
     throw new TemplateServiceError('INTERNAL_ERROR', 'Supabase database is not configured', 500);
   }
+}
+
+async function resolveActor(dependencies?: TemplateUseRouteDependencies): Promise<{ userId: string } | null> {
+  if (dependencies?.getActor) {
+    return dependencies.getActor();
+  }
+  if (dependencies && 'actor' in dependencies) {
+    return dependencies.actor ?? null;
+  }
+  try {
+    const supabase = await createServerSupabaseClient();
+    const { data: authData } = await supabase.auth.getUser();
+    if (authData?.user?.id) {
+      return { userId: authData.user.id };
+    }
+  } catch {
+    // Guest user or SSR unconfigured cookies
+  }
+  return null;
 }
 
 export async function POST(
@@ -55,7 +77,7 @@ export async function POST(
       );
     }
 
-    const actor = null;
+    const actor = await resolveActor(deps);
     const trimmedId = id.trim();
     let templateIdToUse = trimmedId;
     const existing = await repo.getTemplate(trimmedId);
@@ -103,4 +125,4 @@ export async function POST(
   }
 }
 
-// ponytail: direct guest clone route → skipped: account cloud transaction, add when Task 17 authenticated clone is implemented.
+// ponytail: authenticated use route → skipped: complex session recovery redirect, add when multi-tab session recovery needed.
