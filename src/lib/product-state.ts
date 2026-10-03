@@ -9,6 +9,7 @@ import { computeStickerContour } from './sticker-contour.ts';
 import { evaluateImageQuality } from './image-quality.ts';
 import { evaluateElementSafety, isElementImportant } from './safe-area.ts';
 import { canMutateElement, type DesignReviewMode } from './domain/design-revision.ts';
+import type { TemplateProvenance } from './domain/template.ts';
 export type ProductId = 'wrapping' | 'card' | 'sticker' | 'notebook';
 export type CardSurface = 'front' | 'inside' | 'back';
 export type CardOrientation = 'horizontal' | 'vertical';
@@ -351,6 +352,8 @@ export interface DesignState {
  quantity: number;
  productOptions: Record<string, unknown>;
  elements?: CanvasElement[];
+ sourceTemplate?: TemplateProvenance;
+ documentSchemaVersion?: number;
 }
 
 export type DesignAction =
