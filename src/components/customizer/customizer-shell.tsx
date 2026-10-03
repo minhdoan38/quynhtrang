@@ -89,7 +89,8 @@ import {
 } from '@/lib/text-edit-session';
 import { TextEditOverlay } from './text-edit-overlay';
 import { useRouter } from 'next/navigation';
-import type { CustomizerContext } from '@/lib/editor-context';
+import { getEditorMutationMode, type CustomizerContext } from '@/lib/editor-context';
+import { canMutateElement } from '@/lib/domain/design-revision';
 import {
   groupElements,
   ungroupElement,
@@ -171,13 +172,14 @@ export function CustomizerShell({ context }: CustomizerShellProps = {}) {
     resetHistory,
   } = useDesignHistory({
     initialState:
-      context?.type === 'staff' || context?.type === 'customer'
+      context?.type === 'staff' || context?.type === 'customer' || context?.type === 'template-author' || context?.type === 'template-preview'
         ? context.initialDocument
         : createInitialState('wrapping'),
     getSelection: getSelectionSnapshot,
     onRestoreSelection: handleRestoreSelection,
-    mode: context?.type === 'staff' ? context.mode : 'guest',
+    mode: getEditorMutationMode(context),
   });
+  const mutationMode = getEditorMutationMode(context);
 
   const imageSourceContextRef = useRef<ImageSourceContext>({ mode: 'add' });
   const [imageSourceContext, setImageSourceContextState] = useState<ImageSourceContext>({ mode: 'add' });
@@ -287,6 +289,10 @@ export function CustomizerShell({ context }: CustomizerShellProps = {}) {
       context.onSave?.(currentState);
       return true;
     }
+    if (context?.type === 'template-author') {
+      context.onSave?.(currentState);
+      return true;
+    }
     if (context?.type === 'customer') {
       context.onSave?.(currentState, context.initialRevision);
       return true;
@@ -307,6 +313,10 @@ export function CustomizerShell({ context }: CustomizerShellProps = {}) {
       if (context.mode === 'staff-edit') {
         context.onSave?.(state);
       }
+      return;
+    }
+    if (context?.type === 'template-author') {
+      context.onSave?.(state);
       return;
     }
     if (context?.type === 'customer') {
@@ -349,7 +359,7 @@ export function CustomizerShell({ context }: CustomizerShellProps = {}) {
   // Restore editor data after mount
   useEffect(() => {
     setMounted(true);
-    if (context?.type === 'staff' || context?.type === 'customer') {
+    if (context?.type === 'staff' || context?.type === 'customer' || context?.type === 'template-author' || context?.type === 'template-preview') {
       resetHistory(context.initialDocument);
       setView('editor');
       return;
@@ -518,7 +528,7 @@ export function CustomizerShell({ context }: CustomizerShellProps = {}) {
     const elements = state.elements ?? getDefaultElements(state);
     const element = elements.find((el) => el.id === elementId && el.type === 'text');
     const data = element ? getTextData(element) : null;
-    if (!element || !data || element.locked) return;
+    if (!element || !data || !canMutateElement(mutationMode, element)) return;
     preEditViewportRef.current = viewport;
     setSelectedTarget('text');
     setSelectedElementId(elementId);
@@ -615,7 +625,7 @@ export function CustomizerShell({ context }: CustomizerShellProps = {}) {
     const startId = initialId || selectedElementId;
     if (startId) {
       const el = elements.find((e) => e.id === startId);
-      if (el && !el.locked) {
+      if (el && canMutateElement(mutationMode, el)) {
         setSelectedElementIds([startId]);
       } else {
         setSelectedElementIds([]);
@@ -631,7 +641,7 @@ export function CustomizerShell({ context }: CustomizerShellProps = {}) {
   const handleToggleMultiSelect = useCallback((id: string) => {
     const elements = state.elements ?? getDefaultElements(state);
     const el = elements.find((e) => e.id === id);
-    if (el?.locked) {
+    if (el && !canMutateElement(mutationMode, el)) {
       showToast('🔒 Thành phần này đã được khóa trong mẫu.');
       return;
     }
@@ -830,7 +840,7 @@ export function CustomizerShell({ context }: CustomizerShellProps = {}) {
           setViewport(resetToFit());
           return;
         }
-        if (context?.type === 'staff' || context?.type === 'customer') {
+        if (context?.type === 'staff' || context?.type === 'customer' || context?.type === 'template-author' || context?.type === 'template-preview') {
           context.onExit?.();
           return;
         }
@@ -1243,7 +1253,7 @@ export function CustomizerShell({ context }: CustomizerShellProps = {}) {
         } else {
           setSelectedTarget(null);
         }
-        if (found.locked) {
+        if (found && !canMutateElement(mutationMode, found)) {
           showToast('🔒 Thành phần này đã được khóa trong mẫu.');
         }
       } else if (layerIdOrType === 'image') {
@@ -1261,6 +1271,16 @@ export function CustomizerShell({ context }: CustomizerShellProps = {}) {
     },
     [state, showToast]
   );
+  const handleToggleCustomerLock = useCallback(
+    (id: string, customerLocked: boolean) => {
+      executeAction(
+        { type: 'SET_CUSTOMER_LOCK', id, customerLocked },
+        { type: customerLocked ? 'lock' : 'unlock', label: customerLocked ? 'Khóa với khách' : 'Mở khóa cho khách', affectedIds: [id] }
+      );
+    },
+    [executeAction]
+  );
+
 
   const handleReorderElements = useCallback(
     (orderedIds: string[]) => {
@@ -1933,6 +1953,7 @@ export function CustomizerShell({ context }: CustomizerShellProps = {}) {
           }}
         >
           <DesignCanvas
+            mode={mutationMode}
             showSafeAreaGuide={showSafeAreaGuide}
             activeSafetyReport={activeSafetyReport}
             productId={state.productId}
@@ -1960,10 +1981,14 @@ export function CustomizerShell({ context }: CustomizerShellProps = {}) {
             textElements={state.elements ?? getDefaultElements(state)}
             elements={state.elements ?? getDefaultElements(state)}
             onSelectElement={(id) => {
-              setSelectedElementId(id);
               if (id) {
                 const elements = state.elements ?? getDefaultElements(state);
                 const el = elements.find((e) => e.id === id);
+                if (el?.customerLocked && mutationMode !== 'template-author' && mutationMode !== 'staff-edit') {
+                  showToast('🔒 Thành phần này đã được khóa trong mẫu.');
+                  return;
+                }
+                setSelectedElementId(id);
                 if (el?.type === 'group' || el?.type === 'sticker') {
                   setSelectedTarget('group');
                 } else if (el?.type === 'image') {
@@ -1971,6 +1996,8 @@ export function CustomizerShell({ context }: CustomizerShellProps = {}) {
                 } else if (el?.type === 'text') {
                   setSelectedTarget('text');
                 }
+              } else {
+                setSelectedElementId(null);
               }
             }}
             onToggleSelectElement={handleToggleMultiSelect}
@@ -2176,6 +2203,8 @@ export function CustomizerShell({ context }: CustomizerShellProps = {}) {
       {/* Unified Bottom Sheet system */}
       <EditorSheets
         activeSheet={activeSheet}
+        mode={mutationMode}
+        onToggleCustomerLock={handleToggleCustomerLock}
         showSafeAreaGuide={showSafeAreaGuide}
         onToggleSafeAreaGuide={() => setShowSafeAreaGuide((prev) => !prev)}
         onClose={handleCloseSheet}

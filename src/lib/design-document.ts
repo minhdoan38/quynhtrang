@@ -178,6 +178,7 @@ export function readDesignDocument(
       height,
       rotation,
       locked: Boolean(el.locked),
+      customerLocked: Boolean(el.customerLocked),
       zIndex: typeof el.zIndex === 'number' && Number.isFinite(el.zIndex) ? el.zIndex : 1,
       surface: surface as CanvasElement['surface'],
       parentGroupId,

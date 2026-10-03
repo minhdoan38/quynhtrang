@@ -9,6 +9,8 @@ import type { SafetyReport } from '@/lib/safe-area';
 export interface SelectionOverlayProps {
   mode?: 'single' | 'multi' | 'group';
   isLocked?: boolean;
+  customerLocked?: boolean;
+  lockLabel?: string;
   isRotating?: boolean;
   rotationAngle?: number;
   qualityReport?: ImageQualityReport | null;
@@ -22,6 +24,8 @@ export interface SelectionOverlayProps {
 export function SelectionOverlay({
   mode = 'single',
   isLocked = false,
+  customerLocked = false,
+  lockLabel,
   isRotating = false,
   rotationAngle = 0,
   qualityReport,
@@ -32,11 +36,12 @@ export function SelectionOverlay({
   selectionCount,
 }: SelectionOverlayProps) {
   if (isLocked) {
+    const label = lockLabel || (customerLocked ? 'Đã khóa với khách' : 'Đã khóa trong mẫu');
     return (
       <div className="absolute inset-0 pointer-events-none border border-dashed border-[#666A6D]/60 rounded-sm">
         <div className="absolute -top-7 left-1/2 -translate-x-1/2 bg-[#2E3338]/90 text-white text-[10px] font-medium px-2 py-0.5 rounded-full flex items-center gap-1 shadow-sm whitespace-nowrap">
           <Lock className="w-3 h-3 text-[#F2DFA0]" />
-          <span>Đã khóa trong mẫu</span>
+          <span>{label}</span>
         </div>
       </div>
     );
@@ -59,6 +64,12 @@ export function SelectionOverlay({
           <span>{selectionCount} mục đã chọn</span>
         </div>
       )}
+      {customerLocked && (
+        <div className="absolute -top-7 right-0 bg-[#2E3338]/90 text-white text-[10px] font-medium px-2 py-0.5 rounded-full flex items-center gap-1 shadow-sm whitespace-nowrap pointer-events-none">
+          <Lock className="w-3 h-3 text-[#F2DFA0]" />
+          <span>Đã khóa với khách</span>
+        </div>
+      )}
       {/* Contextual Safe Area Warning Badge */}
       {safetyReport && safetyReport.risk !== 'safe' && (
         <div
@@ -66,8 +77,8 @@ export function SelectionOverlay({
           aria-live="polite"
           aria-label={`Cảnh báo an toàn: ${safetyReport.badgeLabel || 'Chi tiết này hơi sát mép'}`}
           className={`absolute -top-8 left-1/2 -translate-x-1/2 pointer-events-auto flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-semibold shadow-xs whitespace-nowrap z-30 ${safetyReport.risk === 'high-risk'
-              ? 'bg-[#FDF0ED] text-[#A63626] border border-[#F5C7C0]'
-              : 'bg-[#FEF6E7] text-[#9A6214] border border-[#F4DCB0]'
+            ? 'bg-[#FDF0ED] text-[#A63626] border border-[#F5C7C0]'
+            : 'bg-[#FEF6E7] text-[#9A6214] border border-[#F4DCB0]'
             }`}
         >
           <AlertTriangle className="w-3 h-3 shrink-0" />

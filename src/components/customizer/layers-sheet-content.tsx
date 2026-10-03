@@ -16,6 +16,7 @@ import {
   X,
 } from 'lucide-react';
 import type { CanvasElement } from '@/lib/product-state';
+import type { EditorMutationMode } from '@/lib/domain/design-revision';
 import {
   getLayerDisplayName,
   getSurfaceLayers,
@@ -38,6 +39,8 @@ interface LayersSheetContentProps {
   onClose: () => void;
   imageThumbnailSrc?: string;
   onLockedFeedback?: () => void;
+  mode?: EditorMutationMode;
+  onToggleCustomerLock?: (id: string, customerLocked: boolean) => void;
 }
 
 export function LayersSheetContent({
@@ -57,6 +60,8 @@ export function LayersSheetContent({
   onClose,
   imageThumbnailSrc,
   onLockedFeedback,
+  mode,
+  onToggleCustomerLock,
 }: LayersSheetContentProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [expandedGroupIds, setExpandedGroupIds] = useState<Set<string>>(() => new Set());
@@ -88,7 +93,10 @@ export function LayersSheetContent({
   const handleDragStart = (id: string, index: number, e: React.PointerEvent) => {
     e.stopPropagation();
     const el = surfaceElements.find((item) => item.id === id);
-    if (el?.locked) {
+    const isLocked = mode === 'template-author' || mode === 'staff-edit'
+      ? Boolean(el?.locked)
+      : Boolean(el?.locked || el?.customerLocked);
+    if (isLocked) {
       onLockedFeedback?.();
       return;
     }
@@ -221,11 +229,10 @@ export function LayersSheetContent({
                 onEnterMultiSelect?.();
               }
             }}
-            className={`text-xs px-2.5 py-1 rounded-full font-medium transition-all ${
-              selectionMode === 'multi-select'
+            className={`text-xs px-2.5 py-1 rounded-full font-medium transition-all ${selectionMode === 'multi-select'
                 ? 'bg-[#315F86] text-white shadow-xs'
                 : 'bg-[#F8F3E8] text-[#2E3338] hover:bg-[#ECE6DC]'
-            }`}
+              }`}
           >
             {selectionMode === 'multi-select' ? 'Xong chọn nhiều' : 'Chọn nhiều'}
           </button>
@@ -274,8 +281,10 @@ export function LayersSheetContent({
                 <div
                   data-layer-id={el.id}
                   onClick={() => {
-                    if (el.locked) {
+                    const isCustomerLockedBlocked = mode !== 'template-author' && mode !== 'staff-edit' && el.customerLocked;
+                    if (isCustomerLockedBlocked || el.locked) {
                       onLockedFeedback?.();
+                      if (isCustomerLockedBlocked) return;
                     }
                     if (selectionMode === 'multi-select') {
                       onToggleSelectElement?.(el.id);
@@ -283,18 +292,16 @@ export function LayersSheetContent({
                       onSelect(el.id);
                     }
                   }}
-                  className={`relative flex items-center justify-between p-2.5 rounded-xl border transition-all cursor-pointer ${
-                    isSelected
+                  className={`relative flex items-center justify-between p-2.5 rounded-xl border transition-all cursor-pointer ${isSelected
                       ? 'border-[#315F86] bg-[#DCEBF4]/40 font-medium shadow-xs'
                       : 'border-[#ECE6DC] bg-white hover:bg-[#F8F3E8]/80'
-                  } ${isDragging ? 'opacity-40 scale-[0.98]' : ''} ${
-                    isDropTarget ? 'border-t-2 border-t-[#315F86]' : ''
-                  }`}
+                    } ${isDragging ? 'opacity-40 scale-[0.98]' : ''} ${isDropTarget ? 'border-t-2 border-t-[#315F86]' : ''
+                    }`}
                 >
                   {/* Left section: Drag handle + Group expander + Icon + Name */}
                   <div className="flex items-center gap-2 min-w-0 flex-1 pr-2">
                     {/* Dedicated Drag Handle */}
-                    {!el.locked ? (
+                    {!(mode === 'template-author' || mode === 'staff-edit' ? el.locked : (el.locked || el.customerLocked)) ? (
                       <div
                         role="button"
                         tabIndex={0}
@@ -335,7 +342,18 @@ export function LayersSheetContent({
 
                   {/* Right section: Lock indicator or Selection Check */}
                   <div className="flex items-center gap-1.5 shrink-0">
-                    {el.locked && (
+                    {el.customerLocked && (
+                      <span
+                        role="status"
+                        title="Đã khóa với khách"
+                        aria-label="Đã khóa với khách"
+                        className="flex items-center gap-0.5 text-[10px] text-[#666A6D] bg-[#F8F3E8] px-1.5 py-0.5 rounded font-medium border border-[#ECE6DC]"
+                      >
+                        <Lock className="w-3 h-3 text-[#A86E22]" aria-hidden="true" />
+                        <span>Đã khóa với khách</span>
+                      </span>
+                    )}
+                    {el.locked && !el.customerLocked && (
                       <span
                         title="Thành phần đã được khóa trong mẫu"
                         className="flex items-center gap-0.5 text-[10px] text-[#666A6D] bg-[#F8F3E8] px-1.5 py-0.5 rounded font-medium border border-[#ECE6DC]"
@@ -343,6 +361,21 @@ export function LayersSheetContent({
                         <Lock className="w-3 h-3 text-[#A86E22]" />
                         <span>Khóa</span>
                       </span>
+                    )}
+                    {(mode === 'template-author' || mode === 'staff-edit') && (
+                      <button
+                        type="button"
+                        role="button"
+                        aria-label={el.customerLocked ? 'Mở khóa cho khách' : 'Khóa với khách'}
+                        title={el.customerLocked ? 'Mở khóa cho khách' : 'Khóa với khách'}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onToggleCustomerLock?.(el.id, !el.customerLocked);
+                        }}
+                        className="p-1 rounded hover:bg-[#F8F3E8] text-[#666A6D] hover:text-[#2E3338]"
+                      >
+                        <Lock className={`w-3.5 h-3.5 ${el.customerLocked ? 'text-[#A86E22]' : 'opacity-40'}`} />
+                      </button>
                     )}
                     {isSelected && (
                       <span className="w-2 h-2 rounded-full bg-[#315F86]" />
@@ -363,8 +396,10 @@ export function LayersSheetContent({
                           key={child.id}
                           onClick={(e) => {
                             e.stopPropagation();
-                            if (child.locked) {
+                            const isChildLockedBlocked = mode !== 'template-author' && mode !== 'staff-edit' && child.customerLocked;
+                            if (isChildLockedBlocked || child.locked) {
                               onLockedFeedback?.();
+                              if (isChildLockedBlocked) return;
                             }
                             if (selectionMode === 'multi-select') {
                               onToggleSelectElement?.(child.id);
@@ -372,11 +407,10 @@ export function LayersSheetContent({
                               onSelectChildInGroup?.(el.id, child.id);
                             }
                           }}
-                          className={`flex items-center justify-between p-2 rounded-lg border transition-all cursor-pointer ${
-                            isChildSelected
+                          className={`flex items-center justify-between p-2 rounded-lg border transition-all cursor-pointer ${isChildSelected
                               ? 'border-[#315F86] bg-[#DCEBF4]/40 font-medium'
                               : 'border-[#ECE6DC] bg-white hover:bg-[#F8F3E8]'
-                          }`}
+                            }`}
                         >
                           <div className="flex items-center gap-2 min-w-0 flex-1 pr-1">
                             {renderTypeIndicator(child)}
@@ -384,6 +418,16 @@ export function LayersSheetContent({
                               {getLayerDisplayName(child)}
                             </span>
                           </div>
+                          {child.customerLocked && (
+                            <span
+                              role="status"
+                              title="Đã khóa với khách"
+                              aria-label="Đã khóa với khách"
+                              className="flex items-center gap-0.5 text-[10px] text-[#666A6D] bg-[#F8F3E8] px-1 py-0.5 rounded font-medium border border-[#ECE6DC]"
+                            >
+                              <Lock className="w-2.5 h-2.5 text-[#A86E22]" aria-hidden="true" />
+                            </span>
+                          )}
                           {isChildSelected && <span className="w-2 h-2 rounded-full bg-[#315F86]" />}
                         </div>
                       );

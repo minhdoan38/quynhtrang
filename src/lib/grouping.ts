@@ -1,6 +1,6 @@
 import { computeCombinedBounds } from './multi-selection.ts';
-import { getDefaultElements, type CanvasElement, type DesignState } from './product-state.ts';
-import { canMutateElement, type DesignReviewMode } from './domain/design-revision.ts';
+import { getDefaultElements, hasProtectedDescendants, type CanvasElement, type DesignState } from './product-state.ts';
+import { canMutateElement, type EditorMutationMode } from './domain/design-revision.ts';
 
 export interface GroupElementsResult {
  state: DesignState;
@@ -13,15 +13,21 @@ export interface GroupElementsResult {
 export function groupElements(
  state: DesignState,
  targetIds: readonly string[],
- mode?: DesignReviewMode | 'guest'
+ mode?: EditorMutationMode
 ): GroupElementsResult {
  const currentList = state.elements ?? getDefaultElements(state);
  const targetIdSet = new Set(targetIds);
 
- const targets = currentList.filter((el) => targetIdSet.has(el.id) && canMutateElement(mode, el));
-
+ const targets = currentList.filter((el) => targetIdSet.has(el.id));
  if (targets.length < 2) {
   return { state, groupId: '' };
+ }
+
+ for (const el of targets) {
+  if (!canMutateElement(mode, el)) return { state, groupId: '' };
+  if (el.type === 'group' && hasProtectedDescendants(currentList, el.id, mode)) {
+   return { state, groupId: '' };
+  }
  }
 
  // Ensure all items belong to the same product surface
@@ -81,12 +87,17 @@ export function groupElements(
 /**
  * Ungroups a persistent group element and restores its children as top-level elements
  */
-export function ungroupElement(state: DesignState, groupId: string): DesignState {
+export function ungroupElement(
+ state: DesignState,
+ groupId: string,
+ mode?: EditorMutationMode
+): DesignState {
  const currentList = state.elements ?? getDefaultElements(state);
  const targetGroup = currentList.find((el) => el.id === groupId && el.type === 'group');
 
  if (!targetGroup) return state;
-
+ if (!canMutateElement(mode, targetGroup)) return state;
+ if (hasProtectedDescendants(currentList, groupId, mode)) return state;
  const nextList = currentList
   .filter((el) => el.id !== groupId)
   .map((el) => {
@@ -110,14 +121,20 @@ export function ungroupElement(state: DesignState, groupId: string): DesignState
 export function duplicateSelectedElements(
  state: DesignState,
  targetIds: readonly string[],
- mode?: DesignReviewMode | 'guest'
+ mode?: EditorMutationMode
 ): { state: DesignState; newIds: string[] } {
  const currentList = state.elements ?? getDefaultElements(state);
  const targetIdSet = new Set(targetIds);
 
- const targets = currentList.filter((el) => targetIdSet.has(el.id) && canMutateElement(mode, el));
+ const targets = currentList.filter((el) => targetIdSet.has(el.id));
  if (targets.length === 0) return { state, newIds: [] };
 
+ for (const el of targets) {
+  if (!canMutateElement(mode, el)) return { state, newIds: [] };
+  if (el.type === 'group' && hasProtectedDescendants(currentList, el.id, mode)) {
+   return { state, newIds: [] };
+  }
+ }
  const newIds: string[] = [];
  const duplicates: CanvasElement[] = [];
  const maxZ = Math.max(...currentList.map((e) => e.zIndex ?? 0), 0);
@@ -191,7 +208,7 @@ export function duplicateSelectedElements(
 export function deleteSelectedElements(
  state: DesignState,
  targetIds: readonly string[],
- mode?: DesignReviewMode | 'guest'
+ mode?: EditorMutationMode
 ): DesignState {
  const currentList = state.elements ?? getDefaultElements(state);
  const targetIdSet = new Set(targetIds);
@@ -207,7 +224,14 @@ export function deleteSelectedElements(
   }
  }
 
- const nextList = currentList.filter((el) => !allIdsToRemove.has(el.id) || !canMutateElement(mode, el));
+ for (const id of allIdsToRemove) {
+  const el = currentList.find((item) => item.id === id);
+  if (el && !canMutateElement(mode, el)) {
+   return state;
+  }
+ }
+
+ const nextList = currentList.filter((el) => !allIdsToRemove.has(el.id));
 
  return {
   ...state,

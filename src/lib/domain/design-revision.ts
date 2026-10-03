@@ -196,21 +196,36 @@ export function assertStaffArtworkCompatible(base: DesignState, next: DesignStat
  }
 }
 
+export type EditorMutationMode =
+ | DesignReviewMode
+ | 'guest'
+ | 'customer'
+ | 'template-author'
+ | 'template-preview'
+ | undefined;
+
 /**
  * Determines whether a canvas element can be mutated in the given mode.
  * In review mode: false for all elements.
- * In guest mode: true only if element is not locked.
  * In staff-edit mode: true (staff can adjust artwork elements even if customer locked them).
+ * In template-author mode: true unless element has ordinary editor lock.
+ * In customer / guest / template-preview / undefined modes: true only if neither locked nor customerLocked.
  */
 export function canMutateElement(
- mode: DesignReviewMode | 'guest' | undefined,
- element: { locked?: boolean }
+ mode: EditorMutationMode,
+ element: { locked?: boolean; customerLocked?: boolean }
 ): boolean {
  if (mode === 'review' || mode === 'preflight' || mode === 'review-changes') {
   return false;
  }
  if (mode === 'staff-edit') {
   return true;
+ }
+ if (mode === 'template-author') {
+  return !element.locked;
+ }
+ if (element.customerLocked) {
+  return false;
  }
  return !element.locked;
 }

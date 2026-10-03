@@ -4,7 +4,7 @@ import {
  type DesignAction,
  transitionState,
 } from './product-state.ts';
-import type { DesignReviewMode } from './domain/design-revision.ts';
+import type { EditorMutationMode } from './domain/design-revision.ts';
 import {
  createHistoryState,
  commitHistoryEntry,
@@ -63,7 +63,7 @@ export function createDesignHistoryManager(
  getSelection: () => SelectionSnapshot,
  setSelection: (sel: SelectionSnapshot) => void,
  historyLimit: number = 75,
- mode?: DesignReviewMode | 'guest'
+ mode?: EditorMutationMode
 ): DesignHistoryManager {
  let state = initialState;
  let history = createHistoryState(historyLimit);
@@ -213,7 +213,7 @@ export interface UseDesignHistoryOptions {
  getSelection: () => SelectionSnapshot;
  onRestoreSelection: (sel: SelectionSnapshot) => void;
  limit?: number;
- mode?: DesignReviewMode | 'guest';
+ mode?: EditorMutationMode;
 }
 
 export interface UseDesignHistoryReturn {

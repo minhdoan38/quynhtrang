@@ -1,5 +1,5 @@
-import type { CanvasElement } from './product-state.ts';
-import { canMutateElement, type DesignReviewMode } from './domain/design-revision.ts';
+import { hasProtectedDescendants, type CanvasElement } from './product-state.ts';
+import { canMutateElement, type EditorMutationMode } from './domain/design-revision.ts';
 
 export interface CombinedBounds {
  minX: number;
@@ -66,11 +66,16 @@ export function moveElements(
  ids: readonly string[],
  dx: number,
  dy: number,
- mode?: DesignReviewMode | 'guest'
+ mode?: EditorMutationMode
 ): CanvasElement[] {
  const idSet = new Set(ids);
+ const targets = elements.filter((el) => idSet.has(el.id));
+ for (const el of targets) {
+  if (!canMutateElement(mode, el)) return elements;
+  if (el.type === 'group' && hasProtectedDescendants(elements, el.id, mode)) return elements;
+ }
  return elements.map((el) => {
-  if (!idSet.has(el.id) || !canMutateElement(mode, el)) return el;
+  if (!idSet.has(el.id)) return el;
   return {
    ...el,
    x: el.x + dx,
@@ -87,13 +92,18 @@ export function scaleElementsUniform(
  ids: readonly string[],
  initialBounds: CombinedBounds,
  scaleRatio: number,
- mode?: DesignReviewMode | 'guest'
+ mode?: EditorMutationMode
 ): CanvasElement[] {
  const idSet = new Set(ids);
+ const targets = elements.filter((el) => idSet.has(el.id));
+ for (const el of targets) {
+  if (!canMutateElement(mode, el)) return elements;
+  if (el.type === 'group' && hasProtectedDescendants(elements, el.id, mode)) return elements;
+ }
  const ratio = Math.max(0.05, Math.min(10, scaleRatio));
 
  return elements.map((el) => {
-  if (!idSet.has(el.id) || !canMutateElement(mode, el)) return el;
+  if (!idSet.has(el.id)) return el;
 
   const relX = el.x - initialBounds.centerX;
   const relY = el.y - initialBounds.centerY;
@@ -116,15 +126,20 @@ export function rotateElementsAroundCenter(
  ids: readonly string[],
  center: { x: number; y: number },
  deltaDegrees: number,
- mode?: DesignReviewMode | 'guest'
+ mode?: EditorMutationMode
 ): CanvasElement[] {
  const idSet = new Set(ids);
+ const targets = elements.filter((el) => idSet.has(el.id));
+ for (const el of targets) {
+  if (!canMutateElement(mode, el)) return elements;
+  if (el.type === 'group' && hasProtectedDescendants(elements, el.id, mode)) return elements;
+ }
  const rad = (deltaDegrees * Math.PI) / 180;
  const cos = Math.cos(rad);
  const sin = Math.sin(rad);
 
  return elements.map((el) => {
-  if (!idSet.has(el.id) || !canMutateElement(mode, el)) return el;
+  if (!idSet.has(el.id)) return el;
 
   const dx = el.x - center.x;
   const dy = el.y - center.y;
@@ -149,7 +164,7 @@ export function filterEditableSelection(
  elements: readonly CanvasElement[],
  ids: readonly string[],
  activeSurface: string = 'front',
- mode?: DesignReviewMode | 'guest'
+ mode?: EditorMutationMode
 ): string[] {
  const idSet = new Set(ids);
  return elements

@@ -36,6 +36,7 @@ import { MaskSheetContent } from './mask-sheet-content';
 import type { MaskType } from '@/lib/image-mask';
 import type { ColorValue, HexColor } from '@/lib/color/color-types';
 import { createSolidColor } from '@/lib/color/color-validation';
+import type { EditorMutationMode } from '@/lib/domain/design-revision';
 import type { PatternConfig, StickerOptions } from '@/lib/product-state';
 import { PatternControlsSheet } from './pattern-controls-sheet';
 import type { StickerContourResult } from '@/lib/sticker-contour';
@@ -138,6 +139,8 @@ interface EditorSheetsProps {
   onQualityReplaceImage?: () => void;
   showSafeAreaGuide?: boolean;
   onToggleSafeAreaGuide?: () => void;
+  mode?: EditorMutationMode;
+  onToggleCustomerLock?: (id: string, customerLocked: boolean) => void;
 }
 
 const PALETTE = [
@@ -223,6 +226,8 @@ export function EditorSheets({
   onQualityReplaceImage,
   showSafeAreaGuide = false,
   onToggleSafeAreaGuide,
+  mode,
+  onToggleCustomerLock,
 }: EditorSheetsProps) {
   const isOpen = activeSheet !== null;
 
@@ -452,6 +457,8 @@ export function EditorSheets({
                 onExitMultiSelect={onExitMultiSelect}
                 onToggleSelectElement={onToggleSelectElement}
                 onSelectChildInGroup={onSelectChildInGroup}
+                mode={mode}
+                onToggleCustomerLock={onToggleCustomerLock}
               />
             );
           })()}

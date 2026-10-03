@@ -22,6 +22,7 @@ import type { StickerContourResult } from '@/lib/sticker-contour';
 import { computePatternGrid, getWrappingPaperDimensions } from '@/lib/pattern-renderer';
 import { evaluateImageQuality, type ImageQualityReport } from '@/lib/image-quality';
 import type { SafetyReport } from '@/lib/safe-area';
+import type { EditorMutationMode } from '@/lib/domain/design-revision';
 import {
   TAP_THRESHOLD_PX,
   isDoubleTap,
@@ -78,6 +79,7 @@ export interface DesignCanvasProps {
   onDoubleTapGroup?: (groupId: string) => void;
   onMeasureText?: (id: string, height: number) => void;
   isLocked?: boolean;
+  mode?: EditorMutationMode;
   onLockedFeedback?: () => void;
   onQualityExplanation?: ((report: ImageQualityReport) => void) | ((message: string) => void);
   showSafeAreaGuide?: boolean;
@@ -129,6 +131,7 @@ export function DesignCanvas({
   onDoubleTapGroup,
   onMeasureText,
   isLocked = false,
+  mode,
   onLockedFeedback,
   onQualityExplanation,
   imageTransform = DEFAULT_IMAGE_TRANSFORM,
@@ -832,6 +835,11 @@ export function DesignCanvas({
             transformOrigin: 'center center',
           }}
           onClick={(e) => {
+            const isImageCustomerLocked = Boolean(imgElement?.customerLocked && mode !== 'template-author' && mode !== 'staff-edit');
+            if (isImageCustomerLocked) {
+              onLockedFeedback?.();
+              return;
+            }
             if (selectionMode === 'multi-select') {
               e.stopPropagation();
               onToggleSelectElement?.(imgElement?.id || 'image-1');
@@ -839,6 +847,11 @@ export function DesignCanvas({
           }}
           onPointerDown={(e) => {
             e.stopPropagation();
+            const isImageCustomerLocked = Boolean(imgElement?.customerLocked && mode !== 'template-author' && mode !== 'staff-edit');
+            if (isImageCustomerLocked) {
+              onLockedFeedback?.();
+              return;
+            }
             if (selectionMode !== 'multi-select') {
               startGesture('image', undefined, 'move', undefined, e);
             }
@@ -862,7 +875,8 @@ export function DesignCanvas({
 
           {isImageSelected && (
             <SelectionOverlay
-              isLocked={isLocked}
+              isLocked={isLocked || Boolean(imgElement?.locked) || Boolean(imgElement?.customerLocked && mode !== 'template-author' && mode !== 'staff-edit')}
+              customerLocked={Boolean(imgElement?.customerLocked)}
               isRotating={isRotating}
               rotationAngle={effectiveImageTransform.rotation}
               qualityReport={imageQuality}
@@ -919,10 +933,15 @@ export function DesignCanvas({
             textStyle={textStyle}
             transform={transform}
             isSelected={isThisTextSelected}
-            isLocked={isLocked || Boolean(el.locked)}
+            isLocked={isLocked || Boolean(el.locked) || Boolean(el.customerLocked && mode !== 'template-author' && mode !== 'staff-edit')}
+            customerLocked={Boolean(el.customerLocked)}
             isRotating={isRotating}
             onPointerDown={(e: React.PointerEvent) => {
               e.stopPropagation();
+              if (el.customerLocked && mode !== 'template-author' && mode !== 'staff-edit') {
+                onLockedFeedback?.();
+                return;
+              }
               startGesture('text', el.id, 'move', undefined, e, Boolean(el.locked));
             }}
             onHandlePointerDown={(handle: TransformHandle, e: React.PointerEvent) => {
@@ -936,6 +955,11 @@ export function DesignCanvas({
             isMultiSelected={selectionMode === 'multi-select' && selectedElementIds.includes(el.id)}
             isDimmed={selectionMode === 'group-edit' && Boolean(activeGroupId) && el.parentGroupId !== activeGroupId}
             onClick={(e: React.MouseEvent) => {
+              if (el.customerLocked && mode !== 'template-author' && mode !== 'staff-edit') {
+                e.stopPropagation();
+                onLockedFeedback?.();
+                return;
+              }
               if (selectionMode === 'multi-select') {
                 e.stopPropagation();
                 if (el.locked) onLockedFeedback?.();
@@ -969,6 +993,10 @@ export function DesignCanvas({
             onClick={(event) => {
               if (isMockup) return;
               event.stopPropagation();
+              if (element.customerLocked && mode !== 'template-author' && mode !== 'staff-edit') {
+                onLockedFeedback?.();
+                return;
+              }
               if (selectionMode === 'multi-select') {
                 if (element.locked) onLockedFeedback?.();
                 else onToggleSelectElement?.(element.id);
@@ -977,11 +1005,25 @@ export function DesignCanvas({
             onPointerDown={(event) => {
               if (isMockup || selectionMode === 'multi-select') return;
               event.stopPropagation();
+              if (element.customerLocked && mode !== 'template-author' && mode !== 'staff-edit') {
+                onLockedFeedback?.();
+                return;
+              }
               startGesture('sticker', element.id, 'move', undefined, event, Boolean(element.locked), liveTransform);
             }}
           >
             <img src={sticker.src} alt={sticker.title} draggable={false} className="h-full w-full pointer-events-none select-none object-contain" />
-            {selected && <SelectionOverlay isLocked={Boolean(element.locked)} isRotating={isRotating} rotationAngle={liveTransform.rotation} onHandlePointerDown={(handle, event) => startGesture('sticker', element.id, handle === 'rotate' ? 'rotate' : 'resize', handle, event, Boolean(element.locked), liveTransform)} />}
+            {selected && (
+              <SelectionOverlay
+                isLocked={Boolean(element.locked) || Boolean(element.customerLocked && mode !== 'template-author' && mode !== 'staff-edit')}
+                customerLocked={Boolean(element.customerLocked)}
+                isRotating={isRotating}
+                rotationAngle={liveTransform.rotation}
+                onHandlePointerDown={(handle, event) =>
+                  startGesture('sticker', element.id, handle === 'rotate' ? 'rotate' : 'resize', handle, event, Boolean(element.locked), liveTransform)
+                }
+              />
+            )}
           </div>
         );
       })}
@@ -1014,6 +1056,10 @@ export function DesignCanvas({
             }}
             onClick={(e) => {
               e.stopPropagation();
+              if (grp.customerLocked && mode !== 'template-author' && mode !== 'staff-edit') {
+                onLockedFeedback?.();
+                return;
+              }
               if (selectionMode === 'multi-select') {
                 if (grp.locked) onLockedFeedback?.();
                 else onToggleSelectElement?.(grp.id);
@@ -1032,7 +1078,8 @@ export function DesignCanvas({
             {isSelected && selectionMode !== 'multi-select' && (
               <SelectionOverlay
                 mode="group"
-                isLocked={Boolean(grp.locked)}
+                isLocked={Boolean(grp.locked) || Boolean(grp.customerLocked && mode !== 'template-author' && mode !== 'staff-edit')}
+                customerLocked={Boolean(grp.customerLocked)}
                 onHandlePointerDown={() => { }}
               />
             )}
@@ -1100,6 +1147,7 @@ interface TextElementItemProps {
   transform: TransformState;
   isSelected: boolean;
   isLocked: boolean;
+  customerLocked?: boolean;
   isRotating: boolean;
   onPointerDown: (e: React.PointerEvent) => void;
   onHandlePointerDown: (handle: TransformHandle, e: React.PointerEvent) => void;
@@ -1116,6 +1164,7 @@ function TextElementItem({
   transform,
   isSelected,
   isLocked,
+  customerLocked = false,
   isRotating,
   onPointerDown,
   onHandlePointerDown,
@@ -1171,6 +1220,7 @@ function TextElementItem({
       {isSelected && (
         <SelectionOverlay
           isLocked={isLocked}
+          customerLocked={customerLocked}
           isRotating={isRotating}
           rotationAngle={transform.rotation}
           onHandlePointerDown={onHandlePointerDown}

@@ -9,6 +9,7 @@ export interface LayerRowState {
  elementId: string;
  selected: boolean;
  locked: boolean;
+ customerLocked?: boolean;
  type: CanvasElement['type'];
  parentGroupId?: string;
  depth: number;

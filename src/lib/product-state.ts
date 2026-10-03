@@ -8,7 +8,7 @@ import { moveElements } from './multi-selection.ts';
 import { computeStickerContour } from './sticker-contour.ts';
 import { evaluateImageQuality } from './image-quality.ts';
 import { evaluateElementSafety, isElementImportant } from './safe-area.ts';
-import { canMutateElement, type DesignReviewMode } from './domain/design-revision.ts';
+import { canMutateElement, type EditorMutationMode } from './domain/design-revision.ts';
 import type { TemplateProvenance } from './domain/template.ts';
 export type ProductId = 'wrapping' | 'card' | 'sticker' | 'notebook';
 export type CardSurface = 'front' | 'inside' | 'back';
@@ -324,6 +324,7 @@ export interface CanvasElement {
  height: number;
  rotation: number;
  locked?: boolean;
+ customerLocked?: boolean;
  zIndex?: number;
  parentGroupId?: string;
  surface?: CardSurface;
@@ -370,6 +371,7 @@ export type DesignAction =
  | { type: 'RESIZE_ELEMENT'; id: string; width: number; height: number; x?: number; y?: number }
  | { type: 'ROTATE_ELEMENT'; id: string; rotation: number }
  | { type: 'LOCK_ELEMENT'; id: string; locked: boolean }
+ | { type: 'SET_CUSTOMER_LOCK'; id: string; customerLocked: boolean }
  | { type: 'SET_ELEMENTS'; value: CanvasElement[] }
  | { type: 'UPDATE_ELEMENT'; id: string; patch: Partial<CanvasElement> }
  | { type: 'ADD_CANVAS_ELEMENT'; element: CanvasElement }
@@ -1187,10 +1189,26 @@ export function createInitialState(productId: ProductId = 'wrapping'): DesignSta
  };
 }
 
+export function hasProtectedDescendants(
+ elements: readonly CanvasElement[],
+ groupId: string,
+ mode?: EditorMutationMode
+): boolean {
+ for (const el of elements) {
+  if (el.parentGroupId === groupId) {
+   if (!canMutateElement(mode, el)) return true;
+   if (el.type === 'group' && hasProtectedDescendants(elements, el.id, mode)) {
+    return true;
+   }
+  }
+ }
+ return false;
+}
+
 export function transitionState(
  state: DesignState,
  action: DesignAction,
- mode?: DesignReviewMode | 'guest'
+ mode?: EditorMutationMode
 ): DesignState {
  if (!state || !action) {
   return state;
@@ -1381,6 +1399,7 @@ export function transitionState(
    const list = state.elements ?? getDefaultElements(state);
    const target = list.find((el) => el.id === action.id);
    if (!target || !canMutateElement(mode, target)) return state;
+   if (target.type === 'group' && hasProtectedDescendants(list, target.id, mode)) return state;
    return {
     ...state,
     elements: list.map((el) => (el.id === action.id ? { ...el, x: action.x, y: action.y } : el)),
@@ -1391,6 +1410,7 @@ export function transitionState(
    const list = state.elements ?? getDefaultElements(state);
    const target = list.find((el) => el.id === action.id);
    if (!target || !canMutateElement(mode, target)) return state;
+   if (target.type === 'group' && hasProtectedDescendants(list, target.id, mode)) return state;
    return {
     ...state,
     elements: list.map((el) =>
@@ -1411,6 +1431,7 @@ export function transitionState(
    const list = state.elements ?? getDefaultElements(state);
    const target = list.find((el) => el.id === action.id);
    if (!target || !canMutateElement(mode, target)) return state;
+   if (target.type === 'group' && hasProtectedDescendants(list, target.id, mode)) return state;
    return {
     ...state,
     elements: list.map((el) =>
@@ -1421,13 +1442,51 @@ export function transitionState(
 
   case 'LOCK_ELEMENT': {
    const list = state.elements ?? getDefaultElements(state);
+   const target = list.find((el) => el.id === action.id);
+   if (!target) return state;
+   if (target.customerLocked && mode !== 'template-author' && mode !== 'staff-edit') {
+    return state;
+   }
    return {
     ...state,
     elements: list.map((el) => (el.id === action.id ? { ...el, locked: action.locked } : el)),
    };
   }
 
+  case 'SET_CUSTOMER_LOCK': {
+   if (mode !== 'template-author' && mode !== 'staff-edit') {
+    return state;
+   }
+   const list = state.elements ?? getDefaultElements(state);
+   const target = list.find((el) => el.id === action.id);
+   if (!target) return state;
+   return {
+    ...state,
+    elements: list.map((el) => (el.id === action.id ? { ...el, customerLocked: action.customerLocked } : el)),
+   };
+  }
+
   case 'SET_ELEMENTS': {
+   if (mode === 'template-author' || mode === 'staff-edit') {
+    return {
+     ...state,
+     elements: action.value,
+    };
+   }
+   const currentList = state.elements ?? getDefaultElements(state);
+   const currentLockedMap = new Map(
+    currentList.filter((el) => el.customerLocked).map((el) => [el.id, el])
+   );
+   for (const [id, original] of currentLockedMap) {
+    const next = action.value.find((el) => el.id === id);
+    if (!next) return state;
+    if (JSON.stringify(original) !== JSON.stringify(next)) return state;
+   }
+   for (const el of action.value) {
+    if (el.customerLocked && !currentLockedMap.has(el.id)) {
+     return state;
+    }
+   }
    return {
     ...state,
     elements: action.value,
@@ -1436,9 +1495,16 @@ export function transitionState(
 
   case 'UPDATE_ELEMENT': {
    const list = state.elements ?? getDefaultElements(state);
+   const target = list.find((el) => el.id === action.id);
+   if (!target || !canMutateElement(mode, target)) return state;
+   if (target.type === 'group' && hasProtectedDescendants(list, target.id, mode)) return state;
+   const patch = { ...action.patch };
+   if (mode !== 'template-author' && mode !== 'staff-edit') {
+    delete patch.customerLocked;
+   }
    return {
     ...state,
-    elements: list.map((el) => (el.id === action.id ? { ...el, ...action.patch } : el)),
+    elements: list.map((el) => (el.id === action.id ? { ...el, ...patch } : el)),
    };
   }
 
@@ -1466,7 +1532,17 @@ export function transitionState(
   case 'REMOVE_CANVAS_ELEMENT': {
    const currentList = state.elements ?? getDefaultElements(state);
    const target = currentList.find((el) => el.id === action.id);
-   const nextList = currentList.filter((el) => el.id !== action.id);
+   if (!target || !canMutateElement(mode, target)) return state;
+   if (target.type === 'group' && hasProtectedDescendants(currentList, target.id, mode)) return state;
+   const idsToRemove = new Set([action.id]);
+   if (target.type === 'group') {
+    for (const child of currentList) {
+     if (child.parentGroupId === action.id) {
+      idsToRemove.add(child.id);
+     }
+    }
+   }
+   const nextList = currentList.filter((el) => !idsToRemove.has(el.id));
    const syncPatch: Partial<DesignState> = {};
    if (target?.type === 'text') {
     const remainingText = nextList.find((el) => el.type === 'text');
@@ -1481,6 +1557,20 @@ export function transitionState(
 
   case 'REORDER_ELEMENTS': {
    const currentList = state.elements ?? getDefaultElements(state);
+   if (mode !== 'template-author' && mode !== 'staff-edit') {
+    const orderedSet = new Set(action.orderedIds);
+    if (action.orderedIds.length !== currentList.length || currentList.some((e) => !orderedSet.has(e.id))) {
+     return state;
+    }
+    const currentOrder = currentList.map((e) => e.id);
+    for (const elA of currentList) {
+     if (!canMutateElement(mode, elA)) {
+      if (currentOrder.indexOf(elA.id) !== action.orderedIds.indexOf(elA.id)) {
+       return state;
+      }
+     }
+    }
+   }
    const total = action.orderedIds.length;
    const zIndexMap = new Map<string, number>();
    action.orderedIds.forEach((id, index) => {
@@ -1500,7 +1590,8 @@ export function transitionState(
   case 'DUPLICATE_ELEMENT': {
    const currentList = state.elements ?? getDefaultElements(state);
    const target = currentList.find((el) => el.id === action.id);
-   if (!target) return state;
+   if (!target || !canMutateElement(mode, target)) return state;
+   if (target.type === 'group' && hasProtectedDescendants(currentList, target.id, mode)) return state;
 
    const newId = `${target.id}-copy-${Date.now()}`;
    const newZ = (target.zIndex ?? 1) + 1;
@@ -1537,8 +1628,17 @@ export function transitionState(
    const currentList = state.elements ?? getDefaultElements(state);
    const target = currentList.find((el) => el.id === action.id);
    if (!target || !canMutateElement(mode, target)) return state;
+   if (target.type === 'group' && hasProtectedDescendants(currentList, target.id, mode)) return state;
 
-   const nextList = currentList.filter((el) => el.id !== action.id);
+   const idsToRemove = new Set([action.id]);
+   if (target.type === 'group') {
+    for (const child of currentList) {
+     if (child.parentGroupId === action.id) {
+      idsToRemove.add(child.id);
+     }
+    }
+   }
+   const nextList = currentList.filter((el) => !idsToRemove.has(el.id));
    const syncPatch: Partial<DesignState> = {};
    if (target.type === 'image' && state.image) {
     syncPatch.image = null;
@@ -1561,29 +1661,29 @@ export function transitionState(
     // Disallow cross-surface grouping
     return state;
    }
-   const result = groupElements(state, action.ids);
+   const result = groupElements(state, action.ids, mode);
    return result.state;
   }
 
   case 'UNGROUP_ELEMENT': {
-   return ungroupElement(state, action.groupId);
+   return ungroupElement(state, action.groupId, mode);
   }
 
   case 'MOVE_ELEMENTS': {
    const currentList = state.elements ?? getDefaultElements(state);
    return {
     ...state,
-    elements: moveElements(currentList, action.ids, action.dx, action.dy),
+    elements: moveElements(currentList, action.ids, action.dx, action.dy, mode),
    };
   }
 
   case 'DUPLICATE_ELEMENTS': {
-   const result = duplicateSelectedElements(state, action.ids);
+   const result = duplicateSelectedElements(state, action.ids, mode);
    return result.state;
   }
 
   case 'DELETE_ELEMENTS': {
-   return deleteSelectedElements(state, action.ids);
+   return deleteSelectedElements(state, action.ids, mode);
   }
 
   case 'ADD_TEXT_ELEMENT': {
@@ -1628,6 +1728,7 @@ export function transitionState(
    }
 
    const target = currentList[targetIndex];
+   if (!canMutateElement(mode, target)) return state;
    const oldData = getTextData(target) ?? {
     text: '',
     color: '#111827',
@@ -1723,7 +1824,7 @@ export function transitionState(
    if (idx === -1 || idx === sorted.length - 1) return state;
    const current = sorted[idx];
    const next = sorted[idx + 1];
-   if (!current || !next) return state;
+   if (!current || !next || !canMutateElement(mode, current) || !canMutateElement(mode, next)) return state;
    const tempZ = current.zIndex ?? 0;
    current.zIndex = next.zIndex ?? tempZ + 1;
    next.zIndex = tempZ;
@@ -1738,7 +1839,7 @@ export function transitionState(
    if (idx <= 0) return state;
    const current = sorted[idx];
    const prev = sorted[idx - 1];
-   if (!current || !prev) return state;
+   if (!current || !prev || !canMutateElement(mode, current) || !canMutateElement(mode, prev)) return state;
    const tempZ = current.zIndex ?? 0;
    current.zIndex = prev.zIndex ?? 0;
    prev.zIndex = tempZ;
@@ -1774,7 +1875,7 @@ export function transitionState(
     currentList = [...currentList, target];
    }
 
-   if (!target) return state;
+   if (!target || !canMutateElement(mode, target)) return state;
 
    const existingData = target.data ? (target.data as Record<string, unknown>) : {};
    const frameWidth = target.width || 60;
@@ -1841,6 +1942,10 @@ export function transitionState(
    const currentList = state.elements ?? getDefaultElements(state);
    const safeOpacity = Math.max(0, Math.min(100, action.opacity));
    const targetId = action.id;
+   const targetEl = targetId
+    ? currentList.find((el) => el.id === targetId && el.type === 'image')
+    : currentList.find((el) => el.type === 'image');
+   if (targetEl && !canMutateElement(mode, targetEl)) return state;
 
    const nextList = currentList.map((el) => {
     if (el.type !== 'image') return el;
@@ -1872,7 +1977,7 @@ export function transitionState(
     ? currentList.find((el) => el.id === action.id && el.type === 'image')
     : currentList.find((el) => el.type === 'image');
 
-   if (!target) return state;
+   if (!target || !canMutateElement(mode, target)) return state;
 
    const existingData = (target.data ?? {}) as Record<string, unknown>;
    const originalSrc = (existingData.originalSrc as string | undefined) ?? (existingData.src as string) ?? state.image?.src ?? '';
@@ -1901,7 +2006,7 @@ export function transitionState(
     ? currentList.find((el) => el.id === action.id && el.type === 'image')
     : currentList.find((el) => el.type === 'image');
 
-   if (!target) return state;
+   if (!target || !canMutateElement(mode, target)) return state;
 
    const existingData = (target.data ?? {}) as Record<string, unknown>;
    const originalSrc = (existingData.originalSrc as string | undefined) ?? (existingData.src as string) ?? state.image?.src ?? '';
@@ -1930,7 +2035,7 @@ export function transitionState(
     ? currentList.find((el) => el.id === action.id && el.type === 'image')
     : currentList.find((el) => el.type === 'image');
 
-   if (!target) return state;
+   if (!target || !canMutateElement(mode, target)) return state;
 
    const existingData = (target.data ?? {}) as Record<string, unknown>;
    const nextList = currentList.map((el) =>
@@ -1960,7 +2065,7 @@ export function transitionState(
     ? currentList.find((el) => el.id === action.id && el.type === 'image')
     : currentList.find((el) => el.type === 'image');
 
-   if (!target) return state;
+   if (!target || !canMutateElement(mode, target)) return state;
 
    const existingData = (target.data ?? {}) as Record<string, unknown>;
    const nextList = currentList.map((el) =>
@@ -1992,7 +2097,7 @@ export function transitionState(
     ? currentList.find((el) => el.id === action.id && el.type === 'image')
     : currentList.find((el) => el.type === 'image');
 
-   if (!target) return state;
+   if (!target || !canMutateElement(mode, target)) return state;
 
    const existingData = (target.data ?? {}) as Record<string, unknown>;
    const normalizedMask = action.mask === 'none' ? null : action.mask;
@@ -2020,7 +2125,7 @@ export function transitionState(
     ? currentList.find((el) => el.id === action.id && el.type === 'image')
     : currentList.find((el) => el.type === 'image');
 
-   if (!target) return state;
+   if (!target || !canMutateElement(mode, target)) return state;
 
    const existingData = (target.data ?? {}) as Record<string, unknown>;
    const originalSrc = (existingData.originalSrc as string | undefined) ?? (existingData.src as string) ?? state.image?.src;
