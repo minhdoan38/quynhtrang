@@ -36,6 +36,7 @@ function getElements(state: DesignState, view: CardView): CanvasElement[] {
 }
 
 function ElementPreview({ element, state }: { element: CanvasElement; state: DesignState }) {
+  if (Boolean((element.data as Record<string, unknown> | undefined)?.placeholder)) return null;
   const style: CSSProperties = {
     left: `${element.x}%`,
     top: `${element.y}%`,

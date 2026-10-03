@@ -202,6 +202,8 @@ export interface TextElementData {
  lineHeight: number;
  letterSpacing: number;
  placeholder?: boolean;
+ placeholderType?: 'none' | 'text' | 'image';
+ placeholderHint?: string;
  fontFamilyId?: string;
  fontFaceId?: string;
  fontChecksum?: string;
@@ -252,6 +254,8 @@ export interface ImageObjectData {
  crop?: ImageCropData;
  mask?: string | null;
  placeholder?: boolean;
+ placeholderType?: 'none' | 'text' | 'image';
+ placeholderHint?: string;
  sourceWidth?: number;
  sourceHeight?: number;
  refineMaskData?: string;
@@ -372,6 +376,7 @@ export type DesignAction =
  | { type: 'ROTATE_ELEMENT'; id: string; rotation: number }
  | { type: 'LOCK_ELEMENT'; id: string; locked: boolean }
  | { type: 'SET_CUSTOMER_LOCK'; id: string; customerLocked: boolean }
+ | { type: 'SET_PLACEHOLDER_CONFIG'; id: string; placeholderType: 'none' | 'text' | 'image'; placeholderHint?: string; placeholder?: boolean }
  | { type: 'SET_ELEMENTS'; value: CanvasElement[] }
  | { type: 'UPDATE_ELEMENT'; id: string; patch: Partial<CanvasElement> }
  | { type: 'ADD_CANVAS_ELEMENT'; element: CanvasElement }
@@ -1466,6 +1471,41 @@ export function transitionState(
    };
   }
 
+  case 'SET_PLACEHOLDER_CONFIG': {
+   if (mode !== 'template-author' && mode !== 'staff-edit') {
+    return state;
+   }
+   const list = state.elements ?? getDefaultElements(state);
+   const target = list.find((el) => el.id === action.id);
+   if (!target) return state;
+
+   // Element type compatibility check
+   if (action.placeholderType === 'text' && target.type !== 'text') {
+    return state;
+   }
+   if (action.placeholderType === 'image' && target.type !== 'image') {
+    return state;
+   }
+
+   const existingData = (target.data ?? {}) as Record<string, unknown>;
+   const isNone = action.placeholderType === 'none';
+   const nextPlaceholder = isNone ? false : (action.placeholder !== undefined ? action.placeholder : true);
+   const nextPlaceholderType = isNone ? 'none' : action.placeholderType;
+   const nextPlaceholderHint = isNone || !action.placeholderHint?.trim() ? undefined : action.placeholderHint.trim();
+
+   const updatedData: Record<string, unknown> = {
+    ...existingData,
+    placeholder: nextPlaceholder,
+    placeholderType: nextPlaceholderType,
+    placeholderHint: nextPlaceholderHint,
+   };
+
+   return {
+    ...state,
+    elements: list.map((el) => (el.id === action.id ? { ...el, data: updatedData } : el)),
+   };
+  }
+
   case 'SET_ELEMENTS': {
    if (mode === 'template-author' || mode === 'staff-edit') {
     return {
@@ -1745,6 +1785,8 @@ export function transitionState(
     ...oldData,
     text: action.text,
     placeholder: false,
+    placeholderType: 'none',
+    placeholderHint: undefined,
    };
 
    const updatedElement: CanvasElement = {
@@ -1917,6 +1959,8 @@ export function transitionState(
      height: cropH,
     },
     placeholder: false,
+    placeholderType: 'none',
+    placeholderHint: undefined,
    };
 
    const nextList = currentList.map((el) =>
@@ -2254,9 +2298,30 @@ export function getPreflight(state: DesignState): PreflightResult {
   }
  }
 
+
+ // Unresolved optional placeholders: non-blocking preflight warning
+ for (const element of (state.elements ?? [])) {
+  const isPlaceholder = Boolean((element.data as Record<string, unknown> | undefined)?.placeholder);
+  if (isPlaceholder) {
+   checks.push({
+    id: `placeholder-${element.id}`,
+    level: 'warning',
+    type: 'warning',
+    category: 'general',
+    label: element.type === 'image' ? 'Khung ảnh chưa có ảnh' : 'Ô chữ chưa nhập nội dung',
+    description: element.type === 'image'
+     ? 'Khung ảnh mẫu này chưa được thay ảnh và sẽ không xuất hiện trên bản in.'
+     : 'Văn bản mẫu này chưa được nhập nội dung và sẽ không xuất hiện trên bản in.',
+    elementId: element.id,
+    surfaceId: element.surface ?? 'front',
+    canContinue: true,
+   });
+  }
+ }
  const elements = state.elements ?? getDefaultElements(state);
  for (const element of elements) {
   if (!isElementImportant(element.type)) continue;
+  if (Boolean((element.data as Record<string, unknown> | undefined)?.placeholder)) continue;
 
   const safety = evaluateElementSafety({
    element: {
@@ -2319,6 +2384,9 @@ export function getPreflight(state: DesignState): PreflightResult {
 
   for (const imageElement of imageElements) {
    const imageData = getImageData(imageElement);
+   if (imageData?.placeholder && !imageData?.src) {
+    continue;
+   }
    const crop = imageData?.crop;
    const cropFraction = crop
     ? crop.scale && crop.scale > 1

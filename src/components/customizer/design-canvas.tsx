@@ -99,6 +99,7 @@ export interface DesignCanvasProps {
     scaleRatio: number,
     deltaDegrees: number
   ) => void;
+  onRequestReplaceImage?: (elementId: string) => void;
 }
 
 export function DesignCanvas({
@@ -142,6 +143,7 @@ export function DesignCanvas({
   stickerContour,
   showSafeAreaGuide,
   activeSafetyReport,
+  onRequestReplaceImage,
 }: DesignCanvasProps) {
   const isWrapping = productId === 'wrapping';
   const wrappingMode = productOptions.mode === 'full-sheet' ? 'full-sheet' : 'pattern';
@@ -817,12 +819,13 @@ export function DesignCanvas({
         </div>
       )}
       {/* Uploaded Image element */}
-      {image?.src && (
+      {/* Uploaded or Placeholder Image element */}
+      {Boolean(image?.src || (imgElement && (imgData?.placeholder || !imgData?.src))) && (
         <div
           role="button"
           tabIndex={0}
           data-element-id={imgElement?.id || 'image-1'}
-          aria-label="Đối tượng ảnh"
+          aria-label={image?.src ? "Đối tượng ảnh" : "Khung ảnh mẫu"}
           className={`relative max-h-[70%] max-w-[70%] inline-flex items-center justify-center select-none touch-none ${selectionMode === 'multi-select' && selectedElementIds.includes(imgElement?.id || 'image-1')
             ? 'ring-2 ring-[#315F86]/80 ring-offset-2 rounded-xs'
             : ''
@@ -831,6 +834,7 @@ export function DesignCanvas({
               : ''
             }`}
           style={{
+            ...(image?.src ? {} : { width: `${imgElement?.width || 50}%`, height: `${imgElement?.height || 50}%` }),
             transform: `translate3d(${effectiveImageTransform.x}px, ${effectiveImageTransform.y}px, 0) rotate(${effectiveImageTransform.rotation}deg) scale(${effectiveImageTransform.scale})`,
             transformOrigin: 'center center',
           }}
@@ -843,6 +847,9 @@ export function DesignCanvas({
             if (selectionMode === 'multi-select') {
               e.stopPropagation();
               onToggleSelectElement?.(imgElement?.id || 'image-1');
+            } else {
+              onSelectTarget?.('image');
+              if (imgElement?.id) onSelectElement?.(imgElement.id);
             }
           }}
           onPointerDown={(e) => {
@@ -859,18 +866,40 @@ export function DesignCanvas({
         >
           {/* Fixed Frame with Mask */}
           <div
-            className="w-full h-full relative overflow-hidden"
+            className={`w-full h-full relative overflow-hidden ${!image?.src ? 'border-2 border-dashed border-[#315F86]/60 bg-[#315F86]/5 rounded-sm flex flex-col items-center justify-center p-2 text-center' : ''}`}
             style={{
               ...getMaskStyle(imgData?.mask),
-              opacity: imageOpacity,
+              opacity: image?.src ? imageOpacity : 1,
             }}
           >
-            <img
-              src={image.src}
-              alt={image.name || 'Ảnh đã tải lên'}
-              className="design-image w-full h-full object-cover pointer-events-none select-none origin-center will-change-transform"
-              style={getCropTransformStyle(imgData?.crop)}
-            />
+            {image?.src ? (
+              <img
+                src={image.src}
+                alt={image.name || 'Ảnh đã tải lên'}
+                className="design-image w-full h-full object-cover pointer-events-none select-none origin-center will-change-transform"
+                style={getCropTransformStyle(imgData?.crop)}
+              />
+            ) : (
+              <div className="flex flex-col items-center justify-center gap-1.5 pointer-events-auto">
+                <span className="text-[11px] font-medium text-[#315F86]/80 select-none">
+                  {imgData?.placeholderHint || 'Khung ảnh'}
+                </span>
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    if (imgElement?.customerLocked && mode !== 'template-author' && mode !== 'staff-edit') {
+                      onLockedFeedback?.();
+                      return;
+                    }
+                    onRequestReplaceImage?.(imgElement?.id || 'image-1');
+                  }}
+                  className="px-2.5 py-1 text-[11px] font-semibold bg-[#315F86] text-white rounded-md shadow-xs hover:bg-[#244A69] active:scale-95 transition-all select-none cursor-pointer"
+                >
+                  Thay ảnh
+                </button>
+              </div>
+            )}
           </div>
 
           {isImageSelected && (
@@ -901,7 +930,9 @@ export function DesignCanvas({
       {/* Render Text elements */}
       {resolvedTextElements.map((el) => {
         const data = getTextData(el);
-        if (!data || !data.text || !data.text.trim()) return null;
+        if (!data) return null;
+        const displayText = data.placeholder ? (data.placeholderHint || data.text) : data.text;
+        if (!displayText || !displayText.trim()) return null;
 
         const isThisTextSelected =
           !isMockup &&
@@ -1214,7 +1245,7 @@ function TextElementItem({
         className="design-text px-3 break-words pointer-events-none whitespace-pre-wrap"
         style={textStyle}
       >
-        {data.text}
+        {data.placeholder ? (data.placeholderHint || data.text) : data.text}
       </p>
 
       {isSelected && (

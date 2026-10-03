@@ -535,7 +535,8 @@ export function CustomizerShell({ context }: CustomizerShellProps = {}) {
     setSelectedTextId(elementId);
     setActiveSheet(null);
     startTransaction('edit-text', 'Sửa chữ', [elementId]);
-    setTextEditState(startTextEdit(elementId, data.text, selectAll));
+    const initialDraft = data.placeholder ? '' : data.text;
+    setTextEditState(startTextEdit(elementId, initialDraft, selectAll));
   }, [state, viewport, startTransaction]);
 
   const commitTextEdit = useCallback((edit: Exclude<TextEditState, null>): void => {
@@ -1746,7 +1747,11 @@ export function CustomizerShell({ context }: CustomizerShellProps = {}) {
       {textEditState && (
         <TextEditOverlay
           value={textEditState.draft}
-          placeholder="Nhập nội dung chữ..."
+          placeholder={(() => {
+            const el = (state.elements ?? []).find((e) => e.id === textEditState.elementId);
+            const d = el ? getTextData(el) : null;
+            return d?.placeholderHint || d?.text || 'Nhập nội dung chữ...';
+          })()}
           selectAllOnFocus={textEditState.selectAll}
           onChange={(newDraft) => {
             setTextEditState((prev) => (prev ? { ...prev, draft: newDraft } : null));
@@ -1956,6 +1961,7 @@ export function CustomizerShell({ context }: CustomizerShellProps = {}) {
             mode={mutationMode}
             showSafeAreaGuide={showSafeAreaGuide}
             activeSafetyReport={activeSafetyReport}
+            onRequestReplaceImage={(id) => handleOpenImagePicker('file', { mode: 'replace', targetElementId: id })}
             productId={state.productId}
             variantId={state.variantId}
             cardSurface={activeCardSurface}
@@ -2205,6 +2211,12 @@ export function CustomizerShell({ context }: CustomizerShellProps = {}) {
         activeSheet={activeSheet}
         mode={mutationMode}
         onToggleCustomerLock={handleToggleCustomerLock}
+        onSetPlaceholderConfig={(id, pType, hint) => {
+          executeAction(
+            { type: 'SET_PLACEHOLDER_CONFIG', id, placeholderType: pType, placeholderHint: hint },
+            { type: pType === 'image' ? 'replace-image' : 'edit-text', label: 'Cấu hình ô mẫu', affectedIds: [id] }
+          );
+        }}
         showSafeAreaGuide={showSafeAreaGuide}
         onToggleSafeAreaGuide={() => setShowSafeAreaGuide((prev) => !prev)}
         onClose={handleCloseSheet}

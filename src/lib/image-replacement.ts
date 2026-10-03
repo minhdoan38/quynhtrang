@@ -1,15 +1,15 @@
 import type {
-  ImageCropData,
-  DesignState,
-  CanvasElement,
-  ImageObjectData,
+ ImageCropData,
+ DesignState,
+ CanvasElement,
+ ImageObjectData,
 } from './product-state';
 
 export interface CalculateCoverCropParams {
-  frameWidth: number;
-  frameHeight: number;
-  imageWidth: number;
-  imageHeight: number;
+ frameWidth: number;
+ frameHeight: number;
+ imageWidth: number;
+ imageHeight: number;
 }
 
 /**
@@ -17,51 +17,51 @@ export interface CalculateCoverCropParams {
  * Does not distort or stretch image.
  */
 export function calculateCoverCrop({
-  frameWidth,
-  frameHeight,
-  imageWidth,
-  imageHeight,
+ frameWidth,
+ frameHeight,
+ imageWidth,
+ imageHeight,
 }: CalculateCoverCropParams): ImageCropData {
-  const safeFrameW = Math.max(1, frameWidth);
-  const safeFrameH = Math.max(1, frameHeight);
-  const safeImgW = Math.max(1, imageWidth);
-  const safeImgH = Math.max(1, imageHeight);
+ const safeFrameW = Math.max(1, frameWidth);
+ const safeFrameH = Math.max(1, frameHeight);
+ const safeImgW = Math.max(1, imageWidth);
+ const safeImgH = Math.max(1, imageHeight);
 
-  const frameAspect = safeFrameW / safeFrameH;
-  const imageAspect = safeImgW / safeImgH;
+ const frameAspect = safeFrameW / safeFrameH;
+ const imageAspect = safeImgW / safeImgH;
 
-  let cropW: number;
-  let cropH: number;
+ let cropW: number;
+ let cropH: number;
 
-  if (imageAspect > frameAspect) {
-    // Image is wider than frame -> height matches, crop left/right
-    cropH = safeImgH;
-    cropW = Math.round(safeImgH * frameAspect);
-  } else {
-    // Image is taller than frame -> width matches, crop top/bottom
-    cropW = safeImgW;
-    cropH = Math.round(safeImgW / frameAspect);
-  }
+ if (imageAspect > frameAspect) {
+  // Image is wider than frame -> height matches, crop left/right
+  cropH = safeImgH;
+  cropW = Math.round(safeImgH * frameAspect);
+ } else {
+  // Image is taller than frame -> width matches, crop top/bottom
+  cropW = safeImgW;
+  cropH = Math.round(safeImgW / frameAspect);
+ }
 
-  const cropX = Math.max(0, Math.round((safeImgW - cropW) / 2));
-  const cropY = Math.max(0, Math.round((safeImgH - cropH) / 2));
+ const cropX = Math.max(0, Math.round((safeImgW - cropW) / 2));
+ const cropY = Math.max(0, Math.round((safeImgH - cropH) / 2));
 
-  return {
-    x: cropX,
-    y: cropY,
-    width: cropW,
-    height: cropH,
-  };
+ return {
+  x: cropX,
+  y: cropY,
+  width: cropW,
+  height: cropH,
+ };
 }
 
 export interface ReplaceImageNewAsset {
-  id?: string;
-  src: string;
-  originalSrc?: string;
-  name?: string;
-  width?: number;
-  height?: number;
-  size?: number;
+ id?: string;
+ src: string;
+ originalSrc?: string;
+ name?: string;
+ width?: number;
+ height?: number;
+ size?: number;
 }
 
 /**
@@ -69,75 +69,77 @@ export interface ReplaceImageNewAsset {
  * mask, rotation, opacity, and layer order. Resets asset-specific processing.
  */
 export function replaceImageInState(
-  state: DesignState,
-  targetId: string,
-  newAsset: ReplaceImageNewAsset
+ state: DesignState,
+ targetId: string,
+ newAsset: ReplaceImageNewAsset
 ): DesignState {
-  let currentList = state.elements && state.elements.length > 0 ? state.elements : [];
-  let target = targetId
-    ? currentList.find((el) => el.id === targetId && el.type === 'image')
-    : currentList.find((el) => el.type === 'image');
+ let currentList = state.elements && state.elements.length > 0 ? state.elements : [];
+ let target = targetId
+  ? currentList.find((el) => el.id === targetId && el.type === 'image')
+  : currentList.find((el) => el.type === 'image');
 
-  if (!target && !targetId && state.image) {
-    target = {
-      id: 'image-1',
-      type: 'image',
-      x: 50,
-      y: 45,
-      width: 60,
-      height: 60,
-      rotation: 0,
-      locked: false,
-      zIndex: 1,
-      data: {
-        src: state.image.src,
-        name: state.image.name,
-      },
-    };
-    currentList = [...currentList, target];
-  }
-
-  if (!target) return state;
-
-  const existingData = ((target.data ?? {}) as unknown) as Partial<ImageObjectData>;
-  const frameWidth = target.width || 60;
-  const frameHeight = target.height || 60;
-  const imgWidth = newAsset.width || 800;
-  const imgHeight = newAsset.height || 800;
-
-  const defaultCrop = calculateCoverCrop({
-    frameWidth,
-    frameHeight,
-    imageWidth: imgWidth,
-    imageHeight: imgHeight,
-  });
-
-  const updatedData: ImageObjectData = {
-    ...existingData,
-    src: newAsset.src,
-    originalSrc: newAsset.originalSrc ?? newAsset.src,
-    removedBackgroundSrc: undefined, // Strictly reset background removal on new asset
-    name: newAsset.name ?? existingData.name ?? 'Ảnh đã thay thế',
-    assetId: newAsset.id ?? existingData.assetId,
-    sourceWidth: newAsset.width,
-    sourceHeight: newAsset.height,
-    crop: defaultCrop,
-    placeholder: false,
+ if (!target && !targetId && state.image) {
+  target = {
+   id: 'image-1',
+   type: 'image',
+   x: 50,
+   y: 45,
+   width: 60,
+   height: 60,
+   rotation: 0,
+   locked: false,
+   zIndex: 1,
+   data: {
+    src: state.image.src,
+    name: state.image.name,
+   },
   };
+  currentList = [...currentList, target];
+ }
 
-  const nextElements = currentList.map((el) =>
-    el.id === target.id ? { ...el, data: updatedData as unknown as Record<string, unknown> } : el
-  );
+ if (!target) return state;
 
-  return {
-    ...state,
-    image: {
-      name: newAsset.name ?? state.image?.name ?? 'Ảnh đã thay thế',
-      src: newAsset.src,
-      width: newAsset.width ?? state.image?.width,
-      height: newAsset.height ?? state.image?.height,
-      size: newAsset.size ?? state.image?.size,
-    },
-    elements: nextElements,
-  };
+ const existingData = ((target.data ?? {}) as unknown) as Partial<ImageObjectData>;
+ const frameWidth = target.width || 60;
+ const frameHeight = target.height || 60;
+ const imgWidth = newAsset.width || 800;
+ const imgHeight = newAsset.height || 800;
+
+ const defaultCrop = calculateCoverCrop({
+  frameWidth,
+  frameHeight,
+  imageWidth: imgWidth,
+  imageHeight: imgHeight,
+ });
+
+ const updatedData: ImageObjectData = {
+  ...existingData,
+  src: newAsset.src,
+  originalSrc: newAsset.originalSrc ?? newAsset.src,
+  removedBackgroundSrc: undefined, // Strictly reset background removal on new asset
+  name: newAsset.name ?? existingData.name ?? 'Ảnh đã thay thế',
+  assetId: newAsset.id ?? existingData.assetId,
+  sourceWidth: newAsset.width,
+  sourceHeight: newAsset.height,
+  crop: defaultCrop,
+  placeholder: false,
+  placeholderType: 'none',
+  placeholderHint: undefined,
+ };
+
+ const nextElements = currentList.map((el) =>
+  el.id === target.id ? { ...el, data: updatedData as unknown as Record<string, unknown> } : el
+ );
+
+ return {
+  ...state,
+  image: {
+   name: newAsset.name ?? state.image?.name ?? 'Ảnh đã thay thế',
+   src: newAsset.src,
+   width: newAsset.width ?? state.image?.width,
+   height: newAsset.height ?? state.image?.height,
+   size: newAsset.size ?? state.image?.size,
+  },
+  elements: nextElements,
+ };
 }

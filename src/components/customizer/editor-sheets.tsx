@@ -141,6 +141,7 @@ interface EditorSheetsProps {
   onToggleSafeAreaGuide?: () => void;
   mode?: EditorMutationMode;
   onToggleCustomerLock?: (id: string, customerLocked: boolean) => void;
+  onSetPlaceholderConfig?: (id: string, placeholderType: 'none' | 'text' | 'image', placeholderHint?: string) => void;
 }
 
 const PALETTE = [
@@ -228,6 +229,7 @@ export function EditorSheets({
   onToggleSafeAreaGuide,
   mode,
   onToggleCustomerLock,
+  onSetPlaceholderConfig,
 }: EditorSheetsProps) {
   const isOpen = activeSheet !== null;
 
@@ -710,6 +712,51 @@ export function EditorSheets({
                 <span>Đưa xuống dưới</span>
               </button>
 
+              {Boolean((mode === 'template-author' || mode === 'staff-edit') && selectedElementId && onSetPlaceholderConfig) && (() => {
+                const targetEl = elements?.find((e) => e.id === selectedElementId);
+                if (!targetEl || (targetEl.type !== 'text' && targetEl.type !== 'image')) return null;
+                const data = (targetEl.data ?? {}) as Record<string, unknown>;
+                const isPlaceholder = Boolean(data.placeholder);
+                const pType: 'text' | 'image' = targetEl.type === 'text' ? 'text' : 'image';
+                const currentHint = typeof data.placeholderHint === 'string' ? data.placeholderHint : '';
+                return (
+                  <div className="pt-2 pb-1 border-t border-[#ECE6DC] space-y-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (isPlaceholder) {
+                          onSetPlaceholderConfig?.(targetEl.id, 'none');
+                        } else {
+                          onSetPlaceholderConfig?.(targetEl.id, pType, currentHint || (pType === 'text' ? 'Nhập nội dung' : 'Chọn ảnh'));
+                        }
+                      }}
+                      className="w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-left hover:bg-[#F8F3E8] active:scale-98 transition-all text-xs font-medium"
+                    >
+                      <div className="flex items-center gap-3">
+                        <Sparkles className="w-4 h-4 text-[#315F86]" />
+                        <span>{pType === 'text' ? 'Đặt làm ô chữ mẫu' : 'Đặt làm khung ảnh mẫu'}</span>
+                      </div>
+                      <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${isPlaceholder ? 'bg-[#315F86] text-white' : 'bg-[#ECE6DC] text-[#666A6D]'}`}>
+                        {isPlaceholder ? 'Đang bật' : 'Tắt'}
+                      </span>
+                    </button>
+                    {isPlaceholder && (
+                      <div className="px-3.5">
+                        <label className="text-[10px] text-[#666A6D] block mb-1">Gợi ý cho khách:</label>
+                        <input
+                          type="text"
+                          value={currentHint}
+                          placeholder={pType === 'text' ? 'Ví dụ: Nhập tên bạn' : 'Ví dụ: Ảnh chân dung'}
+                          onChange={(e) => {
+                            onSetPlaceholderConfig?.(targetEl.id, pType, e.target.value);
+                          }}
+                          className="w-full text-xs px-2.5 py-1.5 rounded-lg border border-[#ECE6DC] bg-white text-[#2E3338] focus:outline-none focus:ring-1 focus:ring-[#315F86]"
+                        />
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
               <div className="pt-2 border-t border-[#ECE6DC]" />
 
               <button

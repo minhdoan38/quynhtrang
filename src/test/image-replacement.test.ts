@@ -83,3 +83,45 @@ test('replaceImageInState preserves layout, mask, rotation, and resets backgroun
   assert.equal(replacedEl.data?.sourceHeight, 1200);
   assert.ok(replacedEl.data?.crop);
 });
+
+test('replaceImageInState on image placeholder clears placeholder, placeholderType, and placeholderHint', () => {
+  const base = createInitialState('card');
+  const placeholderElement: CanvasElement = {
+    id: 'placeholder-img',
+    type: 'image',
+    x: 50,
+    y: 40,
+    width: 100,
+    height: 100,
+    rotation: 10,
+    locked: false,
+    zIndex: 2,
+    data: {
+      src: '',
+      placeholder: true,
+      placeholderType: 'image',
+      placeholderHint: 'Chọn ảnh chân dung',
+      mask: 'heart',
+    },
+  };
+  const stateWithPlaceholder = { ...base, elements: [placeholderElement] };
+
+  const nextState = replaceImageInState(stateWithPlaceholder, 'placeholder-img', {
+    id: 'asset-uploaded',
+    src: 'https://example.com/uploaded.jpg',
+    name: 'uploaded.jpg',
+    width: 800,
+    height: 600,
+  });
+
+  const replaced = nextState.elements?.find((el) => el.id === 'placeholder-img')!;
+  assert.ok(replaced);
+  assert.equal(replaced.data?.placeholder, false);
+  assert.equal(replaced.data?.placeholderType, 'none');
+  assert.equal(replaced.data?.placeholderHint, undefined);
+  assert.equal(replaced.data?.src, 'https://example.com/uploaded.jpg');
+  assert.equal(replaced.data?.mask, 'heart');
+  assert.equal(replaced.width, 100);
+  assert.equal(replaced.height, 100);
+  assert.equal(replaced.rotation, 10);
+});

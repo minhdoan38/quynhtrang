@@ -138,7 +138,7 @@ function getMaskStyle(mask: string | null | undefined): CSSProperties {
   }
 }
 
-function RenderElementView({
+export function RenderElementView({
   element,
   design,
   coordinateSpace,
@@ -148,6 +148,7 @@ function RenderElementView({
   coordinateSpace?: { width: number; height: number };
 }): ReactNode {
   if (element.type === 'group') return null;
+  if (Boolean((element.data as Record<string, unknown> | undefined)?.placeholder)) return null;
 
   const x = typeof element.x === 'number' && Number.isFinite(element.x) ? element.x : 0;
   const y = typeof element.y === 'number' && Number.isFinite(element.y) ? element.y : 0;

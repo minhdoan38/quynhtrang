@@ -24,6 +24,9 @@ interface Motif {
 }
 
 function getMotif(element: CanvasElement | undefined, state: DesignState): Motif {
+  if (element && Boolean((element.data as Record<string, unknown> | undefined)?.placeholder)) {
+    return {};
+  }
   if (!element) {
     return state.image ? { src: state.image.src } : state.text ? { text: state.text, color: state.color } : {};
   }
@@ -65,6 +68,7 @@ function SheetElement({ element, sheetWidth, sheetHeight, state }: {
   sheetHeight: number;
   state: DesignState;
 }) {
+  if (Boolean((element.data as Record<string, unknown> | undefined)?.placeholder)) return null;
   const motif = getMotif(element, state);
   const style: CSSProperties = {
     left: `${(element.x / sheetWidth) * 100}%`,
