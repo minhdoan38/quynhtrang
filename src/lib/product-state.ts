@@ -2384,7 +2384,7 @@ export function getPreflight(state: DesignState): PreflightResult {
 
   for (const imageElement of imageElements) {
    const imageData = getImageData(imageElement);
-   if (imageData?.placeholder && !imageData?.src) {
+   if (imageData?.placeholder === true) {
     continue;
    }
    const crop = imageData?.crop;

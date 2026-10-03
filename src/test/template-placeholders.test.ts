@@ -277,6 +277,45 @@ test('getPreflight: reports non-blocking warning for unresolved placeholders and
   assert.equal(qualityWarningForEmpty, undefined);
 });
 
+test('getPreflight: sample image placeholders with low-res src do NOT emit image quality warnings or errors', () => {
+  const doc: DesignState = {
+    ...createInitialState('card'),
+    elements: [
+      {
+        id: 'sample-guide-image',
+        type: 'image',
+        x: 10,
+        y: 10,
+        width: 80,
+        height: 80,
+        rotation: 0,
+        data: {
+          src: 'https://example.com/sample-low-res-guide.png',
+          placeholder: true,
+          placeholderType: 'image',
+          placeholderHint: 'Ảnh mẫu chân dung',
+          sourceWidth: 50,
+          sourceHeight: 50,
+        },
+      },
+    ],
+  };
+
+  const preflight = getPreflight(doc);
+  assert.equal(preflight.hasErrors, false, 'Sample image placeholder must not cause preflight errors');
+  assert.equal(preflight.hasWarnings, true, 'Sample image placeholder must emit non-blocking warning');
+
+  // Must emit non-blocking placeholder warning
+  const placeholderWarning = preflight.checks.find((c) => c.id === 'placeholder-sample-guide-image');
+  assert.ok(placeholderWarning, 'Should find placeholder warning');
+  assert.equal(placeholderWarning.level, 'warning');
+  assert.equal(placeholderWarning.canContinue, true);
+
+  // Must NOT emit image quality warning or error
+  const qualityCheck = preflight.checks.find((c) => c.id === 'image-quality-sample-guide-image');
+  assert.equal(qualityCheck, undefined, 'Image quality checks must be skipped for sample placeholders');
+});
+
 test('RenderElementView: omits elements with placeholder === true and renders committed/decorative elements', () => {
   const unresolvedTextDoc: DesignState = {
     ...createInitialState('card'),
