@@ -1223,7 +1223,7 @@ export function transitionState(
   return state;
  }
 
- if (mode === 'staff-edit') {
+ if (mode === 'staff-edit' || mode === 'template-author' || mode === 'template-preview') {
   if (action.type === 'SET_PRODUCT' || action.type === 'SET_VARIANT' || action.type === 'SET_QUANTITY') {
    return state;
   }

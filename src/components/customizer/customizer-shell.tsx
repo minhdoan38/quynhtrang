@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import gsap from 'gsap';
 import { useGSAP } from '@gsap/react';
 import {
@@ -89,7 +89,9 @@ import {
 } from '@/lib/text-edit-session';
 import { TextEditOverlay } from './text-edit-overlay';
 import { useRouter } from 'next/navigation';
-import { getEditorMutationMode, type CustomizerContext } from '@/lib/editor-context';
+import { getEditorMutationMode, getEditorCapabilities, type CustomizerContext } from '@/lib/editor-context';
+import { TemplateAuthorControls } from './template-author-controls';
+import { TemplateCustomerPreview } from './template-customer-preview';
 import { canMutateElement } from '@/lib/domain/design-revision';
 import {
   groupElements,
@@ -122,6 +124,20 @@ export function CustomizerShell({ context }: CustomizerShellProps = {}) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const workspaceRef = useRef<HTMLElement>(null);
 
+  const capabilities = useMemo(() => getEditorCapabilities(context), [context]);
+  const [isCustomerPreviewOpen, setIsCustomerPreviewOpen] = useState(false);
+  const previewBlobsRef = useRef<Set<string>>(new Set());
+
+  useEffect(() => {
+    return () => {
+      if (capabilities.isIsolatedPreview) {
+        previewBlobsRef.current.forEach((url) => {
+          revokeImageUrl(url);
+        });
+        previewBlobsRef.current.clear();
+      }
+    };
+  }, [capabilities.isIsolatedPreview]);
   const [mounted, setMounted] = useState(false);
   const [view, setView] = useState<View>('launcher');
   const [viewport, setViewport] = useState<ViewportState>(resetToFit);
@@ -285,6 +301,9 @@ export function CustomizerShell({ context }: CustomizerShellProps = {}) {
   }, [activeSheet, closeColorSession, commitActiveTransaction]);
 
   const executeAutosave = useCallback((currentState: DesignState) => {
+    if (capabilities.isIsolatedPreview) {
+      return true;
+    }
     if (context?.type === 'staff') {
       context.onSave?.(currentState);
       return true;
@@ -297,6 +316,9 @@ export function CustomizerShell({ context }: CustomizerShellProps = {}) {
       context.onSave?.(currentState, context.initialRevision);
       return true;
     }
+    if (!capabilities.allowLocalStorage) {
+      return true;
+    }
     setSaveStatus('saving');
     const ok = flushAutosave(currentState);
     setSaveStatus(ok ? 'saved' : 'error');
@@ -304,11 +326,12 @@ export function CustomizerShell({ context }: CustomizerShellProps = {}) {
       setRecentProjects(getRecentProjects());
     }
     return ok;
-  }, [context]);
+  }, [context, capabilities]);
 
   // Continuous debounced autosave (400ms) - paused during active transaction
   useEffect(() => {
     if (!mounted || activeTransaction !== null) return;
+    if (capabilities.isIsolatedPreview) return;
     if (context?.type === 'staff') {
       if (context.mode === 'staff-edit') {
         context.onSave?.(state);
@@ -323,6 +346,7 @@ export function CustomizerShell({ context }: CustomizerShellProps = {}) {
       context.onSave?.(state, context.initialRevision);
       return;
     }
+    if (!capabilities.allowLocalStorage) return;
     setSaveStatus('saving');
     if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
     saveTimerRef.current = setTimeout(() => {
@@ -331,18 +355,18 @@ export function CustomizerShell({ context }: CustomizerShellProps = {}) {
     return () => {
       if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
     };
-  }, [state, mounted, executeAutosave, activeTransaction, context]);
+  }, [state, mounted, executeAutosave, activeTransaction, context, capabilities]);
 
   // Mobile lifecycle: save on visibility change / backgrounding
   useEffect(() => {
     const handleVisibilityChange = () => {
-      if (document.visibilityState === 'hidden' && mounted) {
+      if (document.visibilityState === 'hidden' && mounted && !capabilities.isIsolatedPreview) {
         executeAutosave(state);
       }
     };
     document.addEventListener('visibilitychange', handleVisibilityChange);
     return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
-  }, [state, mounted, executeAutosave]);
+  }, [state, mounted, executeAutosave, capabilities]);
   const [overlayMode, setOverlayMode] = useState<EditorOverlayMode>(null);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
@@ -901,13 +925,14 @@ export function CustomizerShell({ context }: CustomizerShellProps = {}) {
   // Listen to Escape key for unified back
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
+      if (isCustomerPreviewOpen) return;
       if (e.key === 'Escape' && view === 'editor') {
         handleUnifiedBack();
       }
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [view, handleUnifiedBack]);
+  }, [view, handleUnifiedBack, isCustomerPreviewOpen]);
 
   const handleUndo = useCallback(() => {
     const entry = undo();
@@ -950,14 +975,65 @@ export function CustomizerShell({ context }: CustomizerShellProps = {}) {
   }, [redo, showToast]);
 
   useEditorShortcuts({
-    enabled: view === 'editor',
+    enabled: view === 'editor' && !isCustomerPreviewOpen,
     onUndo: handleUndo,
     onRedo: handleRedo,
   });
 
   const handleUploadImage = useCallback(async (file: File) => {
     try {
+      if (context?.type === 'template-author') {
+        if (!context.onUploadAsset) {
+          showToast('Tải ảnh lên chưa được hỗ trợ trong bản nháp này.');
+          return;
+        }
+        const uploaded = await context.onUploadAsset(file);
+        const imageState = {
+          src: uploaded.url,
+          name: file.name,
+          width: 800,
+          height: 800,
+          size: file.size,
+          assetId: uploaded.assetId,
+        };
+        const currentCtx = imageSourceContextRef.current;
+        const targetId = currentCtx.mode === 'replace' ? currentCtx.targetElementId : (selectedElementId || 'image-1');
+        if (currentCtx.mode === 'replace') {
+          executeAction(
+            {
+              type: 'REPLACE_IMAGE_ASSET',
+              id: targetId,
+              asset: {
+                src: imageState.src,
+                name: imageState.name,
+                width: imageState.width,
+                height: imageState.height,
+                size: imageState.size,
+              },
+            },
+            { type: 'replace-image', label: 'Thay ảnh', affectedIds: [targetId] }
+          );
+          setSelectedTarget('image');
+          setSelectedElementId(targetId);
+          showToast('Đã thay ảnh (giữ nguyên khung thiết kế).');
+        } else {
+          executeAction(
+            { type: 'SET_IMAGE', value: imageState },
+            { type: 'add', label: 'Thêm ảnh', affectedIds: ['image-1'] }
+          );
+          setSelectedTarget('image');
+          const elements = state.elements ?? getDefaultElements(state);
+          const imgEl = elements.find((e) => e.type === 'image');
+          setSelectedElementId(imgEl?.id || 'image-1');
+          showToast('Tải ảnh lên thành công.');
+        }
+        return;
+      }
+
       const imageState = await processImageUpload(file);
+      if (capabilities.isIsolatedPreview && imageState.src.startsWith('blob:')) {
+        previewBlobsRef.current.add(imageState.src);
+      }
       const currentCtx = imageSourceContextRef.current;
       const targetId = currentCtx.mode === 'replace' ? currentCtx.targetElementId : (selectedElementId || 'image-1');
       if (currentCtx.mode === 'replace') {
@@ -993,7 +1069,7 @@ export function CustomizerShell({ context }: CustomizerShellProps = {}) {
     } catch (err: unknown) {
       showToast(err instanceof Error ? err.message : 'Không thể sử dụng ảnh này.');
     }
-  }, [executeAction, state, showToast]);
+  }, [context, capabilities, executeAction, state, showToast, selectedElementId]);
 
   const handleFileInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -1864,30 +1940,47 @@ export function CustomizerShell({ context }: CustomizerShellProps = {}) {
           </span>
         </div>
 
-        {/* Undo / Redo controls */}
-        <div className="flex items-center gap-1">
-          <button
-            type="button"
-            disabled={!canUndo}
-            aria-disabled={!canUndo}
-            onClick={handleUndo}
-            aria-label="Hoàn tác"
-            title="Hoàn tác"
-            className="flex items-center justify-center w-9 h-9 rounded-lg text-[#2E3338] disabled:opacity-30 disabled:cursor-not-allowed hover:bg-[#F8F3E8] active:scale-95 transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#315F86]"
-          >
-            <Undo2 className="w-4 h-4" />
-          </button>
-          <button
-            type="button"
-            disabled={!canRedo}
-            aria-disabled={!canRedo}
-            onClick={handleRedo}
-            aria-label="Làm lại"
-            title="Làm lại"
-            className="flex items-center justify-center w-9 h-9 rounded-lg text-[#2E3338] disabled:opacity-30 disabled:cursor-not-allowed hover:bg-[#F8F3E8] active:scale-95 transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#315F86]"
-          >
-            <Redo2 className="w-4 h-4" />
-          </button>
+        {/* Actions: Template Author Controls + Undo / Redo */}
+        <div className="flex items-center gap-1.5 sm:gap-2">
+          {capabilities.isAuthorMode && (
+            <TemplateAuthorControls
+              saveStatus={saveStatus}
+              isReadOnly={Boolean(context && 'readOnly' in context && context.readOnly)}
+              onCustomerPreview={() => {
+                if (context && 'onCustomerPreview' in context && context.onCustomerPreview) {
+                  context.onCustomerPreview();
+                } else {
+                  setIsCustomerPreviewOpen(true);
+                }
+              }}
+              onPublish={context && 'onPublish' in context ? context.onPublish : undefined}
+              onRetrySave={() => executeAutosave(state)}
+            />
+          )}
+          <div className="flex items-center gap-1">
+            <button
+              type="button"
+              disabled={!canUndo}
+              aria-disabled={!canUndo}
+              onClick={handleUndo}
+              aria-label="Hoàn tác"
+              title="Hoàn tác"
+              className="flex items-center justify-center w-9 h-9 rounded-lg text-[#2E3338] disabled:opacity-30 disabled:cursor-not-allowed hover:bg-[#F8F3E8] active:scale-95 transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#315F86]"
+            >
+              <Undo2 className="w-4 h-4" />
+            </button>
+            <button
+              type="button"
+              disabled={!canRedo}
+              aria-disabled={!canRedo}
+              onClick={handleRedo}
+              aria-label="Làm lại"
+              title="Làm lại"
+              className="flex items-center justify-center w-9 h-9 rounded-lg text-[#2E3338] disabled:opacity-30 disabled:cursor-not-allowed hover:bg-[#F8F3E8] active:scale-95 transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#315F86]"
+            >
+              <Redo2 className="w-4 h-4" />
+            </button>
+          </div>
         </div>
       </header>
 
@@ -2443,8 +2536,12 @@ export function CustomizerShell({ context }: CustomizerShellProps = {}) {
               ? 'So sánh bản sửa'
               : 'Tiếp tục đặt in'
           }
-          readOnly={context?.type === 'staff' && context.mode === 'review'}
+          readOnly={
+            (context?.type === 'staff' && context.mode === 'review') ||
+            !capabilities.canCheckout
+          }
           onContinueToCheckout={() => {
+            if (!capabilities.canCheckout) return;
             router.push('/checkout');
             const existingDraft = loadCheckoutDraft();
             const approvedDesign: DesignState = JSON.parse(JSON.stringify(state));
@@ -2547,6 +2644,15 @@ export function CustomizerShell({ context }: CustomizerShellProps = {}) {
             </div>
           </div>
         </div>
+      )}
+
+      {/* Isolated Customer Preview Sandbox Modal */}
+      {isCustomerPreviewOpen && (
+        <TemplateCustomerPreview
+          initialDocument={state}
+          templateId={context?.type === 'template-author' ? context.templateId : undefined}
+          onExit={() => setIsCustomerPreviewOpen(false)}
+        />
       )}
     </div>
   );
