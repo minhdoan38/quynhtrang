@@ -36,6 +36,30 @@ export interface TemplateAuthorClientProps {
   };
 }
 
+function resolveFindingSurface(
+  f: { code: string; elementId?: string; surfaceId?: string; message?: string },
+  elements: Array<{ id: string; surface?: string }> | undefined,
+  productId: string,
+): 'front' | 'inside' | 'back' | undefined {
+  if (f.surfaceId === 'front' || f.surfaceId === 'inside' || f.surfaceId === 'back') {
+    return f.surfaceId;
+  }
+  if (f.elementId && elements) {
+    const el = elements.find((e) => e.id === f.elementId);
+    if (el?.surface === 'front' || el?.surface === 'inside' || el?.surface === 'back') {
+      return el.surface;
+    }
+  }
+  if (productId === 'card') {
+    const msg = (f.message || '').toLowerCase();
+    const code = (f.code || '').toLowerCase();
+    if (msg.includes('mặt trong') || code.includes('inside')) return 'inside';
+    if (msg.includes('mặt sau') || code.includes('back')) return 'back';
+    if (msg.includes('mặt trước') || code.includes('front')) return 'front';
+  }
+  return undefined;
+}
+
 export function TemplateAuthorClient({
   template,
   initialDraft,
@@ -58,10 +82,10 @@ export function TemplateAuthorClient({
   const [isPublishOpen, setIsPublishOpen] = useState(false);
   const [isValidating, setIsValidating] = useState(false);
   const [validationBlockers, setValidationBlockers] = useState<
-    Array<{ code: string; message: string; elementId?: string }>
+    Array<{ code: string; message: string; elementId?: string; surfaceId?: string }>
   >([]);
   const [validationWarnings, setValidationWarnings] = useState<
-    Array<{ id: string; code: string; message: string }>
+    Array<{ id: string; code: string; message: string; elementId?: string; surfaceId?: string }>
   >([]);
   const [acknowledgedWarningIds, setAcknowledgedWarningIds] = useState<string[]>([]);
   const [validationReceipt, setValidationReceipt] = useState<TemplateValidationReceipt | null>(null);
@@ -157,29 +181,36 @@ export function TemplateAuthorClient({
       const receipt: TemplateValidationReceipt = data.receipt;
       setValidationReceipt(receipt);
 
-      const bList: Array<{ code: string; message: string; elementId?: string }> = [];
-      const wList: Array<{ id: string; code: string; message: string }> = [];
+      const bList: Array<{ code: string; message: string; elementId?: string; surfaceId?: string }> = [];
+      const wList: Array<{ id: string; code: string; message: string; elementId?: string; surfaceId?: string }> = [];
 
       if (!receipt.customerPreviewPassed) {
         bList.push({
           code: 'PREVIEW_FAILED',
           message: 'Khung hiển thị khách hàng không đạt yêu cầu kết xuất',
+          surfaceId: template.productId === 'card' ? 'front' : undefined,
         });
       }
 
       const warningSet = new Set(receipt.warningIds || []);
+      const draftElements = initialDraft.designDocument?.elements;
+
       for (const f of receipt.findings || []) {
+        const resolvedSurface = resolveFindingSurface(f, draftElements, template.productId);
         if (warningSet.has(f.code) || (f.elementId && warningSet.has(`warning-${f.elementId}`))) {
           wList.push({
             id: f.code,
             code: f.code,
             message: f.message || f.code,
+            elementId: f.elementId,
+            surfaceId: resolvedSurface,
           });
         } else {
           bList.push({
             code: f.code,
             message: f.message || f.code,
             elementId: f.elementId,
+            surfaceId: resolvedSurface,
           });
         }
       }
@@ -193,6 +224,7 @@ export function TemplateAuthorClient({
               wId === 'template-no-editable-elements'
                 ? 'Mẫu không có phần tử nào cho phép khách chỉnh sửa'
                 : `Cảnh báo kiểm duyệt: ${wId}`,
+            surfaceId: template.productId === 'card' ? 'front' : undefined,
           });
         }
       }
@@ -249,6 +281,24 @@ export function TemplateAuthorClient({
     }
   };
 
+  const handleNavigateSurface = useCallback((surfaceId?: string, elementId?: string) => {
+    if (!surfaceId) return;
+    setIsPublishOpen(false);
+
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(
+        new CustomEvent('navigate_card_surface', {
+          detail: { surface: surfaceId, elementId },
+        })
+      );
+      window.dispatchEvent(
+        new CustomEvent('card_surface_changed', {
+          detail: { surface: surfaceId },
+        })
+      );
+    }
+  }, []);
+
   const handleOpenPublish = useCallback(async () => {
     if (isReadOnly) return;
     await draftSession.flushSave();
@@ -273,6 +323,7 @@ export function TemplateAuthorClient({
       router.push('/admin/content/templates');
     },
     onPublish: handleOpenPublish,
+    onNavigateSurface: handleNavigateSurface,
   }), [
     template.id,
     initialDraft.id,
@@ -283,6 +334,7 @@ export function TemplateAuthorClient({
     draftSession,
     router,
     handleOpenPublish,
+    handleNavigateSurface,
   ]);
 
   const activeConflict = draftSession.conflictDetails?.message || leaseConflict;
@@ -349,11 +401,45 @@ export function TemplateAuthorClient({
                 <p className="text-red-700">
                   Phát hiện các vấn đề cần phải sửa trước khi có thể xuất bản:
                 </p>
-                <ul className="list-disc pl-5 space-y-1 text-red-800">
-                  {validationBlockers.map((b, idx) => (
-                    <li key={idx}>{b.message || b.code}</li>
-                  ))}
-                </ul>
+                <div className="space-y-2 pt-1">
+                  {validationBlockers.map((b, idx) => {
+                    const surfaceLabel =
+                      b.surfaceId === 'front'
+                        ? 'Mặt trước'
+                        : b.surfaceId === 'inside'
+                          ? 'Mặt trong'
+                          : b.surfaceId === 'back'
+                            ? 'Mặt sau'
+                            : b.surfaceId;
+
+                    if (b.surfaceId) {
+                      return (
+                        <button
+                          key={idx}
+                          type="button"
+                          onClick={() => handleNavigateSurface(b.surfaceId, b.elementId)}
+                          className="w-full text-left p-2.5 min-h-[44px] rounded-lg border border-red-200 bg-white hover:bg-red-50 flex items-center justify-between gap-2 transition cursor-pointer group"
+                          title={`Bấm để chuyển đến ${surfaceLabel} và sửa lỗi`}
+                        >
+                          <div className="flex items-center gap-2">
+                            <span className="w-1.5 h-1.5 rounded-full bg-red-500 shrink-0" />
+                            <span className="text-red-900 font-medium">{b.message || b.code}</span>
+                          </div>
+                          <span className="shrink-0 text-[11px] font-semibold text-red-700 bg-red-100 px-2 py-1 rounded group-hover:bg-red-200 transition">
+                            Đến {surfaceLabel} →
+                          </span>
+                        </button>
+                      );
+                    }
+
+                    return (
+                      <div key={idx} className="flex items-start gap-2 text-red-800 py-1">
+                        <span className="w-1.5 h-1.5 rounded-full bg-red-400 shrink-0 mt-1.5" />
+                        <span>{b.message || b.code}</span>
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
 
               <div className="pt-2 flex justify-end gap-2">
@@ -361,14 +447,14 @@ export function TemplateAuthorClient({
                   type="button"
                   variant="outline"
                   onClick={() => setIsPublishOpen(false)}
-                  className="h-9 text-xs"
+                  className="min-h-[44px] h-11 px-4 text-xs cursor-pointer"
                 >
                   Đóng và sửa lỗi
                 </Button>
                 <Button
                   type="button"
                   onClick={executeValidation}
-                  className="h-9 text-xs bg-stone-900 text-white"
+                  className="min-h-[44px] h-11 px-4 text-xs bg-stone-900 text-white cursor-pointer"
                 >
                   Kiểm tra lại
                 </Button>
@@ -404,27 +490,48 @@ export function TemplateAuthorClient({
                   <div className="space-y-2 pt-1">
                     {validationWarnings.map((w) => {
                       const isChecked = acknowledgedWarningIds.includes(w.id);
+                      const surfaceLabel =
+                        w.surfaceId === 'front'
+                          ? 'Mặt trước'
+                          : w.surfaceId === 'inside'
+                            ? 'Mặt trong'
+                            : w.surfaceId === 'back'
+                              ? 'Mặt sau'
+                              : w.surfaceId;
+
                       return (
-                        <label
+                        <div
                           key={w.id}
-                          className="flex items-start gap-2.5 cursor-pointer text-[11px] leading-tight"
+                          className="flex items-center justify-between gap-2 p-2 rounded-lg border border-amber-200/80 bg-white/60 min-h-[44px]"
                         >
-                          <input
-                            type="checkbox"
-                            checked={isChecked}
-                            onChange={(e) => {
-                              if (e.target.checked) {
-                                setAcknowledgedWarningIds((prev) => [...prev, w.id]);
-                              } else {
-                                setAcknowledgedWarningIds((prev) =>
-                                  prev.filter((id) => id !== w.id)
-                                );
-                              }
-                            }}
-                            className="mt-0.5 rounded border-amber-300 text-amber-700 focus:ring-amber-500 cursor-pointer"
-                          />
-                          <span>{w.message}</span>
-                        </label>
+                          <label className="flex items-center gap-2.5 cursor-pointer text-[11px] leading-tight flex-1 min-h-[44px]">
+                            <input
+                              type="checkbox"
+                              checked={isChecked}
+                              onChange={(e) => {
+                                if (e.target.checked) {
+                                  setAcknowledgedWarningIds((prev) => [...prev, w.id]);
+                                } else {
+                                  setAcknowledgedWarningIds((prev) =>
+                                    prev.filter((id) => id !== w.id)
+                                  );
+                                }
+                              }}
+                              className="rounded border-amber-300 text-amber-700 focus:ring-amber-500 cursor-pointer w-4 h-4 shrink-0"
+                            />
+                            <span>{w.message}</span>
+                          </label>
+                          {w.surfaceId && (
+                            <button
+                              type="button"
+                              onClick={() => handleNavigateSurface(w.surfaceId, w.elementId)}
+                              className="shrink-0 text-[11px] font-semibold text-amber-800 bg-amber-100 hover:bg-amber-200 px-2 py-1 rounded cursor-pointer transition min-h-[32px] flex items-center"
+                              title={`Bấm để chuyển đến ${surfaceLabel}`}
+                            >
+                              Đến {surfaceLabel} →
+                            </button>
+                          )}
+                        </div>
                       );
                     })}
                   </div>
@@ -441,7 +548,7 @@ export function TemplateAuthorClient({
                   placeholder="VD: Cập nhật font chữ tiêu đề, sửa khung hình..."
                   value={revisionNote}
                   onChange={(e) => setRevisionNote(e.target.value)}
-                  className="text-xs h-9 bg-white"
+                  className="text-xs min-h-[44px] h-11 bg-white"
                 />
               </div>
 
@@ -450,7 +557,7 @@ export function TemplateAuthorClient({
                   type="button"
                   variant="outline"
                   onClick={() => setIsPublishOpen(false)}
-                  className="h-9 text-xs"
+                  className="min-h-[44px] h-11 px-4 text-xs cursor-pointer"
                 >
                   Hủy
                 </Button>
@@ -458,7 +565,7 @@ export function TemplateAuthorClient({
                   type="button"
                   disabled={isPublishing || !allWarningsAcknowledged}
                   onClick={executePublish}
-                  className="h-9 text-xs bg-[#315F86] hover:bg-[#254b6b] text-white font-semibold flex items-center gap-1.5 cursor-pointer shadow-xs"
+                  className="min-h-[44px] h-11 px-4 text-xs bg-[#315F86] hover:bg-[#254b6b] text-white font-semibold flex items-center gap-1.5 cursor-pointer shadow-xs"
                 >
                   {isPublishing ? (
                     <>

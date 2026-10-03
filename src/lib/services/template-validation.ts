@@ -302,7 +302,7 @@ export async function validateTemplateDraft(
   }
 
   // 5. Template-specific checks on elements (placeholders & locks)
-  const findings: Array<{ code: string; elementId?: string; message?: string }> = [];
+  const findings: Array<{ code: string; elementId?: string; surfaceId?: string; message?: string }> = [];
   const warningIds: string[] = [];
   const elements = document.elements ?? [];
 
@@ -392,6 +392,7 @@ export async function validateTemplateDraft(
       findings.push({
         code: check.id,
         elementId: check.elementId,
+        surfaceId: check.surfaceId,
         message: check.label,
       });
     }

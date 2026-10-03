@@ -348,7 +348,7 @@ export function TemplateDetail({ templateId, userRole }: TemplateDetailProps) {
         >
           <AlertCircle className="w-5 h-5 shrink-0" />
           <div className="flex-1">{errorMsg || 'Không tìm thấy mẫu thiết kế'}</div>
-          <Button variant="outline" size="sm" onClick={fetchDetail} className="h-8 text-xs">
+          <Button variant="outline" size="sm" onClick={fetchDetail} className="min-h-[44px] h-11 px-3.5 text-xs cursor-pointer">
             Thử lại
           </Button>
         </div>
@@ -375,7 +375,7 @@ export function TemplateDetail({ templateId, userRole }: TemplateDetailProps) {
         <div className="flex items-center gap-3">
           <Link
             href="/admin/content/templates"
-            className="flex items-center justify-center w-8 h-8 rounded-lg border border-stone-200 bg-white text-stone-600 hover:text-stone-900 hover:bg-stone-50 transition"
+            className="flex items-center justify-center min-w-[44px] min-h-[44px] w-11 h-11 rounded-lg border border-stone-200 bg-white text-stone-600 hover:text-stone-900 hover:bg-stone-50 transition"
             aria-label="Quay lại danh sách mẫu"
           >
             <ArrowLeft className="w-4 h-4" />
@@ -410,7 +410,7 @@ export function TemplateDetail({ templateId, userRole }: TemplateDetailProps) {
           {!isArchived && (
             <Button
               onClick={() => router.push(`/admin/content/templates/${template.id}/edit`)}
-              className="h-9 text-xs bg-[#315F86] hover:bg-[#254b6b] text-white flex items-center gap-1.5 font-semibold cursor-pointer shadow-xs"
+              className="min-h-[44px] h-11 px-3.5 text-xs bg-[#315F86] hover:bg-[#254b6b] text-white flex items-center gap-1.5 font-semibold cursor-pointer shadow-xs"
             >
               <Edit3 className="w-3.5 h-3.5" />
               <span>Chỉnh sửa mẫu</span>
@@ -425,7 +425,7 @@ export function TemplateDetail({ templateId, userRole }: TemplateDetailProps) {
               setActionError(null);
               setIsDuplicateOpen(true);
             }}
-            className="h-9 text-xs border-stone-200 bg-white text-stone-700 hover:bg-stone-50 flex items-center gap-1.5 cursor-pointer"
+            className="min-h-[44px] h-11 px-3.5 text-xs border-stone-200 bg-white text-stone-700 hover:bg-stone-50 flex items-center gap-1.5 cursor-pointer"
           >
             <Copy className="w-3.5 h-3.5 text-stone-500" />
             <span>Nhân bản</span>
@@ -439,7 +439,7 @@ export function TemplateDetail({ templateId, userRole }: TemplateDetailProps) {
                 setActionError(null);
                 setIsArchiveConfirmOpen(true);
               }}
-              className="h-9 text-xs border-stone-200 bg-white text-stone-700 hover:bg-stone-50 flex items-center gap-1.5 cursor-pointer"
+              className="min-h-[44px] h-11 px-3.5 text-xs border-stone-200 bg-white text-stone-700 hover:bg-stone-50 flex items-center gap-1.5 cursor-pointer"
             >
               <Archive className="w-3.5 h-3.5 text-stone-500" />
               <span>Lưu trữ</span>
@@ -454,7 +454,7 @@ export function TemplateDetail({ templateId, userRole }: TemplateDetailProps) {
                 setActionError(null);
                 setIsRepublishConfirmOpen(true);
               }}
-              className="h-9 text-xs border-stone-200 bg-white text-stone-700 hover:bg-stone-50 flex items-center gap-1.5 cursor-pointer"
+              className="min-h-[44px] h-11 px-3.5 text-xs border-stone-200 bg-white text-stone-700 hover:bg-stone-50 flex items-center gap-1.5 cursor-pointer"
             >
               <RefreshCw className="w-3.5 h-3.5 text-stone-500" />
               <span>Đăng lại</span>
@@ -469,33 +469,35 @@ export function TemplateDetail({ templateId, userRole }: TemplateDetailProps) {
                 setActionError(null);
                 setIsDeleteConfirmOpen(true);
               }}
-              className="h-9 text-xs border-red-200 text-red-600 hover:bg-red-50 hover:text-red-700 flex items-center gap-1.5 cursor-pointer"
+              className="min-h-[44px] h-11 px-3.5 text-xs border-red-200 text-red-600 hover:bg-red-50 hover:text-red-700 flex items-center gap-1.5 cursor-pointer"
             >
               <Trash2 className="w-3.5 h-3.5" />
               <span>Xóa bản nháp</span>
             </Button>
           )}
-        </div>
-      </div>
+        </div >
+      </div >
 
       {/* Blockers alert if template has issues */}
-      {blockers.length > 0 && (
-        <div
-          role="alert"
-          aria-live="polite"
-          className="p-4 bg-amber-50 border border-amber-200 rounded-xl text-amber-900 text-xs flex items-start gap-3"
-        >
-          <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
-          <div className="space-y-1">
-            <p className="font-semibold text-amber-900">Mẫu thiết kế đang có vấn đề cần khắc phục:</p>
-            <ul className="list-disc pl-4 space-y-0.5 text-amber-800">
-              {blockers.map((b, idx) => (
-                <li key={idx}>{b.message || b.code}</li>
-              ))}
-            </ul>
+      {
+        blockers.length > 0 && (
+          <div
+            role="alert"
+            aria-live="polite"
+            className="p-4 bg-amber-50 border border-amber-200 rounded-xl text-amber-900 text-xs flex items-start gap-3"
+          >
+            <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+            <div className="space-y-1">
+              <p className="font-semibold text-amber-900">Mẫu thiết kế đang có vấn đề cần khắc phục:</p>
+              <ul className="list-disc pl-4 space-y-0.5 text-amber-800">
+                {blockers.map((b, idx) => (
+                  <li key={idx}>{b.message || b.code}</li>
+                ))}
+              </ul>
+            </div>
           </div>
-        </div>
-      )}
+        )
+      }
 
       {/* Main Grid: Left preview & specs, Right metadata & versions */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -647,7 +649,7 @@ export function TemplateDetail({ templateId, userRole }: TemplateDetailProps) {
                   required
                   value={editName}
                   onChange={(e) => setEditName(e.target.value)}
-                  className="text-xs h-9 bg-white"
+                  className="text-xs min-h-[44px] h-11 bg-white"
                 />
               </div>
 
@@ -660,7 +662,7 @@ export function TemplateDetail({ templateId, userRole }: TemplateDetailProps) {
                     id="detail-category"
                     value={editCategory}
                     onChange={(e) => setEditCategory(e.target.value)}
-                    className="w-full h-9 rounded-md border border-stone-200 bg-white px-3 text-xs text-stone-800 focus:outline-none"
+                    className="w-full min-h-[44px] h-11 rounded-md border border-stone-200 bg-white px-3 text-xs text-stone-800 focus:outline-none"
                   >
                     <option value="">Không phân loại</option>
                     {categories.map((c) => (
@@ -680,7 +682,7 @@ export function TemplateDetail({ templateId, userRole }: TemplateDetailProps) {
                     type="number"
                     value={editSortOrder}
                     onChange={(e) => setEditSortOrder(parseInt(e.target.value, 10) || 0)}
-                    className="text-xs h-9 bg-white"
+                    className="text-xs min-h-[44px] h-11 bg-white"
                   />
                 </div>
               </div>
@@ -694,7 +696,7 @@ export function TemplateDetail({ templateId, userRole }: TemplateDetailProps) {
                   placeholder="cute, vintage, lop-hoc..."
                   value={editTags}
                   onChange={(e) => setEditTags(e.target.value)}
-                  className="text-xs h-9 bg-white"
+                  className="text-xs min-h-[44px] h-11 bg-white"
                 />
               </div>
 
@@ -702,7 +704,7 @@ export function TemplateDetail({ templateId, userRole }: TemplateDetailProps) {
                 <Button
                   type="submit"
                   disabled={isSavingMeta}
-                  className="h-9 text-xs bg-stone-900 text-white font-semibold flex items-center gap-1.5 cursor-pointer shadow-xs"
+                  className="min-h-[44px] h-11 px-4 text-xs bg-stone-900 text-white font-semibold flex items-center gap-1.5 cursor-pointer shadow-xs"
                 >
                   {isSavingMeta ? (
                     <>
@@ -799,7 +801,7 @@ export function TemplateDetail({ templateId, userRole }: TemplateDetailProps) {
                 id="dup-name"
                 value={duplicateName}
                 onChange={(e) => setDuplicateName(e.target.value)}
-                className="text-xs h-9 bg-white"
+                className="text-xs min-h-[44px] h-11 bg-white"
               />
             </div>
 
@@ -808,7 +810,7 @@ export function TemplateDetail({ templateId, userRole }: TemplateDetailProps) {
                 type="button"
                 variant="outline"
                 onClick={() => setIsDuplicateOpen(false)}
-                className="h-9 text-xs"
+                className="min-h-[44px] h-11 px-4 text-xs cursor-pointer"
               >
                 Hủy
               </Button>
@@ -816,7 +818,7 @@ export function TemplateDetail({ templateId, userRole }: TemplateDetailProps) {
                 type="button"
                 disabled={isDuplicating || !duplicateName.trim()}
                 onClick={handleDuplicate}
-                className="h-9 text-xs bg-stone-900 text-white font-semibold flex items-center gap-1.5 cursor-pointer"
+                className="min-h-[44px] h-11 px-4 text-xs bg-stone-900 text-white font-semibold flex items-center gap-1.5 cursor-pointer"
               >
                 {isDuplicating ? (
                   <>
@@ -858,7 +860,7 @@ export function TemplateDetail({ templateId, userRole }: TemplateDetailProps) {
               type="button"
               variant="outline"
               onClick={() => setIsArchiveConfirmOpen(false)}
-              className="h-9 text-xs"
+              className="min-h-[44px] h-11 px-4 text-xs cursor-pointer"
             >
               Hủy
             </Button>
@@ -866,7 +868,7 @@ export function TemplateDetail({ templateId, userRole }: TemplateDetailProps) {
               type="button"
               disabled={isArchiving}
               onClick={handleArchive}
-              className="h-9 text-xs bg-amber-700 hover:bg-amber-800 text-white font-semibold flex items-center gap-1.5 cursor-pointer"
+              className="min-h-[44px] h-11 px-4 text-xs bg-amber-700 hover:bg-amber-800 text-white font-semibold flex items-center gap-1.5 cursor-pointer"
             >
               {isArchiving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <span>Xác nhận lưu trữ</span>}
             </Button>
@@ -900,7 +902,7 @@ export function TemplateDetail({ templateId, userRole }: TemplateDetailProps) {
               type="button"
               variant="outline"
               onClick={() => setIsRepublishConfirmOpen(false)}
-              className="h-9 text-xs"
+              className="min-h-[44px] h-11 px-4 text-xs cursor-pointer"
             >
               Hủy
             </Button>
@@ -908,7 +910,7 @@ export function TemplateDetail({ templateId, userRole }: TemplateDetailProps) {
               type="button"
               disabled={isRepublishing}
               onClick={handleRepublish}
-              className="h-9 text-xs bg-[#5F7E67] hover:bg-[#4d6653] text-white font-semibold flex items-center gap-1.5 cursor-pointer"
+              className="min-h-[44px] h-11 px-4 text-xs bg-[#5F7E67] hover:bg-[#4d6653] text-white font-semibold flex items-center gap-1.5 cursor-pointer"
             >
               {isRepublishing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <span>Đăng lại</span>}
             </Button>
@@ -942,7 +944,7 @@ export function TemplateDetail({ templateId, userRole }: TemplateDetailProps) {
               type="button"
               variant="outline"
               onClick={() => setIsDeleteConfirmOpen(false)}
-              className="h-9 text-xs"
+              className="min-h-[44px] h-11 px-4 text-xs cursor-pointer"
             >
               Hủy
             </Button>
@@ -950,7 +952,7 @@ export function TemplateDetail({ templateId, userRole }: TemplateDetailProps) {
               type="button"
               disabled={isDeleting}
               onClick={handleDeleteDraft}
-              className="h-9 text-xs bg-red-700 hover:bg-red-800 text-white font-semibold flex items-center gap-1.5 cursor-pointer"
+              className="min-h-[44px] h-11 px-4 text-xs bg-red-700 hover:bg-red-800 text-white font-semibold flex items-center gap-1.5 cursor-pointer"
             >
               {isDeleting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <span>Xóa vĩnh viễn</span>}
             </Button>

@@ -55,7 +55,7 @@ export function TemplateAuthorControls({
                 <button
                   type="button"
                   onClick={onRetrySave}
-                  className="underline hover:text-[#B3535D] ml-0.5 cursor-pointer"
+                  className="underline hover:text-[#B3535D] ml-0.5 cursor-pointer min-h-[44px] inline-flex items-center px-1"
                 >
                   Thử lại
                 </button>
@@ -98,7 +98,7 @@ export function TemplateAuthorControls({
         onClick={onCustomerPreview}
         aria-label="Xem như khách"
         title="Mở môi trường dùng thử độc lập như góc nhìn của khách hàng"
-        className="inline-flex items-center gap-1.5 h-8 px-2.5 sm:px-3 rounded-lg text-xs font-semibold bg-[#F8F3E8] text-[#2E3338] border border-[#DDD6CC] hover:bg-[#ECE6DC] active:scale-95 transition-all shadow-2xs"
+        className="inline-flex items-center gap-1.5 min-h-[44px] h-11 px-3 sm:px-4 rounded-lg text-xs font-semibold bg-[#F8F3E8] text-[#2E3338] border border-[#DDD6CC] hover:bg-[#ECE6DC] active:scale-95 transition-all shadow-2xs cursor-pointer"
       >
         <Eye className="w-3.5 h-3.5 text-[#315F86]" aria-hidden="true" />
         <span className="hidden xs:inline">Xem như khách</span>
@@ -120,7 +120,7 @@ export function TemplateAuthorControls({
                   : 'Đang chờ lưu thay đổi trước khi đăng'
                 : 'Kiểm duyệt và xuất bản mẫu thiết kế'
           }
-          className="inline-flex items-center gap-1.5 h-8 px-2.5 sm:px-3 rounded-lg text-xs font-semibold bg-[#315F86] text-white hover:bg-[#244A69] active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-2xs cursor-pointer"
+          className="inline-flex items-center gap-1.5 min-h-[44px] h-11 px-3.5 sm:px-4 rounded-lg text-xs font-semibold bg-[#315F86] text-white hover:bg-[#244A69] active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-2xs cursor-pointer"
         >
           <UploadCloud className="w-3.5 h-3.5" aria-hidden="true" />
           <span>{isPublishing ? 'Đang đăng...' : 'Đăng mẫu'}</span>

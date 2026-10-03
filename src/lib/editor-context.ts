@@ -57,6 +57,7 @@ export interface TemplateAuthorEditorContext {
   onValidate?: () => Promise<unknown> | void;
   onPublish?: () => Promise<unknown> | void;
   onCustomerPreview?: () => void;
+  onNavigateSurface?: (surfaceId: string, elementId?: string) => void;
 }
 export type TemplateEditorContext = TemplateAuthorEditorContext;
 

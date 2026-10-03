@@ -140,7 +140,7 @@ export interface RecordValidationRunInput {
   candidateDocumentHash: string;
   targetHash: string;
   dependencyManifestHash?: string | null;
-  findings: Array<{ code: string; elementId?: string; message?: string }>;
+  findings: Array<{ code: string; elementId?: string; surfaceId?: string; message?: string }>;
   warningIds: string[];
   validatorVersion?: string;
   engineFingerprint: string;

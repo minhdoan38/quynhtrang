@@ -372,7 +372,7 @@ export function TemplateLibrary({ userRole: _userRole }: TemplateLibraryProps) {
             handleProductChange('card');
             setIsCreateOpen(true);
           }}
-          className="h-10 text-xs bg-stone-900 hover:bg-stone-800 text-white flex items-center gap-2 px-4 rounded-lg font-semibold shadow-xs shrink-0 cursor-pointer"
+          className="min-h-[44px] h-11 text-xs bg-stone-900 hover:bg-stone-800 text-white flex items-center gap-2 px-4 rounded-lg font-semibold shadow-xs shrink-0 cursor-pointer"
         >
           <Plus className="w-4 h-4" />
           <span>+ Tạo mẫu</span>
@@ -398,9 +398,9 @@ export function TemplateLibrary({ userRole: _userRole }: TemplateLibraryProps) {
                 setPage(1);
               }}
               aria-pressed={isActive}
-              className={`px-3 py-2 text-xs font-semibold whitespace-nowrap border-b-2 transition -mb-px cursor-pointer ${isActive
-                  ? 'border-stone-900 text-stone-900'
-                  : 'border-transparent text-stone-500 hover:text-stone-800 hover:border-stone-300'
+              className={`min-h-[44px] inline-flex items-center px-3.5 py-2 text-xs font-semibold whitespace-nowrap border-b-2 transition -mb-px cursor-pointer ${isActive
+                ? 'border-stone-900 text-stone-900'
+                : 'border-transparent text-stone-500 hover:text-stone-800 hover:border-stone-300'
                 }`}
             >
               {tab.label}
@@ -423,7 +423,7 @@ export function TemplateLibrary({ userRole: _userRole }: TemplateLibraryProps) {
                 setSearchQuery(e.target.value);
                 setPage(1);
               }}
-              className="pl-9 h-9 text-xs bg-white border-stone-200"
+              className="pl-9 min-h-[44px] h-11 text-xs bg-white border-stone-200"
             />
           </div>
 
@@ -437,7 +437,7 @@ export function TemplateLibrary({ userRole: _userRole }: TemplateLibraryProps) {
                 setPage(1);
               }}
               aria-label="Lọc theo sản phẩm"
-              className="h-9 rounded-md border border-stone-200 bg-white px-2.5 text-xs text-stone-700 focus:outline-none"
+              className="min-h-[44px] h-11 rounded-md border border-stone-200 bg-white px-3 text-xs text-stone-700 focus:outline-none"
             >
               <option value="all">Tất cả sản phẩm</option>
               <option value="card">Thiệp</option>
@@ -454,7 +454,7 @@ export function TemplateLibrary({ userRole: _userRole }: TemplateLibraryProps) {
                 setPage(1);
               }}
               aria-label="Lọc theo danh mục"
-              className="h-9 rounded-md border border-stone-200 bg-white px-2.5 text-xs text-stone-700 focus:outline-none"
+              className="min-h-[44px] h-11 rounded-md border border-stone-200 bg-white px-3 text-xs text-stone-700 focus:outline-none"
             >
               <option value="all">Tất cả danh mục</option>
               {categories.map((cat) => (
@@ -478,7 +478,7 @@ export function TemplateLibrary({ userRole: _userRole }: TemplateLibraryProps) {
               setActiveTab('all');
               setPage(1);
             }}
-            className="h-9 text-xs text-stone-600 hover:text-stone-900"
+            className="min-h-[44px] h-11 px-3 text-xs text-stone-600 hover:text-stone-900 cursor-pointer"
           >
             Xóa bộ lọc
           </Button>
@@ -501,7 +501,7 @@ export function TemplateLibrary({ userRole: _userRole }: TemplateLibraryProps) {
             <AlertCircle className="w-5 h-5 shrink-0" />
             <span>{errorMsg}</span>
           </div>
-          <Button variant="outline" size="sm" onClick={fetchTemplates} className="h-8 text-xs shrink-0">
+          <Button variant="outline" size="sm" onClick={fetchTemplates} className="min-h-[44px] h-11 px-3.5 text-xs shrink-0 cursor-pointer">
             Thử lại
           </Button>
         </div>
@@ -523,7 +523,7 @@ export function TemplateLibrary({ userRole: _userRole }: TemplateLibraryProps) {
                 setCreateError(null);
                 setIsCreateOpen(true);
               }}
-              className="h-9 text-xs bg-stone-900 text-white"
+              className="min-h-[44px] h-11 px-4 text-xs bg-stone-900 text-white cursor-pointer"
             >
               + Tạo mẫu
             </Button>
@@ -593,7 +593,7 @@ export function TemplateLibrary({ userRole: _userRole }: TemplateLibraryProps) {
               size="sm"
               disabled={page <= 1}
               onClick={() => setPage((p) => Math.max(1, p - 1))}
-              className="h-8 text-xs"
+              className="min-h-[44px] h-11 px-3.5 text-xs cursor-pointer"
             >
               Trang trước
             </Button>
@@ -603,7 +603,7 @@ export function TemplateLibrary({ userRole: _userRole }: TemplateLibraryProps) {
               size="sm"
               disabled={page * pageSize >= totalCount}
               onClick={() => setPage((p) => p + 1)}
-              className="h-8 text-xs"
+              className="min-h-[44px] h-11 px-3.5 text-xs cursor-pointer"
             >
               Trang sau
             </Button>
@@ -626,9 +626,9 @@ export function TemplateLibrary({ userRole: _userRole }: TemplateLibraryProps) {
             <button
               type="button"
               onClick={() => setCreateMode('new')}
-              className={`py-1.5 rounded-md transition text-center cursor-pointer ${createMode === 'new'
-                  ? 'bg-white text-stone-900 shadow-2xs'
-                  : 'text-stone-500 hover:text-stone-900'
+              className={`min-h-[44px] inline-flex items-center justify-center py-2 px-3 rounded-md transition text-center cursor-pointer ${createMode === 'new'
+                ? 'bg-white text-stone-900 shadow-2xs'
+                : 'text-stone-500 hover:text-stone-900'
                 }`}
             >
               Tạo mới
@@ -639,9 +639,9 @@ export function TemplateLibrary({ userRole: _userRole }: TemplateLibraryProps) {
                 setCreateMode('from_project');
                 loadEligibleSources();
               }}
-              className={`py-1.5 rounded-md transition text-center cursor-pointer ${createMode === 'from_project'
-                  ? 'bg-white text-stone-900 shadow-2xs'
-                  : 'text-stone-500 hover:text-stone-900'
+              className={`min-h-[44px] inline-flex items-center justify-center py-2 px-3 rounded-md transition text-center cursor-pointer ${createMode === 'from_project'
+                ? 'bg-white text-stone-900 shadow-2xs'
+                : 'text-stone-500 hover:text-stone-900'
                 }`}
             >
               Tạo từ thiết kế
@@ -672,7 +672,7 @@ export function TemplateLibrary({ userRole: _userRole }: TemplateLibraryProps) {
                     placeholder="VD: Thiệp lớp học, Giấy gói hoa nhí..."
                     value={newTitle}
                     onChange={(e) => setNewTitle(e.target.value)}
-                    className="text-xs h-9 bg-white"
+                    className="text-xs min-h-[44px] h-11 bg-white"
                   />
                 </div>
 
@@ -685,7 +685,7 @@ export function TemplateLibrary({ userRole: _userRole }: TemplateLibraryProps) {
                     id="template-product"
                     value={newProduct}
                     onChange={(e) => handleProductChange(e.target.value as ProductId)}
-                    className="w-full h-9 rounded-md border border-stone-200 bg-white px-3 text-xs text-stone-800 focus:outline-none"
+                    className="w-full min-h-[44px] h-11 rounded-md border border-stone-200 bg-white px-3 text-xs text-stone-800 focus:outline-none"
                   >
                     <option value="card">Thiệp chúc mừng (card)</option>
                     <option value="wrapping">Giấy gói quà (wrapping)</option>
@@ -703,7 +703,7 @@ export function TemplateLibrary({ userRole: _userRole }: TemplateLibraryProps) {
                     id="template-variant"
                     value={newVariant}
                     onChange={(e) => setNewVariant(e.target.value)}
-                    className="w-full h-9 rounded-md border border-stone-200 bg-white px-3 text-xs text-stone-800 focus:outline-none"
+                    className="w-full min-h-[44px] h-11 rounded-md border border-stone-200 bg-white px-3 text-xs text-stone-800 focus:outline-none"
                   >
                     {newProduct === 'card' && (
                       <>
@@ -740,7 +740,7 @@ export function TemplateLibrary({ userRole: _userRole }: TemplateLibraryProps) {
                       id="template-mode"
                       value={newMode}
                       onChange={(e) => setNewMode(e.target.value as 'pattern' | 'full-sheet')}
-                      className="w-full h-9 rounded-md border border-stone-200 bg-white px-3 text-xs text-stone-800 focus:outline-none"
+                      className="w-full min-h-[44px] h-11 rounded-md border border-stone-200 bg-white px-3 text-xs text-stone-800 focus:outline-none"
                     >
                       <option value="pattern">Lặp họa tiết (pattern)</option>
                       <option value="full-sheet">Toàn tờ (full-sheet)</option>
@@ -758,7 +758,7 @@ export function TemplateLibrary({ userRole: _userRole }: TemplateLibraryProps) {
                       id="template-shape"
                       value={newShape}
                       onChange={(e) => setNewShape(e.target.value as FixedStickerShape)}
-                      className="w-full h-9 rounded-md border border-stone-200 bg-white px-3 text-xs text-stone-800 focus:outline-none"
+                      className="w-full min-h-[44px] h-11 rounded-md border border-stone-200 bg-white px-3 text-xs text-stone-800 focus:outline-none"
                     >
                       <option value="circle">Hình tròn (circle)</option>
                       <option value="square">Hình vuông (square)</option>
@@ -781,7 +781,7 @@ export function TemplateLibrary({ userRole: _userRole }: TemplateLibraryProps) {
                       id="template-category"
                       value={newCategory}
                       onChange={(e) => setNewCategory(e.target.value)}
-                      className="w-full h-9 rounded-md border border-stone-200 bg-white px-3 text-xs text-stone-800 focus:outline-none"
+                      className="w-full min-h-[44px] h-11 rounded-md border border-stone-200 bg-white px-3 text-xs text-stone-800 focus:outline-none"
                     >
                       <option value="">Không phân loại</option>
                       {categories.map((c) => (
@@ -800,7 +800,7 @@ export function TemplateLibrary({ userRole: _userRole }: TemplateLibraryProps) {
                       placeholder="cute, vintage, lop-hoc"
                       value={newTags}
                       onChange={(e) => setNewTags(e.target.value)}
-                      className="text-xs h-9 bg-white"
+                      className="text-xs min-h-[44px] h-11 bg-white"
                     />
                   </div>
                 </div>
@@ -832,7 +832,7 @@ export function TemplateLibrary({ userRole: _userRole }: TemplateLibraryProps) {
                           const p = eligibleProjects.find((x) => x.id === id);
                           if (p) setNewTitle(`Mẫu từ ${PRODUCT_LABELS[p.productId] || p.productId}`);
                         }}
-                        className="w-full h-9 rounded-md border border-stone-200 bg-white px-3 text-xs text-stone-800 focus:outline-none"
+                        className="w-full min-h-[44px] h-11 rounded-md border border-stone-200 bg-white px-3 text-xs text-stone-800 focus:outline-none"
                       >
                         {eligibleProjects.map((proj) => (
                           <option key={proj.id} value={proj.id}>
@@ -851,7 +851,7 @@ export function TemplateLibrary({ userRole: _userRole }: TemplateLibraryProps) {
                         required
                         value={newTitle}
                         onChange={(e) => setNewTitle(e.target.value)}
-                        className="text-xs h-9 bg-white"
+                        className="text-xs min-h-[44px] h-11 bg-white"
                       />
                     </div>
 
@@ -878,14 +878,14 @@ export function TemplateLibrary({ userRole: _userRole }: TemplateLibraryProps) {
                 type="button"
                 variant="outline"
                 onClick={() => setIsCreateOpen(false)}
-                className="h-9 text-xs"
+                className="min-h-[44px] h-11 px-4 text-xs cursor-pointer"
               >
                 Hủy
               </Button>
               <Button
                 type="submit"
                 disabled={isSubmitting || (createMode === 'from_project' && (!rightsAcknowledged || eligibleProjects.length === 0))}
-                className="h-9 text-xs bg-stone-900 text-white font-semibold flex items-center gap-1.5 cursor-pointer"
+                className="min-h-[44px] h-11 px-4 text-xs bg-stone-900 text-white font-semibold flex items-center gap-1.5 cursor-pointer"
               >
                 {isSubmitting ? (
                   <>

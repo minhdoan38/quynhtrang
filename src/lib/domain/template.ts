@@ -210,7 +210,7 @@ export interface TemplateValidationReceipt {
   targetHash: string;
   leaseEpoch: number;
   sessionId: string;
-  findings: { code: string; elementId?: string; message?: string }[];
+  findings: { code: string; elementId?: string; surfaceId?: string; message?: string }[];
   warningIds: string[];
   customerPreviewPassed: boolean;
   engineFingerprint: string;

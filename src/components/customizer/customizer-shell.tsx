@@ -444,6 +444,36 @@ export function CustomizerShell({ context }: CustomizerShellProps = {}) {
     setViewport(resetToFit());
   }, [state.productId, state.productOptions.surface]);
 
+  // Listen for external surface navigation events (e.g. from template validation publish dialog)
+  useEffect(() => {
+    const handleNavigateSurfaceEvent = (e: Event) => {
+      const ce = e as CustomEvent<{ surface?: CardSurface; elementId?: string }>;
+      const targetSurface = ce.detail?.surface;
+      if (targetSurface && (targetSurface === 'front' || targetSurface === 'inside' || targetSurface === 'back')) {
+        setActiveCardSurface(targetSurface);
+      }
+      if (ce.detail?.elementId) {
+        const elements = state.elements ?? getDefaultElements(state);
+        const targetElement = elements.find((el) => el.id === ce.detail?.elementId);
+        if (targetElement) {
+          if (targetElement.surface && (targetElement.surface === 'front' || targetElement.surface === 'inside' || targetElement.surface === 'back')) {
+            setActiveCardSurface(targetElement.surface as CardSurface);
+          }
+          setSelectedElementId(targetElement.id);
+          setSelectedTarget(targetElement.type as SelectedTarget);
+          if (targetElement.type === 'text') {
+            setSelectedTextId(targetElement.id);
+          }
+        }
+      }
+    };
+
+    window.addEventListener('navigate_card_surface', handleNavigateSurfaceEvent);
+    return () => {
+      window.removeEventListener('navigate_card_surface', handleNavigateSurfaceEvent);
+    };
+  }, [state.elements, state]);
+
   const dispatch = useCallback((action: DesignAction) => {
     dispatchDirect(action);
   }, [dispatchDirect]);
