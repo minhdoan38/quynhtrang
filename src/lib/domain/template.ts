@@ -21,6 +21,12 @@ export interface TemplateTarget extends TemplateTargetInput {
   geometryKey: string;
 }
 
+export interface TemplateCategoryRecord {
+  id: string;
+  name: string;
+  sortOrder: number;
+}
+
 export interface TemplateMutation {
   templateId: string;
   expectedCatalogRevision: number;
@@ -50,7 +56,7 @@ export interface CreateTemplateRepoInput {
 }
 
 export interface AdminTemplateListQuery {
-  status?: TemplateStatus;
+  status?: TemplateStatus | 'needs_update';
   productId?: string;
   categoryId?: string;
   search?: string;
@@ -157,6 +163,8 @@ export interface TemplateRecord {
   archivedAt: string | null;
   createdBy?: string | null;
   updatedBy?: string | null;
+  blockers?: TemplateAvailabilityBlocker[];
+  thumbnailUrl?: string | null;
 }
 
 export interface TemplateDraftRecord {

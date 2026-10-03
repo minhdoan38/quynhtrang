@@ -14,6 +14,7 @@ import {
   type PublishTemplateInput,
   type SaveTemplateDraftInput,
   type TemplateDraftRecord,
+  type TemplateCategoryRecord,
   type TemplateMetadataPatch,
   type TemplateMutation,
   type TemplateRecord,
@@ -418,6 +419,10 @@ export class TemplateManagementService {
     query?: AdminTemplateListQuery,
   ): Promise<{ items: TemplateRecord[]; total: number }> {
     return this.repo.listAdminTemplates(query);
+  }
+
+  async listCategories(): Promise<TemplateCategoryRecord[]> {
+    return this.repo.listCategories();
   }
 
   async acquireDraftLease(

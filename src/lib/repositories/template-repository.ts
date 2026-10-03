@@ -17,6 +17,7 @@ import type {
   TemplateAvailability,
   TemplateDraftRecord,
   TemplateErrorCode,
+  TemplateCategoryRecord,
   TemplateMetadataPatch,
   TemplateMutation,
   TemplateRecord,
@@ -426,6 +427,30 @@ export class TemplateRepository {
       items: rows.map(mapTemplateRow),
       total: count ?? rows.length,
     };
+  }
+
+  async listCategories(): Promise<TemplateCategoryRecord[]> {
+    const { data, error } = await this.client
+      .from('template_categories')
+      .select('id, name, sort_order')
+      .order('sort_order', { ascending: true });
+    if (error) {
+      // Fallback standard categories if table or query unavailable
+      return [
+        { id: 'all', name: 'Tất cả', sortOrder: 0 },
+        { id: 'birthday', name: 'Sinh nhật', sortOrder: 1 },
+        { id: 'cute', name: 'Cute', sortOrder: 2 },
+        { id: 'floral', name: 'Hoa', sortOrder: 3 },
+        { id: 'minimal', name: 'Tối giản', sortOrder: 4 },
+        { id: 'love', name: 'Tình yêu', sortOrder: 5 },
+        { id: 'thanks', name: 'Cảm ơn', sortOrder: 6 },
+      ];
+    }
+    return (data ?? []).map((row) => ({
+      id: String(row.id),
+      name: String(row.name),
+      sortOrder: Number(row.sort_order ?? 0),
+    }));
   }
 
   async createTemplate(

@@ -105,18 +105,22 @@ export function TemplateAuthorControls({
       </button>
 
       {/* Publish button */}
-      {onPublish && !isReadOnly && (
+      {onPublish && (
         <button
           type="button"
           onClick={onPublish}
-          disabled={isPublishing || isSaveBlocked}
+          disabled={isPublishing || isSaveBlocked || isReadOnly}
           aria-label="Đăng mẫu"
           title={
-            isSaveBlocked
-              ? 'Đang chờ lưu thay đổi trước khi đăng'
-              : 'Kiểm duyệt và xuất bản mẫu thiết kế'
+            isReadOnly
+              ? 'Chế độ chỉ đọc, không thể đăng mẫu'
+              : isSaveBlocked
+                ? saveStatus === 'conflict'
+                  ? 'Bản nháp đang bị xung đột phiên làm việc'
+                  : 'Đang chờ lưu thay đổi trước khi đăng'
+                : 'Kiểm duyệt và xuất bản mẫu thiết kế'
           }
-          className="inline-flex items-center gap-1.5 h-8 px-2.5 sm:px-3 rounded-lg text-xs font-semibold bg-[#315F86] text-white hover:bg-[#244A69] active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-2xs"
+          className="inline-flex items-center gap-1.5 h-8 px-2.5 sm:px-3 rounded-lg text-xs font-semibold bg-[#315F86] text-white hover:bg-[#244A69] active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-2xs cursor-pointer"
         >
           <UploadCloud className="w-3.5 h-3.5" aria-hidden="true" />
           <span>{isPublishing ? 'Đang đăng...' : 'Đăng mẫu'}</span>
