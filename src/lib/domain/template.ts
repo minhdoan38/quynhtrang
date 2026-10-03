@@ -191,3 +191,58 @@ export interface TemplateAvailabilityDependencies {
   lookup?: ReadonlyMap<string, DependencyMetadataItem> | Record<string, DependencyMetadataItem>;
   assetManifestHealthy?: boolean;
 }
+
+export type TemplateErrorCode =
+  | 'UNAUTHENTICATED'
+  | 'FORBIDDEN'
+  | 'INVALID_INPUT'
+  | 'NOT_FOUND'
+  | 'REVISION_CONFLICT'
+  | 'LEASE_CONFLICT'
+  | 'LEASE_EXPIRED'
+  | 'ACTIVE_DRAFT_EXISTS'
+  | 'IMMUTABLE_VERSION'
+  | 'ALREADY_PUBLISHED'
+  | 'CANNOT_DELETE_PUBLISHED'
+  | 'CANNOT_DELETE_WITH_HISTORY'
+  | 'VALIDATION_FAILED'
+  | 'TARGET_MISMATCH'
+  | 'DEPENDENCY_UNRESOLVED'
+  | 'ASSET_MISSING'
+  | 'STORAGE_FAILURE'
+  | 'INTERNAL_ERROR';
+
+export const templateServiceStatuses: Record<TemplateErrorCode | string, number> = {
+  UNAUTHENTICATED: 401,
+  FORBIDDEN: 403,
+  INVALID_INPUT: 400,
+  NOT_FOUND: 404,
+  REVISION_CONFLICT: 409,
+  LEASE_CONFLICT: 409,
+  LEASE_EXPIRED: 409,
+  ACTIVE_DRAFT_EXISTS: 409,
+  IMMUTABLE_VERSION: 409,
+  ALREADY_PUBLISHED: 409,
+  CANNOT_DELETE_PUBLISHED: 409,
+  CANNOT_DELETE_WITH_HISTORY: 409,
+  VALIDATION_FAILED: 422,
+  TARGET_MISMATCH: 422,
+  DEPENDENCY_UNRESOLVED: 422,
+  ASSET_MISSING: 422,
+  STORAGE_FAILURE: 500,
+  INTERNAL_ERROR: 500,
+};
+
+export class TemplateServiceError extends Error {
+  readonly code: TemplateErrorCode | string;
+  readonly status: number;
+  readonly details?: unknown;
+
+  constructor(code: TemplateErrorCode | string, message: string, status?: number, details?: unknown) {
+    super(message);
+    this.name = 'TemplateServiceError';
+    this.code = code;
+    this.status = status ?? (templateServiceStatuses[code] ?? 500);
+    this.details = details;
+  }
+}

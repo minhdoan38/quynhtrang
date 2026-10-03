@@ -374,6 +374,210 @@ begin
   insert into public.projects (product_id, variant_id, source_template_id, source_template_version_id, clone_request_key)
   values ('card', 'vertical', v_t1, v_v1, 'req_key_1');
 
+
+-- 7. Security Perimeter, Direct Write/Read Bypasses, and Event Audit Survival (State 43 Task 4)
+do $$
+declare
+  v_cust_id uuid := '43000000-0000-0000-0000-0000000000c1'::uuid;
+  v_ed_id uuid := '43000000-0000-0000-0000-0000000000e1'::uuid;
+  v_adm_id uuid := '43000000-0000-0000-0000-0000000000a1'::uuid;
+  v_sec_template text := '43000000-0000-0000-0000-000000000010';
+  v_pub_template text := '43000000-0000-0000-0000-000000000011';
+  v_sec_draft uuid := '43000000-0000-0000-0000-0000000000d1'::uuid;
+  v_temp_draft uuid := '43000000-0000-0000-0000-0000000000d2'::uuid;
+  v_sec_op uuid := '43000000-0000-0000-0000-000000000099'::uuid;
+  v_sec_ev uuid := '43000000-0000-0000-0000-000000000088'::uuid;
+  v_count integer;
+  v_denied boolean;
+begin
+  -- 7.1 Setup test users
+  insert into auth.users (id, instance_id, aud, role, email, encrypted_password, email_confirmed_at, raw_app_meta_data, raw_user_meta_data, created_at, updated_at)
+  values
+    (v_cust_id, '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', 'state43-customer@example.com', 'password', now(), '{"provider":"email"}'::jsonb, '{}'::jsonb, now(), now()),
+    (v_ed_id, '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', 'state43-editor@example.com', 'password', now(), '{"provider":"email"}'::jsonb, '{}'::jsonb, now(), now()),
+    (v_adm_id, '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', 'state43-admin@example.com', 'password', now(), '{"provider":"email"}'::jsonb, '{}'::jsonb, now(), now())
+  on conflict (id) do nothing;
+
+  insert into public.staff_roles (user_id, role)
+  values
+    (v_ed_id, 'editor'),
+    (v_adm_id, 'admin')
+  on conflict (user_id) do update set role = excluded.role;
+
+  -- 7.2 Insert fixtures under postgres / admin
+  insert into public.templates (id, name, status, product_id, variant_id, revision)
+  values
+    (v_sec_template, 'Security Draft Template', 'draft', 'card', 'vertical', 1),
+    (v_pub_template, 'Security Published Template', 'published', 'card', 'vertical', 1)
+  on conflict (id) do nothing;
+
+  insert into public.template_drafts (id, template_id, draft_revision, design_document)
+  values (v_sec_draft, v_sec_template, 1, '{"security": "draft_content"}'::jsonb)
+  on conflict (id) do nothing;
+
+  -- 7.3 Role tests: Anon
+  set local role anon;
+  set local "request.jwt.claim.sub" = '';
+  set local "request.jwt.claims" = '{"role": "anon"}';
+
+  -- Anon cannot read drafts
+  select count(*) into v_count from public.template_drafts where id = v_sec_draft;
+  if v_count <> 0 then raise exception 'Anon can read template drafts'; end if;
+
+  -- Anon cannot read draft templates
+  select count(*) into v_count from public.templates where id = v_sec_template and status = 'draft';
+  if v_count <> 0 then raise exception 'Anon can read draft templates'; end if;
+
+  -- Anon can read published templates
+  select count(*) into v_count from public.templates where id = v_pub_template and status = 'published';
+  if v_count <> 1 then raise exception 'Anon cannot read published templates'; end if;
+
+  -- Anon direct write denied on templates
+  v_denied := false;
+  begin
+    insert into public.templates (id, name, status) values ('anon-hack', 'Hack', 'draft');
+  exception when others then v_denied := true;
+  end;
+  if not v_denied then raise exception 'Anon direct template insert succeeded'; end if;
+
+  -- Anon direct write denied on template_drafts
+  v_denied := false;
+  begin
+    insert into public.template_drafts (template_id, draft_revision) values (v_pub_template, 1);
+  exception when others then v_denied := true;
+  end;
+  if not v_denied then raise exception 'Anon direct draft insert succeeded'; end if;
+
+  -- Anon direct write denied on template_validation_runs
+  v_denied := false;
+  begin
+    insert into public.template_validation_runs (
+      template_id, draft_id, source_revision, lease_session_id, lease_epoch,
+      source_document_hash, candidate_document_hash, target_hash, engine_fingerprint, expires_at
+    ) values (
+      v_sec_template, v_sec_draft, 1, gen_random_uuid(), 0,
+      'h1', 'h2', 'h3', 'fp', now() + interval '5m'
+    );
+  exception when others then v_denied := true;
+  end;
+  if not v_denied then raise exception 'Anon direct validation run insert succeeded'; end if;
+
+  -- Anon direct write denied on template_operations
+  v_denied := false;
+  begin
+    insert into public.template_operations (request_id, operation, payload_hash)
+    values ('anon-op-1', 'publish', 'hash1');
+  exception when others then v_denied := true;
+  end;
+  if not v_denied then raise exception 'Anon direct operation insert succeeded'; end if;
+
+  -- 7.4 Role tests: Authenticated Customer (Non-staff)
+  set local role authenticated;
+  set local "request.jwt.claim.sub" = '43000000-0000-0000-0000-0000000000c1';
+  set local "request.jwt.claims" = '{"sub": "43000000-0000-0000-0000-0000000000c1", "role": "authenticated"}';
+
+  -- Customer cannot read drafts
+  select count(*) into v_count from public.template_drafts where id = v_sec_draft;
+  if v_count <> 0 then raise exception 'Customer can read template drafts'; end if;
+
+  -- Customer cannot read draft templates
+  select count(*) into v_count from public.templates where id = v_sec_template and status = 'draft';
+  if v_count <> 0 then raise exception 'Customer can read draft templates'; end if;
+
+  -- Customer direct write denied on templates
+  v_denied := false;
+  begin
+    insert into public.templates (id, name, status) values ('cust-hack', 'Hack', 'draft');
+  exception when others then v_denied := true;
+  end;
+  if not v_denied then raise exception 'Customer direct template insert succeeded'; end if;
+
+  -- Customer direct write denied on drafts
+  v_denied := false;
+  begin
+    insert into public.template_drafts (template_id, draft_revision) values (v_pub_template, 1);
+  exception when others then v_denied := true;
+  end;
+  if not v_denied then raise exception 'Customer direct draft insert succeeded'; end if;
+
+  -- 7.5 Role tests: Authenticated Staff (Editor)
+  set local role authenticated;
+  set local "request.jwt.claim.sub" = '43000000-0000-0000-0000-0000000000e1';
+  set local "request.jwt.claims" = '{"sub": "43000000-0000-0000-0000-0000000000e1", "role": "authenticated"}';
+
+  -- Editor can read drafts
+  select count(*) into v_count from public.template_drafts where id = v_sec_draft;
+  if v_count <> 1 then raise exception 'Editor cannot read template drafts'; end if;
+
+  -- Editor can read draft templates
+  select count(*) into v_count from public.templates where id = v_sec_template and status = 'draft';
+  if v_count <> 1 then raise exception 'Editor cannot read draft templates'; end if;
+
+  -- Editor cannot direct write without service_role RPC
+  v_denied := false;
+  begin
+    insert into public.templates (id, name, status) values ('editor-direct-hack', 'Hack', 'draft');
+  exception when others then v_denied := true;
+  end;
+  if not v_denied then raise exception 'Editor direct template insert unexpectedly succeeded'; end if;
+
+  -- 7.6 Audit Survival and Immutability
+  set local role postgres;
+
+  -- Insert temporary draft to delete
+  insert into public.template_drafts (id, template_id, draft_revision, design_document)
+  values (v_temp_draft, v_pub_template, 1, '{"draft": "to_be_deleted"}'::jsonb);
+
+  -- Insert audit records in template_operations and asset_events
+  insert into public.template_operations (id, request_id, operation, template_id, payload_hash, status)
+  values (v_sec_op, 'sec-req-op-1', 'save_draft', v_pub_template, 'hash_op_1', 'completed');
+
+  insert into public.asset_events (id, actor_user_id, kind, target_id, event, request_id)
+  values (v_sec_ev, v_ed_id, 'template', v_pub_template, 'draft_deleted', '43000000-0000-0000-0000-000000000099'::uuid);
+
+  -- Delete the draft
+  delete from public.template_drafts where id = v_temp_draft;
+
+  -- Verify audit survived draft deletion
+  select count(*) into v_count from public.template_operations where id = v_sec_op;
+  if v_count <> 1 then raise exception 'Operation audit record did not survive draft deletion'; end if;
+
+  select count(*) into v_count from public.asset_events where id = v_sec_ev;
+  if v_count <> 1 then raise exception 'Asset event record did not survive draft deletion'; end if;
+
+  -- Verify template_operations cannot be updated once completed
+  v_denied := false;
+  begin
+    update public.template_operations set payload_hash = 'tampered_hash' where id = v_sec_op;
+  exception when sqlstate 'P0001' then
+    if sqlerrm = 'completed template_operations cannot be updated' then v_denied := true; else raise; end if;
+  end;
+  if not v_denied then raise exception 'Updating completed template_operations unexpectedly succeeded'; end if;
+
+  -- Verify template_operations cannot be deleted
+  v_denied := false;
+  begin
+    delete from public.template_operations where id = v_sec_op;
+  exception when sqlstate 'P0001' then
+    if sqlerrm = 'template_operations is append-only and cannot be deleted' then v_denied := true; else raise; end if;
+  end;
+  if not v_denied then raise exception 'Deleting template_operations unexpectedly succeeded'; end if;
+
+  -- Verify asset_events cannot be updated or deleted
+  v_denied := false;
+  begin
+    update public.asset_events set event = 'tampered' where id = v_sec_ev;
+  exception when others then v_denied := true;
+  end;
+  if not v_denied then raise exception 'Updating asset_events unexpectedly succeeded'; end if;
+
+  v_denied := false;
+  begin
+    delete from public.asset_events where id = v_sec_ev;
+  exception when others then v_denied := true;
+  end;
+  if not v_denied then raise exception 'Deleting asset_events unexpectedly succeeded'; end if;
+
 end $$;
 
 rollback;

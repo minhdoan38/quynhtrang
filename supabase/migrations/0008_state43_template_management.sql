@@ -391,3 +391,122 @@ alter table public.template_version_assets enable row level security;
 alter table public.template_validation_runs enable row level security;
 alter table public.template_operations enable row level security;
 alter table public.template_legacy_targets enable row level security;
+
+-- 16. Template Operations Immutability Trigger
+create or replace function public.reject_template_operation_mutation()
+returns trigger
+language plpgsql
+security invoker
+set search_path = public, pg_temp
+as $$
+begin
+  if tg_op = 'DELETE' then
+    raise exception 'template_operations is append-only and cannot be deleted' using errcode = 'P0001';
+  end if;
+  if tg_op = 'UPDATE' and old.status in ('completed', 'failed') and new.cleanup_state is not distinct from old.cleanup_state then
+    raise exception 'completed template_operations cannot be updated' using errcode = 'P0001';
+  end if;
+  return new;
+end;
+$$;
+
+drop trigger if exists trigger_template_operations_immutable on public.template_operations;
+create trigger trigger_template_operations_immutable
+  before update or delete on public.template_operations
+  for each row execute function public.reject_template_operation_mutation();
+
+-- 17. Access boundaries and RLS policies (State 43 Task 4)
+-- 17.1 Revoke old permissive direct write & read policies from 0001
+drop policy if exists "Allow staff manage templates" on public.templates;
+drop policy if exists "Allow staff manage template versions" on public.template_versions;
+drop policy if exists "Allow read published templates" on public.templates;
+drop policy if exists "Allow read published template versions" on public.template_versions;
+
+-- 17.2 Explicit SELECT policies for templates and versions
+create policy "Read published templates or staff drafts"
+  on public.templates for select
+  using (
+    status = 'published'
+    or published = true
+    or public.is_staff('editor')
+  );
+
+create policy "Read published template versions or staff"
+  on public.template_versions for select
+  using (
+    public.is_staff('editor')
+    or exists (
+      select 1 from public.templates t
+      where t.id = template_versions.template_id
+        and (t.status = 'published' or t.published = true)
+    )
+  );
+
+-- 17.3 Explicit SELECT policies for newly created tables
+create policy "Allow read template categories"
+  on public.template_categories for select
+  using (true);
+
+create policy "Allow read template legacy targets"
+  on public.template_legacy_targets for select
+  using (true);
+
+create policy "Read template version dependencies"
+  on public.template_version_dependencies for select
+  using (
+    public.is_staff('editor')
+    or exists (
+      select 1 from public.template_versions tv
+      join public.templates t on t.id = tv.template_id
+      where tv.id = template_version_dependencies.version_id
+        and (t.status = 'published' or t.published = true)
+    )
+  );
+
+create policy "Staff read template drafts"
+  on public.template_drafts for select
+  using (public.is_staff('editor'));
+
+create policy "Staff read template assets"
+  on public.template_assets for select
+  using (public.is_staff('editor'));
+
+create policy "Staff read template version assets"
+  on public.template_version_assets for select
+  using (public.is_staff('editor'));
+
+create policy "Staff read template validation runs"
+  on public.template_validation_runs for select
+  using (public.is_staff('editor'));
+
+create policy "Staff read template operations"
+  on public.template_operations for select
+  using (public.is_staff('editor'));
+
+-- 17.4 Revoke direct write grants from public, anon, and authenticated
+revoke insert, update, delete on table
+  public.templates,
+  public.template_versions,
+  public.template_drafts,
+  public.template_version_dependencies,
+  public.template_assets,
+  public.template_version_assets,
+  public.template_validation_runs,
+  public.template_operations,
+  public.template_categories,
+  public.template_legacy_targets
+from public, anon, authenticated;
+
+-- 17.5 Explicit SELECT grants
+grant select on table
+  public.templates,
+  public.template_versions,
+  public.template_version_dependencies,
+  public.template_categories,
+  public.template_legacy_targets,
+  public.template_drafts,
+  public.template_assets,
+  public.template_version_assets,
+  public.template_validation_runs,
+  public.template_operations
+to anon, authenticated;
