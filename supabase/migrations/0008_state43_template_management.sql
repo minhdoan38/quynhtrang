@@ -2104,6 +2104,15 @@ begin
     raise exception 'NOT_FOUND: template not found' using errcode = 'P0001';
   end if;
 
+  -- Re-check idempotency under lock in case a concurrent request with the same request_id just committed
+  select * into v_op from public.template_operations where request_id = p_request;
+  if found then
+    if v_op.actor_user_id is distinct from p_actor or v_op.payload_hash <> v_payload_hash then
+      raise exception 'OPERATION_CONFLICT' using errcode = 'P0001';
+    end if;
+    return v_op.result;
+  end if;
+
   if v_template.status = 'archived' or v_template.archived_at is not null then
     raise exception 'TEMPLATE_ARCHIVED' using errcode = 'P0001';
   end if;

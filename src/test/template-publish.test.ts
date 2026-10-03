@@ -136,7 +136,7 @@ function createMockPublishHarness() {
       }
 
       // 2. Acquire transactional row lock
-      const releaseLock = await acquireLock(input.templateId);
+      const release = await acquireLock(input.templateId);
       try {
         // Re-check idempotency under lock
         const cachedUnderLock = operations.get(input.requestId);
@@ -331,7 +331,7 @@ function createMockPublishHarness() {
 
         return successResult;
       } finally {
-        releaseLock();
+        release();
       }
     },
   } as unknown as TemplateRepository;
@@ -828,6 +828,92 @@ describe('State 43 Task 12: Atomic publish with idempotency and immutable histor
         return true;
       },
     );
+  });
+
+  it('concurrent requests with identical requestId resolve to same Version ID and emit 1 audit event', async () => {
+    const harness = createMockPublishHarness();
+    const actor = createMockEditor();
+    const templateId = 'tmpl-card-concurrent-replay';
+    const draftId = 'draft-concurrent-replay-1';
+    const validationId = 'val-concurrent-replay-1';
+    const requestId = 'req-concurrent-same-id-1';
+
+    harness.templates.set(templateId, {
+      id: templateId,
+      name: 'Concurrent Replay Template',
+      status: 'draft',
+      revision: 1,
+      productId: 'card',
+      variantId: 'horizontal',
+      mode: null,
+      shape: null,
+      target: createTemplateTarget({ productId: 'card', variantId: 'horizontal', mode: null, shape: null }),
+      categoryId: 'all',
+      tags: [],
+      sortOrder: 0,
+      currentPublishedVersionId: null,
+      everPublishedAt: null,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      archivedAt: null,
+    });
+
+    harness.drafts.set(templateId, {
+      id: draftId,
+      templateId,
+      basedOnVersionId: null,
+      designDocument: createInitialState('card'),
+      documentSchemaVersion: 1,
+      draftRevision: 1,
+      editorUserId: actor.userId,
+      leaseSessionId: 'session-concurrent-replay',
+      leaseEpoch: 1,
+      leaseExpiresAt: new Date(Date.now() + 60000).toISOString(),
+      lastActivityAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      createdAt: new Date().toISOString(),
+    });
+
+    harness.validationRuns.set(validationId, {
+      id: validationId,
+      templateId,
+      draftId,
+      sourceRevision: 1,
+      sourceDocumentHash: 'hash-concurrent',
+      candidateDocumentHash: 'hash-concurrent',
+      targetHash: 'target-hash-1',
+      leaseEpoch: 1,
+      sessionId: 'session-concurrent-replay',
+      findings: [],
+      warningIds: [],
+      customerPreviewPassed: true,
+      engineFingerprint: 'engine-1',
+      thumbnail: { assetId: 'thumb-concurrent', sha256: 'sha-concurrent' },
+      expiresAt: new Date(Date.now() + 600000).toISOString(),
+    });
+
+    const input: Omit<PublishTemplateInput, 'requestId'> = {
+      templateId,
+      draftId,
+      expectedRevision: 1,
+      expectedCatalogRevision: 1,
+      sessionId: 'session-concurrent-replay',
+      leaseEpoch: 1,
+      validationId,
+      acknowledgedWarningIds: [],
+      revisionNote: 'Concurrent replay test',
+    };
+
+    const publishDraft = harness.service.publishTemplate.bind(harness.service);
+    const [resA, resB] = await Promise.all([
+      publishDraft(actor, { ...input, requestId }),
+      publishDraft(actor, { ...input, requestId }),
+    ]);
+
+    assert.equal(resA.versionId, resB.versionId);
+    assert.equal(resA.version, 1);
+    assert.equal(resB.version, 1);
+    assert.equal(harness.countPublishEventsForDraft(input.draftId), 1);
   });
 
   it('rejects expired validation receipt', async () => {

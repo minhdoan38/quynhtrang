@@ -1285,7 +1285,12 @@ begin
           raise exception 'Expected 1 template_published asset_event, got %', v_p_event_count;
         end if;
 
-        -- 12.5 Idempotent retry: same request ID returns identical version result
+        -- 12.5 Idempotent retry: after draft is published and deleted, calling template_publish_draft
+        -- with the same request_id cleanly returns original version without throwing NOT_FOUND: draft not found
+        select count(*) into v_p_draft_count from public.template_drafts where id = v_p_draft_id;
+        if v_p_draft_count <> 0 then
+          raise exception 'Expected draft % to be deleted before replay test', v_p_draft_id;
+        end if;
         v_p_pub_replay := public.template_publish_draft(
           v_ed_id,
           't12-req-pub-1',
@@ -1303,6 +1308,11 @@ begin
         if v_p_pub_replay <> v_p_pub_res then
           raise exception 'Idempotent replay did not return identical result';
         end if;
+        if (v_p_pub_replay->'version'->>'id')::uuid <> v_p_v1_id then
+          raise exception 'Idempotent replay version ID mismatch: expected %, got %',
+            v_p_v1_id, v_p_pub_replay->'version'->>'id';
+        end if;
+
 
         -- Verify no second event inserted on replay
         select count(*) into v_p_event_count
