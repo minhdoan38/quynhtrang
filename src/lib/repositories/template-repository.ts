@@ -5,7 +5,11 @@ import type { LibraryRef } from '../domain/asset-library.ts';
 import { createTemplateTarget } from '../template-target.ts';
 import type {
   AdminTemplateListQuery,
+  AttachTemplateAssetInput,
   CreateTemplateRepoInput,
+  EligibleSourceProject,
+  SourceProjectDetail,
+  TemplateAssetRecord,
   TemplateDraftRecord,
   TemplateErrorCode,
   TemplateMetadataPatch,
@@ -71,6 +75,42 @@ export interface DatabaseVersionRow {
   published_at?: string | null;
   published_by?: string | null;
   revision_note?: string | null;
+}
+
+export interface DatabaseAssetRow {
+  id: string;
+  template_id: string;
+  draft_id?: string | null;
+  storage_bucket: string;
+  storage_path: string;
+  checksum: string;
+  mime_type: string;
+  byte_size: number | string;
+  pixel_width?: number | null;
+  pixel_height?: number | null;
+  upload_status?: string | null;
+  is_published: boolean;
+  created_at: string;
+  created_by?: string | null;
+}
+
+function mapAssetRow(row: DatabaseAssetRow): TemplateAssetRecord {
+  return {
+    id: row.id,
+    templateId: row.template_id,
+    draftId: row.draft_id ?? null,
+    storageBucket: row.storage_bucket,
+    storageKey: row.storage_path,
+    checksum: row.checksum,
+    mimeType: row.mime_type,
+    byteSize: typeof row.byte_size === 'string' ? parseInt(row.byte_size, 10) : Number(row.byte_size),
+    widthPx: row.pixel_width ?? undefined,
+    heightPx: row.pixel_height ?? undefined,
+    uploadStatus: row.upload_status ?? undefined,
+    isPublished: Boolean(row.is_published),
+    createdAt: row.created_at,
+    createdBy: row.created_by ?? null,
+  };
 }
 
 export function mapTemplateRow(row: DatabaseTemplateRow): TemplateRecord {
@@ -629,5 +669,206 @@ export class TemplateRepository {
       const parsed = parseRpcError(err);
       return { ok: false, code: parsed.code, message: parsed.message };
     }
+  }
+
+  async attachAsset(
+    actor: string,
+    input: AttachTemplateAssetInput,
+  ): Promise<TemplateRepoResult<TemplateAssetRecord>> {
+    try {
+      const { data, error } = await this.client.rpc('template_attach_asset', {
+        p_actor: actor,
+        p_template_id: input.templateId,
+        p_draft_id: input.draftId ?? null,
+        p_storage_bucket: input.storageBucket,
+        p_storage_path: input.storagePath,
+        p_checksum: input.checksum,
+        p_mime_type: input.mimeType,
+        p_byte_size: input.byteSize,
+        p_pixel_width: input.pixelWidth ?? null,
+        p_pixel_height: input.pixelHeight ?? null,
+        p_upload_status: input.uploadStatus ?? 'attached',
+      });
+
+      if (error) {
+        const parsed = parseRpcError(error);
+        return { ok: false, code: parsed.code, message: parsed.message };
+      }
+
+      const resp = data && typeof data === 'object' ? (data as Record<string, unknown>) : null;
+      if (!resp || !resp.ok || !resp.asset) {
+        const errCode = typeof resp?.code === 'string' ? (resp.code as TemplateErrorCode) : 'INTERNAL_ERROR';
+        const errMsg = typeof resp?.message === 'string' ? resp.message : 'Failed to attach asset';
+        return { ok: false, code: errCode, message: errMsg };
+      }
+
+      const raw = resp.asset as Record<string, unknown>;
+      const asset: TemplateAssetRecord = {
+        id: String(raw.id),
+        templateId: String(raw.templateId),
+        draftId: raw.draftId ? String(raw.draftId) : null,
+        storageBucket: String(raw.storageBucket),
+        storageKey: String(raw.storagePath),
+        checksum: String(raw.checksum),
+        mimeType: String(raw.mimeType),
+        byteSize: Number(raw.byteSize),
+        widthPx: raw.pixelWidth ? Number(raw.pixelWidth) : undefined,
+        heightPx: raw.pixelHeight ? Number(raw.pixelHeight) : undefined,
+        uploadStatus: raw.uploadStatus ? String(raw.uploadStatus) : undefined,
+        isPublished: Boolean(raw.isPublished),
+        createdAt: String(raw.createdAt),
+      };
+
+      return { ok: true, value: asset };
+    } catch (err: unknown) {
+      const parsed = parseRpcError(err);
+      return { ok: false, code: parsed.code, message: parsed.message };
+    }
+  }
+
+  async getAsset(assetId: string): Promise<TemplateAssetRecord | null> {
+    const { data, error } = await this.client
+      .from('template_assets')
+      .select('*')
+      .eq('id', assetId)
+      .maybeSingle();
+
+    if (error) throw new Error(error.message);
+    if (!data) return null;
+    return mapAssetRow(data as DatabaseAssetRow);
+  }
+
+  async listAssetsForTemplate(templateId: string): Promise<TemplateAssetRecord[]> {
+    const { data, error } = await this.client
+      .from('template_assets')
+      .select('*')
+      .eq('template_id', templateId)
+      .order('created_at', { ascending: false });
+
+    if (error) throw new Error(error.message);
+    return ((data ?? []) as DatabaseAssetRow[]).map(mapAssetRow);
+  }
+
+  async listEligibleSourceProjects(
+    actor: string,
+    productId?: string | null,
+  ): Promise<EligibleSourceProject[]> {
+    const { data, error } = await this.client.rpc('template_list_eligible_source_projects', {
+      p_actor: actor,
+      p_product_id: productId ?? null,
+    });
+
+    if (error) throw new Error(error.message);
+    return (data ?? []) as EligibleSourceProject[];
+  }
+
+  async getSourceProject(actor: string, projectId: string): Promise<SourceProjectDetail | null> {
+    const { data, error } = await this.client
+      .from('projects')
+      .select('*')
+      .eq('id', projectId)
+      .maybeSingle();
+
+    if (error) throw new Error(error.message);
+    if (!data) return null;
+
+    const { data: ordersData, error: ordersError } = await this.client
+      .from('orders')
+      .select('id')
+      .eq('project_id', projectId)
+      .limit(1);
+
+    if (ordersError) throw new Error(ordersError.message);
+    const hasLinkedOrders = Boolean(ordersData && ordersData.length > 0);
+    const eligible = !hasLinkedOrders && data.working_document !== null && data.owner_user_id === actor;
+    const blockedReason = hasLinkedOrders
+      ? 'HAS_LINKED_ORDERS'
+      : (data.working_document === null ? 'NO_DOCUMENT' : null);
+
+    return {
+      id: data.id,
+      ownerUserId: data.owner_user_id,
+      productId: data.product_id,
+      variantId: data.variant_id ?? null,
+      currentWorkingRevision: data.current_working_revision,
+      workingDocument: (data.working_document as Record<string, unknown>) ?? null,
+      createdAt: data.created_at,
+      updatedAt: data.updated_at,
+      eligible,
+      blockedReason,
+    };
+  }
+
+  async uploadStorageObject(bucket: string, path: string, bytes: Uint8Array, mimeType: string): Promise<void> {
+    const { error } = await this.client.storage.from(bucket).upload(path, bytes, {
+      contentType: mimeType,
+      upsert: true,
+    });
+    if (error) {
+      throw new Error(`Failed to upload storage object ${bucket}/${path}: ${error.message}`);
+    }
+  }
+
+  async downloadStorageObject(bucket: string, path: string): Promise<Uint8Array | null> {
+    const { data, error } = await this.client.storage.from(bucket).download(path);
+    if (error || !data) return null;
+    const arrayBuffer = await data.arrayBuffer();
+    return new Uint8Array(arrayBuffer);
+  }
+
+  async copyStorageObject(fromBucket: string, fromPath: string, toBucket: string, toPath: string): Promise<void> {
+    const bytes = await this.downloadStorageObject(fromBucket, fromPath);
+    if (!bytes) {
+      throw new Error(`Failed to read source object from ${fromBucket}/${fromPath}`);
+    }
+    const ext = fromPath.split('.').pop()?.toLowerCase();
+    const mimeType = ext === 'png' ? 'image/png' : ext === 'webp' ? 'image/webp' : 'image/jpeg';
+    await this.uploadStorageObject(toBucket, toPath, bytes, mimeType);
+  }
+
+  async deleteStorageObject(bucket: string, path: string): Promise<void> {
+    const { error } = await this.client.storage.from(bucket).remove([path]);
+    if (error) {
+      throw new Error(`Failed to delete storage object ${bucket}/${path}: ${error.message}`);
+    }
+  }
+
+  async markAssetPublished(assetId: string): Promise<void> {
+    const { error } = await this.client
+      .from('template_assets')
+      .update({ is_published: true, upload_status: 'verified' })
+      .eq('id', assetId);
+
+    if (error) throw new Error(error.message);
+  }
+
+  async linkVersionAsset(versionId: string, assetId: string): Promise<void> {
+    const { error } = await this.client
+      .from('template_version_assets')
+      .insert({ version_id: versionId, asset_id: assetId });
+
+    if (error && !error.message.includes('duplicate key') && !error.message.includes('unique constraint')) {
+      throw new Error(error.message);
+    }
+  }
+
+  async listUnreferencedDraftAssets(cutoffDate: Date): Promise<TemplateAssetRecord[]> {
+    const { data, error } = await this.client
+      .from('template_assets')
+      .select('*')
+      .eq('is_published', false)
+      .lt('created_at', cutoffDate.toISOString());
+
+    if (error) throw new Error(error.message);
+    return ((data ?? []) as DatabaseAssetRow[]).map(mapAssetRow);
+  }
+
+  async deleteAssetRecord(assetId: string): Promise<void> {
+    const { error } = await this.client
+      .from('template_assets')
+      .delete()
+      .eq('id', assetId);
+
+    if (error) throw new Error(error.message);
   }
 }

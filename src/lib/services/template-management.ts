@@ -8,6 +8,7 @@ import {
   TemplateServiceError,
   type AdminTemplateListQuery,
   type CreateTemplateRepoInput,
+  type EligibleSourceProject,
   type SaveTemplateDraftInput,
   type TemplateDraftRecord,
   type TemplateMetadataPatch,
@@ -18,6 +19,15 @@ import {
   type TemplateVersionSummary,
 } from '../domain/template.ts';
 import type { TemplateRepository } from '../repositories/template-repository.ts';
+import {
+  createTemplateFromProject,
+  resolveTemplateAsset,
+  uploadTemplateAsset,
+  type CreateTemplateFromProjectInput,
+  type CreateTemplateFromProjectResult,
+  type TemplateAssetAccess,
+  type UploadedTemplateAsset,
+} from './template-assets.ts';
 
 export const KNOWN_TEMPLATE_CATEGORIES: Record<string, true> = {
   birthday: true,
@@ -590,5 +600,37 @@ export class TemplateManagementService {
     }
 
     return result.value;
+  }
+
+  async listEligibleSourceProjects(
+    actor: StaffIdentity,
+    productId?: string | null,
+  ): Promise<EligibleSourceProject[]> {
+    if (!actor || !actor.userId) {
+      throw new TemplateServiceError('UNAUTHENTICATED', 'Staff identity required', 401);
+    }
+    return this.repo.listEligibleSourceProjects(actor.userId, productId);
+  }
+
+  async createTemplateFromProject(
+    actor: StaffIdentity,
+    input: CreateTemplateFromProjectInput,
+  ): Promise<CreateTemplateFromProjectResult> {
+    return createTemplateFromProject(actor, input, { repo: this.repo });
+  }
+
+  async uploadTemplateAsset(
+    actor: StaffIdentity,
+    guard: { templateId: string; draftId?: string },
+    file: { bytes: Uint8Array | Buffer; filename?: string; mimeType?: string },
+  ): Promise<UploadedTemplateAsset> {
+    return uploadTemplateAsset(actor, guard, file, { repo: this.repo });
+  }
+
+  async resolveTemplateAsset(
+    assetId: string,
+    access: TemplateAssetAccess,
+  ) {
+    return resolveTemplateAsset(assetId, access, { repo: this.repo });
   }
 }

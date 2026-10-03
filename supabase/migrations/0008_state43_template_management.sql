@@ -167,7 +167,7 @@ create table if not exists public.template_assets (
   byte_size bigint not null check (byte_size > 0 and byte_size <= 10485760),
   pixel_width integer null check (pixel_width is null or pixel_width > 0),
   pixel_height integer null check (pixel_height is null or pixel_height > 0),
-  upload_status text not null default 'pending' check (upload_status in ('pending', 'uploaded', 'verified', 'failed')),
+  upload_status text not null default 'pending' check (upload_status in ('pending', 'uploaded', 'attached', 'verified', 'cleanup_pending', 'cleaned', 'failed')),
   expires_at timestamptz null,
   is_published boolean not null default false,
   created_by uuid references auth.users(id) on delete set null,
@@ -509,6 +509,42 @@ create policy "Staff read template validation runs"
 create policy "Staff read template operations"
   on public.template_operations for select
   using (public.is_staff('editor'));
+
+-- 17.3.1 Storage Buckets for Templates (State 43 Task 10)
+insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+values
+  ('template-drafts', 'template-drafts', false, 10485760, array['image/png', 'image/jpeg', 'image/webp']::text[]),
+  ('template-versions', 'template-versions', false, 10485760, array['image/png', 'image/jpeg', 'image/webp']::text[])
+on conflict (id) do update set
+  public = false,
+  file_size_limit = 10485760,
+  allowed_mime_types = array['image/png', 'image/jpeg', 'image/webp']::text[];
+
+drop policy if exists "Staff read template-drafts storage" on storage.objects;
+create policy "Staff read template-drafts storage"
+  on storage.objects for select
+  using (bucket_id = 'template-drafts' and public.is_staff('editor'));
+
+drop policy if exists "Staff write template-drafts storage" on storage.objects;
+create policy "Staff write template-drafts storage"
+  on storage.objects for insert
+  with check (bucket_id = 'template-drafts' and public.is_staff('editor'));
+
+drop policy if exists "Staff update template-drafts storage" on storage.objects;
+create policy "Staff update template-drafts storage"
+  on storage.objects for update
+  using (bucket_id = 'template-drafts' and public.is_staff('editor'))
+  with check (bucket_id = 'template-drafts' and public.is_staff('editor'));
+
+drop policy if exists "Staff delete template-drafts storage" on storage.objects;
+create policy "Staff delete template-drafts storage"
+  on storage.objects for delete
+  using (bucket_id = 'template-drafts' and public.is_staff('editor'));
+
+drop policy if exists "Staff read template-versions storage" on storage.objects;
+create policy "Staff read template-versions storage"
+  on storage.objects for select
+  using (bucket_id = 'template-versions' and public.is_staff('editor'));
 
 -- 17.4 Revoke direct write grants from public, anon, and authenticated
 revoke insert, update, delete on table
@@ -1389,6 +1425,175 @@ begin
 end;
 $$;
 
+-- 18.11 template_attach_asset RPC (State 43 Task 10)
+create or replace function public.template_attach_asset(
+  p_actor uuid,
+  p_template_id text,
+  p_draft_id uuid,
+  p_storage_bucket text,
+  p_storage_path text,
+  p_checksum text,
+  p_mime_type text,
+  p_byte_size bigint,
+  p_pixel_width integer default null,
+  p_pixel_height integer default null,
+  p_upload_status text default 'attached'
+)
+returns jsonb
+language plpgsql
+security invoker
+set search_path = public, extensions, pg_temp
+as $$
+declare
+  v_template record;
+  v_draft record;
+  v_asset record;
+begin
+  perform public.template_authorize_actor(p_actor, 'editor');
+
+  if p_template_id is null or btrim(p_template_id) = '' then
+    raise exception 'INVALID_INPUT: template_id required' using errcode = 'P0001';
+  end if;
+  if p_storage_bucket is null or p_storage_bucket not in ('template-drafts', 'template-versions', 'template-assets') then
+    raise exception 'INVALID_INPUT: invalid storage_bucket' using errcode = 'P0001';
+  end if;
+  if p_storage_path is null or btrim(p_storage_path) = '' then
+    raise exception 'INVALID_INPUT: storage_path required' using errcode = 'P0001';
+  end if;
+  if p_checksum is null or btrim(p_checksum) = '' then
+    raise exception 'INVALID_INPUT: checksum required' using errcode = 'P0001';
+  end if;
+  if p_mime_type is null or p_mime_type not in ('image/png', 'image/jpeg', 'image/webp', 'image/svg+xml') then
+    raise exception 'INVALID_INPUT: invalid mime_type' using errcode = 'P0001';
+  end if;
+  if p_byte_size is null or p_byte_size <= 0 or p_byte_size > 10485760 then
+    raise exception 'INVALID_INPUT: invalid byte_size' using errcode = 'P0001';
+  end if;
+
+  select * into v_template from public.templates where id = p_template_id;
+  if not found then
+    raise exception 'NOT_FOUND: template not found' using errcode = 'P0001';
+  end if;
+
+  if p_draft_id is not null then
+    select * into v_draft from public.template_drafts where id = p_draft_id and template_id = p_template_id;
+    if not found then
+      raise exception 'NOT_FOUND: draft not found for template' using errcode = 'P0001';
+    end if;
+  end if;
+
+  insert into public.template_assets (
+    template_id,
+    draft_id,
+    storage_bucket,
+    storage_path,
+    checksum,
+    mime_type,
+    byte_size,
+    pixel_width,
+    pixel_height,
+    upload_status,
+    created_by
+  ) values (
+    p_template_id,
+    p_draft_id,
+    p_storage_bucket,
+    p_storage_path,
+    p_checksum,
+    p_mime_type,
+    p_byte_size,
+    p_pixel_width,
+    p_pixel_height,
+    coalesce(p_upload_status, 'attached'),
+    p_actor
+  )
+  on conflict (storage_path) do update set
+    checksum = excluded.checksum,
+    mime_type = excluded.mime_type,
+    byte_size = excluded.byte_size,
+    pixel_width = coalesce(excluded.pixel_width, public.template_assets.pixel_width),
+    pixel_height = coalesce(excluded.pixel_height, public.template_assets.pixel_height),
+    upload_status = excluded.upload_status,
+    updated_at = now()
+  returning * into v_asset;
+
+  return jsonb_build_object(
+    'ok', true,
+    'asset', jsonb_build_object(
+      'id', v_asset.id,
+      'templateId', v_asset.template_id,
+      'draftId', v_asset.draft_id,
+      'storageBucket', v_asset.storage_bucket,
+      'storagePath', v_asset.storage_path,
+      'checksum', v_asset.checksum,
+      'mimeType', v_asset.mime_type,
+      'byteSize', v_asset.byte_size,
+      'pixelWidth', v_asset.pixel_width,
+      'pixelHeight', v_asset.pixel_height,
+      'uploadStatus', v_asset.upload_status,
+      'isPublished', v_asset.is_published,
+      'createdAt', v_asset.created_at,
+      'updatedAt', v_asset.updated_at
+    )
+  );
+end;
+$$;
+
+-- 18.12 template_list_eligible_source_projects RPC (State 43 Task 10)
+create or replace function public.template_list_eligible_source_projects(
+  p_actor uuid,
+  p_product_id text default null
+)
+returns jsonb
+language plpgsql
+security invoker
+set search_path = public, extensions, pg_temp
+as $$
+declare
+  v_result jsonb;
+begin
+  perform public.template_authorize_actor(p_actor, 'editor');
+
+  select coalesce(jsonb_agg(
+    jsonb_build_object(
+      'id', p.id,
+      'productId', p.product_id,
+      'variantId', p.variant_id,
+      'currentWorkingRevision', p.current_working_revision,
+      'createdAt', p.created_at,
+      'updatedAt', p.updated_at,
+      'eligible', (
+        not exists (select 1 from public.orders o where o.project_id = p.id)
+        and not exists (
+          select 1 from public.orders o
+          where o.approved_design_version_id in (
+            select dv.id from public.design_versions dv where dv.project_id = p.id
+          )
+        )
+        and p.working_document is not null
+      ),
+      'blockedReason', case
+        when exists (select 1 from public.orders o where o.project_id = p.id)
+          or exists (
+            select 1 from public.orders o
+            where o.approved_design_version_id in (
+              select dv.id from public.design_versions dv where dv.project_id = p.id
+            )
+          ) then 'HAS_LINKED_ORDERS'
+        when p.working_document is null then 'NO_DOCUMENT'
+        else null
+      end
+    ) order by p.updated_at desc
+  ), '[]'::jsonb)
+  into v_result
+  from public.projects p
+  where p.owner_user_id = p_actor
+    and (p_product_id is null or p.product_id = p_product_id);
+
+  return v_result;
+end;
+$$;
+
 revoke all on function public.template_acquire_draft_lease(uuid, text, uuid, uuid) from public, anon, authenticated;
 grant execute on function public.template_acquire_draft_lease(uuid, text, uuid, uuid) to service_role;
 
@@ -1403,3 +1608,9 @@ grant execute on function public.template_takeover_draft(uuid, text, uuid, bigin
 
 revoke all on function public.template_discard_draft(uuid, text, uuid, bigint, uuid, bigint) from public, anon, authenticated;
 grant execute on function public.template_discard_draft(uuid, text, uuid, bigint, uuid, bigint) to service_role;
+
+revoke all on function public.template_attach_asset(uuid, text, uuid, text, text, text, text, bigint, integer, integer, text) from public, anon, authenticated;
+grant execute on function public.template_attach_asset(uuid, text, uuid, text, text, text, text, bigint, integer, integer, text) to service_role;
+
+revoke all on function public.template_list_eligible_source_projects(uuid, text) from public, anon, authenticated;
+grant execute on function public.template_list_eligible_source_projects(uuid, text) to service_role;

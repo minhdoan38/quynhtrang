@@ -57,6 +57,7 @@ export interface TemplateRouteDependencies {
   createService?: () => Promise<TemplateManagementService> | TemplateManagementService;
   supabaseClient?: SupabaseClient;
   service?: TemplateManagementService;
+  repo?: TemplateRepository;
 }
 
 export type NonDynamicRouteContext = {
@@ -130,7 +131,9 @@ export async function getStaffTemplateContext(
     : await authorizeStaff(request, requiredRole, { supabaseClient: dependencies.supabaseClient });
 
   let repo: TemplateRepository | undefined;
-  if (dependencies.createRepository) {
+  if (dependencies.repo) {
+    repo = dependencies.repo;
+  } else if (dependencies.createRepository) {
     repo = await dependencies.createRepository();
   } else if (dependencies.createPrivilegedRepository) {
     repo = await dependencies.createPrivilegedRepository();

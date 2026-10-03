@@ -40,6 +40,15 @@ export interface AssetPromotionOptions {
   assetRepo: AssetPromotionRepository;
 }
 
+
+export function isTemplateAssetPath(pathOrUrl: string): boolean {
+  if (!pathOrUrl || typeof pathOrUrl !== 'string') return false;
+  const trimmed = pathOrUrl.trim();
+  if (trimmed.startsWith('template-asset://')) return true;
+  if (trimmed.includes('api/templates/assets/')) return true;
+  if (trimmed.includes('api/admin/content/templates/') && trimmed.includes('/assets/')) return true;
+  return false;
+}
 const MAX_FS_ASSETS = 300;
 const STORAGE_DIR = process.env.ASSET_STORAGE_DIR || join(process.cwd(), 'node_modules', '.cache', 'quynhtrang-assets');
 
@@ -236,7 +245,7 @@ function collectBlobUrlsAndMeta(design: DesignState): Map<string, ScannedAssetMe
   const metaMap = new Map<string, ScannedAssetMeta>();
 
   function record(url: string, partial?: Partial<ScannedAssetMeta> & { payload?: string | Uint8Array }) {
-    if (!url || typeof url !== 'string' || isLibraryAssetPath(url)) return;
+    if (!url || typeof url !== 'string' || isLibraryAssetPath(url) || isTemplateAssetPath(url)) return;
     if (!url.startsWith('blob:') && !url.startsWith('data:image/')) return;
     const existing = metaMap.get(url);
     const mimeType = partial?.mimeType ?? existing?.mimeType ?? (partial?.name ? inferMimeType(partial.name) : undefined);
@@ -284,7 +293,13 @@ function collectBlobUrlsAndMeta(design: DesignState): Map<string, ScannedAssetMe
         || (typeof data.storagePath === 'string' && isLibraryAssetPath(data.storagePath))
         || (typeof data.src === 'string' && isLibraryAssetPath(data.src))
       );
-      if (isLibraryElement) continue;
+      const isTemplateElement = (
+        typeof data.templateAssetId === 'string'
+        || (typeof data.storagePath === 'string' && isTemplateAssetPath(data.storagePath))
+        || (typeof data.src === 'string' && isTemplateAssetPath(data.src))
+        || (typeof data.url === 'string' && isTemplateAssetPath(data.url))
+      );
+      if (isLibraryElement || isTemplateElement) continue;
 
       const rawPayload = (data.payload as string | Uint8Array | undefined) ?? (typeof data.data === 'string' ? data.data : undefined);
       const elementMeta: Partial<ScannedAssetMeta> = {

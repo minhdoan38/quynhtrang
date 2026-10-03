@@ -211,9 +211,39 @@ export interface TemplateAssetRecord {
   byteSize: number;
   widthPx?: number;
   heightPx?: number;
+  uploadStatus?: string;
   isPublished: boolean;
   createdAt: string;
   createdBy?: string | null;
+}
+
+export interface AttachTemplateAssetInput {
+  templateId: string;
+  draftId?: string | null;
+  storageBucket: string;
+  storagePath: string;
+  checksum: string;
+  mimeType: string;
+  byteSize: number;
+  pixelWidth?: number | null;
+  pixelHeight?: number | null;
+  uploadStatus?: string;
+}
+
+export interface EligibleSourceProject {
+  id: string;
+  productId: string;
+  variantId: string | null;
+  currentWorkingRevision: number;
+  createdAt: string;
+  updatedAt: string;
+  eligible: boolean;
+  blockedReason: string | null;
+}
+
+export interface SourceProjectDetail extends EligibleSourceProject {
+  ownerUserId: string;
+  workingDocument: Record<string, unknown> | null;
 }
 
 export interface TemplatePage {
@@ -254,6 +284,8 @@ export type TemplateErrorCode =
   | 'DEPENDENCY_UNRESOLVED'
   | 'ASSET_MISSING'
   | 'STORAGE_FAILURE'
+  | 'RIGHTS_ACKNOWLEDGEMENT_REQUIRED'
+  | 'SOURCE_PROJECT_HAS_ORDERS'
   | 'INTERNAL_ERROR';
 
 export const templateServiceStatuses: Record<TemplateErrorCode | string, number> = {
@@ -274,6 +306,8 @@ export const templateServiceStatuses: Record<TemplateErrorCode | string, number>
   DEPENDENCY_UNRESOLVED: 422,
   ASSET_MISSING: 422,
   STORAGE_FAILURE: 500,
+  RIGHTS_ACKNOWLEDGEMENT_REQUIRED: 400,
+  SOURCE_PROJECT_HAS_ORDERS: 400,
   INTERNAL_ERROR: 500,
 };
 
