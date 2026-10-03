@@ -1,4 +1,5 @@
 import type { DesignState, ProductId, ImageState, CanvasElement } from './product-state';
+import type { TemplateProvenance } from './domain/template';
 import type { DemoOrder } from '@/components/customizer/confirmation-panel';
 
 const STATE_KEY = 'print-customizer-state-v1';
@@ -18,6 +19,8 @@ export interface RecentProject {
   productOptions: Record<string, unknown>;
   elements?: CanvasElement[];
   updatedAt: number;
+  sourceTemplate?: TemplateProvenance;
+  documentSchemaVersion?: number;
   syncedCloudProjectId?: string;
   syncedRevision?: number;
   migratedAt?: number;
@@ -74,6 +77,8 @@ export function sanitizeProductOptionsForStorage(
 export function sanitizeDesignForStorage(state: DesignState): DesignState {
   return {
     ...state,
+    sourceTemplate: state.sourceTemplate ? { ...state.sourceTemplate } : undefined,
+    documentSchemaVersion: state.documentSchemaVersion,
     productOptions: sanitizeProductOptionsForStorage(state.productOptions),
     elements: sanitizeElementsForStorage(state.elements),
   };
@@ -152,12 +157,12 @@ export function getRecentProjects(now: number = Date.now()): RecentProject[] {
   }
 }
 
-export function saveRecentProject(state: DesignState, explicitId?: string): boolean {
+export function saveRecentProject(state: DesignState, explicitId?: string, now: number = Date.now()): boolean {
   if (typeof window === 'undefined' && typeof localStorage === 'undefined') return true;
   try {
-    const existing = getRecentProjects();
+    const existing = getRecentProjects(now);
     const existingMatch = existing.find((p) => (explicitId ? p.id === explicitId : p.productId === state.productId));
-    const projectId = explicitId ?? existingMatch?.id ?? `${state.productId}-${Date.now()}`;
+    const projectId = explicitId ?? existingMatch?.id ?? `${state.productId}-${now}`;
     const project: RecentProject = {
       id: projectId,
       productId: state.productId,
@@ -169,7 +174,9 @@ export function saveRecentProject(state: DesignState, explicitId?: string): bool
       image: state.image ? { ...state.image } : null,
       productOptions: sanitizeProductOptionsForStorage(state.productOptions),
       elements: sanitizeElementsForStorage(state.elements),
-      updatedAt: Date.now(),
+      sourceTemplate: state.sourceTemplate ? { ...state.sourceTemplate } : undefined,
+      documentSchemaVersion: state.documentSchemaVersion,
+      updatedAt: now,
       syncedCloudProjectId: existingMatch?.syncedCloudProjectId,
       syncedRevision: existingMatch?.syncedRevision,
       migratedAt: existingMatch?.migratedAt,
@@ -182,6 +189,20 @@ export function saveRecentProject(state: DesignState, explicitId?: string): bool
     return true;
   } catch (err) {
     console.error('Failed to save recent project to localStorage:', err);
+    return false;
+  }
+}
+
+export function addRecentProject(project: RecentProject, now: number = Date.now()): boolean {
+  if (typeof window === 'undefined' && typeof localStorage === 'undefined') return true;
+  try {
+    const existing = getRecentProjects(now);
+    const filtered = existing.filter((p) => p.id !== project.id);
+    const updated = [{ ...project, updatedAt: project.updatedAt ?? now }, ...filtered].slice(0, 3);
+    localStorage.setItem(RECENT_PROJECTS_KEY, JSON.stringify(updated));
+    return true;
+  } catch (err) {
+    console.error('Failed to add recent project to localStorage:', err);
     return false;
   }
 }
@@ -211,9 +232,9 @@ export function markProjectMigrated(localId: string, cloudProjectId: string, rev
   }
 }
 
-export function flushAutosave(state: DesignState): boolean {
+export function flushAutosave(state: DesignState, explicitId?: string): boolean {
   const stateOk = saveState(state);
-  const projectOk = saveRecentProject(state);
+  const projectOk = saveRecentProject(state, explicitId);
   return stateOk && projectOk;
 }
 

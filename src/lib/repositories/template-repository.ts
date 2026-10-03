@@ -427,6 +427,29 @@ export class TemplateRepository {
     return mapVersionRow(data as DatabaseVersionRow);
   }
 
+  async resolveLegacyTarget(
+    legacyId: string,
+    targetKey?: string,
+  ): Promise<{ templateId: string; versionId: string } | null> {
+    try {
+      let q = this.client
+        .from('template_legacy_targets')
+        .select('template_id, version_id')
+        .eq('legacy_id', legacyId);
+      if (targetKey) {
+        q = q.eq('target_key', targetKey);
+      }
+      const { data, error } = await q.maybeSingle();
+      if (error || !data) return null;
+      return {
+        templateId: String(data.template_id),
+        versionId: String(data.version_id),
+      };
+    } catch {
+      return null;
+    }
+  }
+
   async listVersions(templateId: string): Promise<TemplateVersionSummary[]> {
     const { data, error } = await this.client
       .from('template_versions')

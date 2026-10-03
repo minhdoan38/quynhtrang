@@ -17,7 +17,7 @@ interface TemplateBrowserProps {
   productId: ProductId;
   variantId: string;
   onBack: () => void;
-  onApplyTemplate: (templateId: string) => void;
+  onApplyTemplate: (templateId: string, versionId?: string | null) => void;
 }
 
 const CATEGORIES: Array<{ id: TemplateCategory; label: string }> = [
@@ -387,7 +387,7 @@ export function TemplateBrowser({
                   const selectedId = previewItem.id;
                   setPreviewItem(null);
                   setPreviewPayload(null);
-                  onApplyTemplate(selectedId);
+                  onApplyTemplate(selectedId, previewItem.currentVersionId);
                 }}
                 className="inline-flex h-11 w-full items-center justify-center gap-2 rounded-xl bg-[#315F86] px-4 text-sm font-semibold text-white shadow-xs transition-colors hover:bg-[#244A69] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#315F86] active:scale-[0.98]"
               >

@@ -84,3 +84,25 @@ test('writes the pruned project list back to localStorage', () => {
   const stored = JSON.parse(values.get(RECENT_PROJECTS_KEY) ?? '[]') as RecentProject[];
   assert.deepEqual(stored.map(({ id }) => id), ['fresh-one', 'fresh-two']);
 });
+
+test('retains sourceTemplate and documentSchemaVersion during pruning and reads', () => {
+  const tplProject: RecentProject = {
+    ...baseProject,
+    id: 'tpl-retained',
+    updatedAt: NOW - DAY_MS,
+    sourceTemplate: {
+      templateId: 'tpl-1',
+      templateVersionId: 'ver-1',
+    },
+    documentSchemaVersion: 1,
+  };
+
+  setupLocalStorage([tplProject]);
+  const result = getRecentProjects(NOW);
+  assert.equal(result.length, 1);
+  assert.deepEqual(result[0].sourceTemplate, {
+    templateId: 'tpl-1',
+    templateVersionId: 'ver-1',
+  });
+  assert.equal(result[0].documentSchemaVersion, 1);
+});

@@ -70,6 +70,140 @@ export async function runAdminSmoke(options: SmokeOptions = {}) {
   const browser = await chromium.launch({ headless: true });
 
   try {
+    if (scenario === 'guest') {
+      console.log('[State43Smoke] Running Guest Template Clone Scenario...');
+      const guestContext = await browser.newContext({
+        viewport: { width: 1280, height: 800 },
+        deviceScaleFactor: 1,
+      });
+
+      const guestPage = await guestContext.newPage();
+
+      let templateFetchCount = 0;
+      await guestContext.route('**/api/templates/tpl-smoke-guest', async (route) => {
+        templateFetchCount++;
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({
+            template: {
+              id: 'tpl-smoke-guest',
+              name: 'Mẫu Giấy Gói Sinh Nhật Smoke',
+              status: 'published',
+              productId: 'wrapping',
+              variantId: 'default',
+              mode: 'pattern',
+              shape: null,
+              currentPublishedVersionId: 'ver-smoke-guest-1',
+            },
+            currentVersion: {
+              versionId: 'ver-smoke-guest-1',
+              templateId: 'tpl-smoke-guest',
+              version: 1,
+              documentSchemaVersion: 1,
+              document: {
+                productId: 'wrapping',
+                variantId: 'default',
+                templateId: 'tpl-smoke-guest',
+                text: 'Mẫu Smoke Guest',
+                color: '#2E3338',
+                backgroundColor: '#FFFDF8',
+                quantity: 1,
+                productOptions: { mode: 'pattern' },
+                elements: [
+                  {
+                    id: 'title',
+                    type: 'text',
+                    x: 20,
+                    y: 20,
+                    width: 100,
+                    height: 20,
+                    customerLocked: true,
+                    data: { text: 'Tiêu đề khóa' },
+                  },
+                  {
+                    id: 'body',
+                    type: 'text',
+                    x: 20,
+                    y: 50,
+                    width: 100,
+                    height: 20,
+                    customerLocked: false,
+                    data: { text: 'Nội dung sửa được' },
+                  },
+                ],
+              },
+              target: {
+                productId: 'wrapping',
+                variantId: 'default',
+                mode: 'pattern',
+                shape: null,
+                geometryKey: 'wrapping:default:pattern',
+                surfaces: [{ id: 'sheet', widthMm: 500, heightMm: 700 }],
+              },
+              dependencies: [],
+            },
+          }),
+        });
+      });
+
+      // 1. Guest navigates to template URL: ?template=tpl-smoke-guest
+      await guestPage.goto('http://localhost:3000/?template=tpl-smoke-guest');
+      await guestPage.waitForLoadState('domcontentloaded');
+      await delay(1000);
+
+      // Verify customizer editor loaded
+      const guestEditorPath = join(screenshotDir, 'guest-template-clone-editor.png');
+      await guestPage.screenshot({ path: guestEditorPath, fullPage: true });
+      console.log(`[State43Smoke] Saved guest editor screenshot: ${guestEditorPath}`);
+
+      // Verify localStorage has saved recent project with provenance
+      const savedProjects = await guestPage.evaluate(() => {
+        const raw = localStorage.getItem('quynhtrang-recent-projects-v1');
+        return raw ? (JSON.parse(raw) as unknown[]) : [];
+      });
+
+      if (!savedProjects || savedProjects.length === 0) {
+        throw new Error('Guest project was not saved to localStorage');
+      }
+
+      const firstProj = savedProjects[0] as { sourceTemplate?: { templateId?: string } };
+      if (firstProj?.sourceTemplate?.templateId !== 'tpl-smoke-guest') {
+        throw new Error(`Expected sourceTemplate tpl-smoke-guest, got: ${JSON.stringify(firstProj?.sourceTemplate)}`);
+      }
+
+      // Customer edits the project in localStorage
+      await guestPage.evaluate(() => {
+        const raw = localStorage.getItem('quynhtrang-recent-projects-v1');
+        if (raw) {
+          const arr = JSON.parse(raw) as Array<Record<string, unknown>>;
+          arr[0].text = 'Khách sửa trong smoke';
+          localStorage.setItem('quynhtrang-recent-projects-v1', JSON.stringify(arr));
+        }
+      });
+
+      // Reload page and verify deep independence (no new template network query)
+      const fetchesBeforeReload = templateFetchCount;
+      await guestPage.goto('http://localhost:3000/?view=editor');
+      await guestPage.waitForLoadState('domcontentloaded');
+      await delay(1000);
+
+      if (templateFetchCount > fetchesBeforeReload) {
+        throw new Error('Local project reopen made unexpected background template query');
+      }
+
+      const guestReopenPath = join(screenshotDir, 'guest-local-project-reopen.png');
+      await guestPage.screenshot({ path: guestReopenPath, fullPage: true });
+      console.log(`[State43Smoke] Saved guest reopen screenshot: ${guestReopenPath}`);
+
+      await guestContext.close();
+      console.log('[State43Smoke] ✓ Guest scenario completed successfully!');
+      return {
+        success: true,
+        screenshots: [guestEditorPath, guestReopenPath],
+      };
+    }
+
     // -------------------------------------------------------------------------
     // 1. Desktop 1440x1000 Scenario
     // -------------------------------------------------------------------------

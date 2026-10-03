@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  addRecentProject,
   getRecentProjects,
   saveRecentProject,
   pruneExpiredRecentProjects,
@@ -120,4 +121,71 @@ test('markProjectMigrated sets cloud project id and revision metadata', () => {
   assert.equal(updatedList[0].syncedCloudProjectId, 'cloud-proj-999');
   assert.equal(updatedList[0].syncedRevision, 3);
   assert.ok(typeof updatedList[0].migratedAt === 'number');
+});
+
+test('saveRecentProject and addRecentProject preserve template provenance and schema version', () => {
+  const dummyStorage: Record<string, string> = {};
+  globalThis.localStorage = {
+    getItem: (key: string) => dummyStorage[key] || null,
+    setItem: (key: string, val: string) => { dummyStorage[key] = val; },
+    removeItem: (key: string) => { delete dummyStorage[key]; },
+    clear: () => { Object.keys(dummyStorage).forEach(k => delete dummyStorage[k]); },
+    length: 0,
+    key: () => null,
+  } as Storage;
+
+  const designWithTemplate: DesignState = {
+    productId: 'wrapping',
+    variantId: 'default',
+    templateId: 'tpl-minimal-01',
+    text: 'Sinh nhật vui vẻ',
+    color: '#000000',
+    backgroundColor: '#ffffff',
+    image: null,
+    quantity: 1,
+    productOptions: {},
+    sourceTemplate: {
+      templateId: 'tpl-minimal-01',
+      templateVersionId: 'ver-uuid-1234',
+    },
+    documentSchemaVersion: 1,
+  };
+
+  saveRecentProject(designWithTemplate, 'proj-tpl-1');
+  const list = getRecentProjects();
+  assert.equal(list.length, 1);
+  assert.equal(list[0].id, 'proj-tpl-1');
+  assert.deepEqual(list[0].sourceTemplate, {
+    templateId: 'tpl-minimal-01',
+    templateVersionId: 'ver-uuid-1234',
+  });
+  assert.equal(list[0].documentSchemaVersion, 1);
+
+  // addRecentProject also preserves provenance
+  const project2: RecentProject = {
+    id: 'proj-tpl-2',
+    productId: 'card',
+    variantId: 'horizontal',
+    templateId: 'tpl-card-02',
+    text: 'Chúc mừng',
+    color: '#222222',
+    backgroundColor: '#fffdf8',
+    image: null,
+    productOptions: {},
+    sourceTemplate: {
+      templateId: 'tpl-card-02',
+      templateVersionId: 'ver-uuid-5678',
+    },
+    documentSchemaVersion: 1,
+    updatedAt: Date.now(),
+  };
+
+  addRecentProject(project2);
+  const list2 = getRecentProjects();
+  assert.equal(list2.length, 2);
+  assert.equal(list2[0].id, 'proj-tpl-2');
+  assert.deepEqual(list2[0].sourceTemplate, {
+    templateId: 'tpl-card-02',
+    templateVersionId: 'ver-uuid-5678',
+  });
 });

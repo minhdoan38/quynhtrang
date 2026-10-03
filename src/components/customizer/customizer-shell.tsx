@@ -55,6 +55,7 @@ import {
   flushAutosave,
   type RecentProject,
 } from '@/lib/storage';
+import { createGuestProjectFromTemplate } from '@/lib/services/template-clone';
 import {
   createCheckoutDraft,
   loadCheckoutDraft,
@@ -116,9 +117,11 @@ export type SelectionMode = 'default' | 'multi-select' | 'group-edit';
 export type TextEditState = ActiveTextEditState | null;
 export interface CustomizerShellProps {
   context?: CustomizerContext;
+  initialSearchParams?: Record<string, string | string[] | undefined>;
 }
 
-export function CustomizerShell({ context }: CustomizerShellProps = {}) {
+export function CustomizerShell({ context, initialSearchParams }: CustomizerShellProps = {}) {
+
   const router = useRouter();
   const containerRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -144,6 +147,7 @@ export function CustomizerShell({ context }: CustomizerShellProps = {}) {
 
   const [templateReturnView, setTemplateReturnView] = useState<'setup' | 'editor'>('setup');
   const [recentProjects, setRecentProjects] = useState<RecentProject[]>([]);
+  const [currentProjectId, setCurrentProjectId] = useState<string | null>(null);
   const [patternWorkspaceView, setPatternWorkspaceView] = useState<PatternWorkspaceView>('edit-pattern');
   const [activeCardSurface, setActiveCardSurface] = useState<CardSurface>('front');
   // Redesigned Shell State Model
@@ -324,13 +328,13 @@ export function CustomizerShell({ context }: CustomizerShellProps = {}) {
       return true;
     }
     setSaveStatus('saving');
-    const ok = flushAutosave(currentState);
+    const ok = flushAutosave(currentState, currentProjectId ?? undefined);
     setSaveStatus(ok ? 'saved' : 'error');
     if (ok) {
       setRecentProjects(getRecentProjects());
     }
     return ok;
-  }, [context, capabilities]);
+  }, [context, capabilities, currentProjectId]);
 
   // Continuous debounced autosave (400ms) - paused during active transaction
   useEffect(() => {
@@ -392,28 +396,63 @@ export function CustomizerShell({ context }: CustomizerShellProps = {}) {
       setView('editor');
       return;
     }
-    const params = new URLSearchParams(window.location.search);
-    const requestedProduct = params.get('product') as ProductId | null;
-    const requestedVariant = params.get('variant');
-    const requestedTemplate = params.get('template');
-    const requestedView = params.get('view') as View | null;
-    const requestedMode = params.get('mode');
+    const searchParams = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null;
+    const requestedProduct = ((typeof initialSearchParams?.product === 'string' ? initialSearchParams.product : null) || searchParams?.get('product')) as ProductId | null;
+    const requestedVariant = (typeof initialSearchParams?.variant === 'string' ? initialSearchParams.variant : null) || searchParams?.get('variant');
+    const requestedTemplate = (typeof initialSearchParams?.template === 'string' ? initialSearchParams.template : null) || searchParams?.get('template');
+    const requestedView = ((typeof initialSearchParams?.view === 'string' ? initialSearchParams.view : null) || searchParams?.get('view')) as View | null;
+    const requestedMode = (typeof initialSearchParams?.mode === 'string' ? initialSearchParams.mode : null) || searchParams?.get('mode');
     const saved = loadState();
     if (requestedMode === 'preflight') {
       setView('editor');
       setOverlayMode('preflight');
     }
 
-    if (requestedProduct && requestedProduct in PRODUCTS) {
+    if (requestedTemplate) {
+      if (requestedTemplate === 'blank') {
+        const prod = (requestedProduct && requestedProduct in PRODUCTS) ? requestedProduct : (saved?.productId ?? 'wrapping');
+        let initial = createInitialState(prod);
+        if (requestedVariant) {
+          initial = transitionState(initial, { type: 'SET_VARIANT', value: requestedVariant });
+        }
+        initial.templateId = 'blank';
+        resetHistory(migrateLegacyText(initial));
+        setView('editor');
+      } else {
+        fetch(`/api/templates/${encodeURIComponent(requestedTemplate)}`)
+          .then(async (res) => {
+            if (!res.ok) {
+              setView('template-browser');
+              showToast('Mẫu này hiện không còn khả dụng.');
+              return;
+            }
+            const data = await res.json();
+            const version = data.currentVersion;
+            if (!version) {
+              setView('template-browser');
+              showToast('Mẫu này hiện không còn khả dụng.');
+              return;
+            }
+            const reqId = crypto.randomUUID();
+            const project = createGuestProjectFromTemplate(version, reqId);
+            saveRecentProject(project.document, project.id);
+            setRecentProjects(getRecentProjects());
+            setCurrentProjectId(project.id);
+            resetHistory(migrateLegacyText(project.document));
+            setView('editor');
+          })
+          .catch(() => {
+            setView('template-browser');
+            showToast('Mẫu này hiện không còn khả dụng.');
+          });
+      }
+    } else if (requestedProduct && requestedProduct in PRODUCTS) {
       let initial = createInitialState(requestedProduct);
       if (requestedVariant) {
         initial = transitionState(initial, { type: 'SET_VARIANT', value: requestedVariant });
       }
-      if (requestedTemplate && TEMPLATES[requestedTemplate]) {
-        initial = transitionState(initial, { type: 'SET_TEMPLATE', value: requestedTemplate });
-      }
       resetHistory(migrateLegacyText(initial));
-      if (requestedView === 'editor' || requestedTemplate || requestedMode === 'preflight') {
+      if (requestedView === 'editor' || requestedMode === 'preflight') {
         setView('editor');
       } else if (requestedView === 'template-browser') {
         setView('template-browser');
@@ -547,11 +586,14 @@ export function CustomizerShell({ context }: CustomizerShellProps = {}) {
   }, []);
 
   const handleResumeProject = useCallback((project: RecentProject) => {
+    setCurrentProjectId(project.id);
     const base = createInitialState(project.productId);
     const merged: DesignState = {
       ...base,
       ...project,
       quantity: 1,
+      sourceTemplate: project.sourceTemplate,
+      documentSchemaVersion: project.documentSchemaVersion,
       productOptions: { ...base.productOptions, ...project.productOptions },
     };
     resetHistory(migrateLegacyText(merged));
@@ -566,7 +608,7 @@ export function CustomizerShell({ context }: CustomizerShellProps = {}) {
   }, [resetHistory]);
 
   const handleBackToLauncher = useCallback(() => {
-    saveRecentProject(state);
+    saveRecentProject(state, currentProjectId ?? undefined);
     setRecentProjects(getRecentProjects());
     setOverlayMode(null);
     setSelectedTarget(null);
@@ -576,7 +618,81 @@ export function CustomizerShell({ context }: CustomizerShellProps = {}) {
     setActiveSheet(null);
     setFocusMode(null);
     setView('launcher');
-  }, [state]);
+  }, [state, currentProjectId]);
+
+  const handleApplyTemplate = useCallback(
+    async (templateId: string, versionId?: string | null) => {
+      if (!context || capabilities.allowLocalStorage) {
+        saveRecentProject(state, currentProjectId ?? undefined);
+      }
+
+      try {
+        const requestId = crypto.randomUUID();
+        let expectedVersionId = versionId;
+        if (!expectedVersionId) {
+          const detailRes = await fetch(`/api/templates/${encodeURIComponent(templateId)}`);
+          if (!detailRes.ok) {
+            showToast('Mẫu này hiện không còn khả dụng.');
+            return;
+          }
+          const detailData = await detailRes.json();
+          expectedVersionId =
+            detailData.template?.currentPublishedVersionId || detailData.currentVersion?.versionId;
+        }
+
+        if (!expectedVersionId) {
+          showToast('Mẫu này hiện không còn khả dụng.');
+          return;
+        }
+
+        const res = await fetch(`/api/templates/${encodeURIComponent(templateId)}/use`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            expectedVersionId,
+            target: {
+              productId: state.productId,
+              variantId: state.variantId,
+              mode: state.productOptions?.mode === 'pattern' || state.productOptions?.mode === 'full-sheet' ? state.productOptions.mode : null,
+              shape: typeof state.productOptions?.shape === 'string' ? state.productOptions.shape : null,
+            },
+            requestId,
+          }),
+        });
+
+        if (!res.ok) {
+          const errorData = await res.json().catch(() => ({}));
+          if (res.status === 409 && errorData.code === 'TEMPLATE_CHANGED') {
+            showToast('Phiên bản mẫu đã thay đổi, vui lòng tải lại.');
+            return;
+          }
+          showToast(errorData.message || 'Mẫu này hiện không còn khả dụng.');
+          return;
+        }
+
+        const data = await res.json();
+        if (data.kind === 'guest' && data.payload) {
+          const newProject = createGuestProjectFromTemplate(data.payload, requestId);
+          const savedOk = saveRecentProject(newProject.document, newProject.id);
+          if (!savedOk) {
+            showToast('Không thể lưu dự án mới vào bộ nhớ.');
+            return;
+          }
+
+          setRecentProjects(getRecentProjects());
+          setCurrentProjectId(newProject.id);
+          resetHistory(migrateLegacyText(newProject.document));
+          setView('editor');
+          showToast('Đã áp dụng mẫu thiết kế.');
+        }
+      } catch (err) {
+        console.error('Failed to apply template:', err);
+        showToast('Mẫu này hiện không còn khả dụng.');
+      }
+    },
+    [context, capabilities, state, currentProjectId, resetHistory, showToast],
+  );
+
   const getSelectedTextElement = useCallback((current: DesignState, id: string | null): CanvasElement | null => {
     if (!id) return null;
     return (current.elements ?? []).find((element) => element.id === id && element.type === 'text') ?? null;
@@ -1818,14 +1934,7 @@ export function CustomizerShell({ context }: CustomizerShellProps = {}) {
         productId={state.productId}
         variantId={state.variantId}
         onBack={() => setView(templateReturnView)}
-        onApplyTemplate={(tplId) => {
-          executeAction(
-            { type: 'SET_TEMPLATE', value: tplId },
-            { type: 'apply-template', label: 'Áp dụng mẫu', affectedIds: [] }
-          );
-          setView('editor');
-          showToast('Đã áp dụng mẫu thiết kế.');
-        }}
+        onApplyTemplate={handleApplyTemplate}
       />
     );
   }

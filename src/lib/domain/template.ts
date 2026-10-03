@@ -328,7 +328,9 @@ export type TemplateErrorCode =
   | 'CANNOT_DELETE_PUBLISHED_TEMPLATE'
   | 'CANNOT_DELETE_TEMPLATE_WITH_VERSIONS'
   | 'CANNOT_DELETE_REFERENCED_TEMPLATE'
-  | 'INTERNAL_ERROR';
+  | 'INTERNAL_ERROR'
+  | 'TEMPLATE_CHANGED'
+  | 'TEMPLATE_UNAVAILABLE';
 
 export const templateServiceStatuses: Record<TemplateErrorCode | string, number> = {
   UNAUTHENTICATED: 401,
@@ -356,6 +358,8 @@ export const templateServiceStatuses: Record<TemplateErrorCode | string, number>
   RIGHTS_ACKNOWLEDGEMENT_REQUIRED: 400,
   SOURCE_PROJECT_HAS_ORDERS: 400,
   INTERNAL_ERROR: 500,
+  TEMPLATE_CHANGED: 409,
+  TEMPLATE_UNAVAILABLE: 409,
 };
 
 export class TemplateServiceError extends Error {
