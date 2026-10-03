@@ -153,6 +153,7 @@ export interface TemplateDraftRecord {
   designDocument: DesignState;
   documentSchemaVersion: number;
   draftRevision: number;
+  sourceDocumentHash?: string | null;
   editorUserId: string | null;
   leaseSessionId: string | null;
   leaseEpoch: number;

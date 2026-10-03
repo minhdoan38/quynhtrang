@@ -47,6 +47,7 @@ export interface DatabaseDraftRow {
   design_document: Record<string, unknown>;
   document_schema_version?: number | string | null;
   draft_revision?: number | string | null;
+  source_document_hash?: string | null;
   editor_user_id?: string | null;
   lease_session_id?: string | null;
   lease_epoch?: number | string | null;
@@ -131,6 +132,7 @@ export function mapDraftRow(row: DatabaseDraftRow): TemplateDraftRecord {
     designDocument: (row.design_document ?? {}) as unknown as DesignState,
     documentSchemaVersion: Number(row.document_schema_version ?? 1),
     draftRevision: Number(row.draft_revision ?? 1),
+    sourceDocumentHash: row.source_document_hash ? String(row.source_document_hash) : null,
     editorUserId: row.editor_user_id ? String(row.editor_user_id) : null,
     leaseSessionId: row.lease_session_id ? String(row.lease_session_id) : null,
     leaseEpoch: Number(row.lease_epoch ?? 0),

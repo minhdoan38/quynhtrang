@@ -7,11 +7,13 @@ export type { SaveStatus };
 export interface SaveQueueOptions {
   draftId: string;
   initialRevision: number;
+  initialDocument?: DesignState;
   expectedProductionVersionId: string;
   sessionId: string;
   epoch: number;
   debounceMs?: number;
   maxWaitMs?: number;
+  documentsEqual?: (a: DesignState, b: DesignState) => boolean;
   saveTransport: (
     input: SaveStaffDraftInput
   ) => Promise<RevisionResult<{ revision: number; updatedAt: string; requestId: string }>>;
@@ -34,8 +36,10 @@ export class StaffDraftSaveQueue {
     const nowFn = options.now ?? Date.now;
     this.inner = new DraftAutosaveQueue<DesignState>({
       initialRevision: options.initialRevision,
+      initialDocument: options.initialDocument,
       debounceMs: options.debounceMs,
       maxWaitMs: options.maxWaitMs,
+      documentsEqual: options.documentsEqual,
       now: nowFn,
       timer: options.timer,
       generateRequestId: (expectedRev) =>

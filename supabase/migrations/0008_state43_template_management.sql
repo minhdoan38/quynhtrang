@@ -115,6 +115,7 @@ create table if not exists public.template_drafts (
   design_document jsonb not null default '{}'::jsonb,
   document_schema_version integer not null default 1,
   draft_revision bigint not null default 1 check (draft_revision >= 1),
+  source_document_hash text null,
   editor_user_id uuid references auth.users(id) on delete set null,
   lease_session_id uuid null,
   lease_epoch bigint not null default 0 check (lease_epoch >= 0),
@@ -226,6 +227,32 @@ security invoker
 set search_path = public, pg_temp
 as $$
 begin
+  if tg_op = 'UPDATE' then
+    -- Allow shortening/expiring unexpired validation receipts, reject all other mutations
+    if new.id = old.id
+      and new.template_id = old.template_id
+      and new.draft_id = old.draft_id
+      and new.source_revision = old.source_revision
+      and new.lease_session_id = old.lease_session_id
+      and new.lease_epoch = old.lease_epoch
+      and new.source_document_hash = old.source_document_hash
+      and new.candidate_document_hash = old.candidate_document_hash
+      and new.target_hash = old.target_hash
+      and new.dependency_manifest_hash is not distinct from old.dependency_manifest_hash
+      and new.findings = old.findings
+      and new.warning_ids = old.warning_ids
+      and new.validator_version = old.validator_version
+      and new.engine_fingerprint = old.engine_fingerprint
+      and new.customer_preview_passed = old.customer_preview_passed
+      and new.thumbnail_asset_id is not distinct from old.thumbnail_asset_id
+      and new.thumbnail_checksum is not distinct from old.thumbnail_checksum
+      and new.preview_metadata = old.preview_metadata
+      and new.created_at = old.created_at
+      and new.expires_at <= old.expires_at
+    then
+      return new;
+    end if;
+  end if;
   raise exception 'template_validation_runs is append-only' using errcode = 'P0001';
 end;
 $$;
@@ -547,9 +574,10 @@ create or replace function public.template_create(
 returns jsonb
 language plpgsql
 security invoker
-set search_path = public, pg_temp
+set search_path = public, extensions, pg_temp
 as $$
 declare
+  v_doc_hash text;
   v_payload_hash text;
   v_op record;
   v_id text;
@@ -633,13 +661,15 @@ begin
     p_actor, p_actor, now(), now()
   ) returning * into v_template;
 
+  v_doc_hash := encode(digest(v_initial_document::text, 'sha256'), 'hex');
+
   -- Insert initial draft
   insert into public.template_drafts (
     template_id, based_on_version_id, design_document, document_schema_version,
-    draft_revision, created_by, updated_by, created_at, updated_at
+    draft_revision, source_document_hash, created_by, updated_by, created_at, updated_at
   ) values (
     v_id, null, v_initial_document, 1,
-    1, p_actor, p_actor, now(), now()
+    1, v_doc_hash, p_actor, p_actor, now(), now()
   ) returning * into v_draft;
 
   -- Insert asset_event
@@ -684,9 +714,10 @@ create or replace function public.template_create_draft(
 returns jsonb
 language plpgsql
 security invoker
-set search_path = public, pg_temp
+set search_path = public, extensions, pg_temp
 as $$
 declare
+  v_doc_hash text;
   v_payload_hash text;
   v_op record;
   v_draft record;
@@ -755,14 +786,16 @@ begin
   else
     raise exception 'INVALID_TRANSITION: template has no published version to base draft on' using errcode = 'P0001';
   end if;
+  -- Insert new draft from version immutable json
+  v_doc_hash := encode(digest(v_version.design_document::text, 'sha256'), 'hex');
 
   -- Insert new draft from version immutable json
   insert into public.template_drafts (
     template_id, based_on_version_id, design_document, document_schema_version,
-    draft_revision, created_by, updated_by, created_at, updated_at
+    draft_revision, source_document_hash, created_by, updated_by, created_at, updated_at
   ) values (
     p_template_id, v_version.id, v_version.design_document, coalesce(v_version.document_schema_version, 1),
-    1, p_actor, p_actor, now(), now()
+    1, v_doc_hash, p_actor, p_actor, now(), now()
   )
   on conflict (template_id) do nothing
   returning * into v_draft;
@@ -1080,9 +1113,10 @@ create or replace function public.template_save_draft(
 returns jsonb
 language plpgsql
 security invoker
-set search_path = public, pg_temp
+set search_path = public, extensions, pg_temp
 as $$
 declare
+  v_doc_hash text;
   v_payload_hash text;
   v_op record;
   v_draft record;
@@ -1135,28 +1169,59 @@ begin
     raise exception 'REVISION_CONFLICT' using errcode = 'P0001';
   end if;
 
-  v_next_revision := v_draft.draft_revision + 1;
+  v_doc_hash := encode(digest(p_document::text, 'sha256'), 'hex');
   v_schema_version := coalesce(p_document_schema_version, v_draft.document_schema_version, 1);
 
-  update public.template_drafts
-  set
-    design_document = p_document,
-    document_schema_version = v_schema_version,
-    draft_revision = v_next_revision,
-    lease_expires_at = v_now + interval '120 seconds',
-    last_activity_at = v_now,
-    updated_by = p_actor,
-    updated_at = v_now
-  where id = p_draft_id;
+  if p_document = v_draft.design_document then
+    -- No semantic change: do not increment revision, touch lease/activity
+    update public.template_drafts
+    set
+      document_schema_version = v_schema_version,
+      source_document_hash = coalesce(v_draft.source_document_hash, v_doc_hash),
+      lease_expires_at = v_now + interval '120 seconds',
+      last_activity_at = v_now,
+      updated_by = p_actor,
+      updated_at = v_now
+    where id = p_draft_id;
 
-  v_result := jsonb_build_object(
-    'ok', true,
-    'value', jsonb_build_object(
-      'revision', v_next_revision,
-      'updatedAt', v_now,
-      'requestId', p_request
-    )
-  );
+    v_result := jsonb_build_object(
+      'ok', true,
+      'value', jsonb_build_object(
+        'revision', v_draft.draft_revision,
+        'updatedAt', v_now,
+        'requestId', p_request
+      )
+    );
+  else
+    v_next_revision := v_draft.draft_revision + 1;
+
+    update public.template_drafts
+    set
+      design_document = p_document,
+      document_schema_version = v_schema_version,
+      draft_revision = v_next_revision,
+      source_document_hash = v_doc_hash,
+      lease_expires_at = v_now + interval '120 seconds',
+      last_activity_at = v_now,
+      updated_by = p_actor,
+      updated_at = v_now
+    where id = p_draft_id;
+
+    -- Invalidate unexpired validation receipts for this draft
+    update public.template_validation_runs
+    set expires_at = v_now
+    where draft_id = p_draft_id
+      and expires_at > v_now;
+
+    v_result := jsonb_build_object(
+      'ok', true,
+      'value', jsonb_build_object(
+        'revision', v_next_revision,
+        'updatedAt', v_now,
+        'requestId', p_request
+      )
+    );
+  end if;
 
   insert into public.template_operations (
     request_id, actor_user_id, operation, template_id, payload_hash, status, result

@@ -169,3 +169,51 @@ test('StaffDraftSaveQueue halts on REVISION_CONFLICT without discarding local st
 
   queue.dispose();
 });
+
+test('StaffDraftSaveQueue ignores semantically identical enqueues when saved', async () => {
+  const clock = createMockTimer();
+  const savedRequests: SaveStaffDraftInput[] = [];
+  const doc = { text: 'Initial' } as unknown as DesignState;
+
+  const queue = new StaffDraftSaveQueue({
+    draftId: 'draft-1',
+    initialRevision: 1,
+    initialDocument: doc,
+    expectedProductionVersionId: 'ver-1',
+    sessionId: 'session-1',
+    epoch: 1,
+    now: clock.now,
+    timer: clock.timer,
+    saveTransport: async (input: SaveStaffDraftInput) => {
+      savedRequests.push(input);
+      return {
+        ok: true,
+        value: { revision: input.expectedRevision + 1, updatedAt: '2026-09-30T16:00:00Z', requestId: input.requestId },
+      };
+    },
+  });
+
+  // Enqueue identical doc to what is already saved
+  queue.enqueue({ text: 'Initial' } as unknown as DesignState);
+  assert.equal(queue.getStatus(), 'idle');
+  await clock.advance(1000);
+  assert.equal(savedRequests.length, 0);
+
+  // Enqueue changed doc
+  queue.enqueue({ text: 'Changed' } as unknown as DesignState);
+  assert.equal(queue.getStatus(), 'dirty');
+
+  // Enqueue identical doc to pending
+  queue.enqueue({ text: 'Changed' } as unknown as DesignState);
+  await clock.advance(850);
+  assert.equal(savedRequests.length, 1);
+  assert.equal(queue.getStatus(), 'saved');
+
+  // Enqueue identical doc to newly saved
+  queue.enqueue({ text: 'Changed' } as unknown as DesignState);
+  assert.equal(queue.getStatus(), 'saved');
+  await clock.advance(1000);
+  assert.equal(savedRequests.length, 1);
+
+  queue.dispose();
+});

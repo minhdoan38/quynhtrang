@@ -71,6 +71,16 @@ begin
   if v_count <> 3 then
     raise exception 'Expected 3 new columns on projects, got %', v_count;
   end if;
+
+  -- public.template_drafts columns
+  select count(*) into v_count
+  from information_schema.columns
+  where table_schema = 'public'
+    and table_name = 'template_drafts'
+    and column_name = 'source_document_hash';
+  if v_count <> 1 then
+    raise exception 'Expected source_document_hash on template_drafts';
+  end if;
 end $$;
 
 -- 3. Verify indexes exist
@@ -723,8 +733,8 @@ begin
       v_save_res jsonb;
       v_takeover_res jsonb;
       v_discard_res jsonb;
+      v_check_rev bigint;
       v_ex_raised boolean;
-    begin
       select id into v_cur_draft_id from public.template_drafts where template_id = v_tmpl_id;
 
       -- 9.1 Acquire lease as Editor (Session 1)
@@ -783,6 +793,35 @@ begin
       );
       if (v_save_res->>'ok')::boolean is not true or (v_save_res->'value'->>'revision')::bigint <> 2 then
         raise exception 'template_save_draft failed or did not advance to revision 2: %', v_save_res;
+      end if;
+
+      -- Verify source_document_hash was updated
+      if not exists (
+        select 1 from public.template_drafts
+        where id = v_cur_draft_id
+          and source_document_hash = encode(digest('{"elements": [{"id": "el1", "type": "text", "text": "v1"}]}', 'sha256'), 'hex')
+      ) then
+        raise exception 'source_document_hash not properly updated after save';
+      end if;
+
+      -- 9.4b No-op save with identical document does NOT advance revision
+      v_save_res := public.template_save_draft(
+        v_ed_id,
+        '43000000-0000-0000-0000-0000000000b1b',
+        v_cur_draft_id,
+        2, -- expectedRevision
+        v_sess_1,
+        0, -- epoch
+        '{"elements": [{"id": "el1", "type": "text", "text": "v1"}]}'::jsonb,
+        1
+      );
+      if (v_save_res->>'ok')::boolean is not true or (v_save_res->'value'->>'revision')::bigint <> 2 then
+        raise exception 'No-op template_save_draft should not advance revision: %', v_save_res;
+      end if;
+
+      select draft_revision into v_check_rev from public.template_drafts where id = v_cur_draft_id;
+      if v_check_rev <> 2 then
+        raise exception 'Draft revision advanced on no-op save: expected 2, got %', v_check_rev;
       end if;
 
       -- 9.5 Stale revision save denied
@@ -924,13 +963,54 @@ begin
       if not v_ex_raised then
         raise exception 'Save with old epoch after takeover did not raise LEASE_LOST';
       end if;
+      -- 9.9b Save changed document as Admin in Session 3, Epoch 1, Rev 2 with active receipt
+      insert into public.template_validation_runs (
+        id, template_id, draft_id, source_revision, lease_session_id, lease_epoch,
+        source_document_hash, candidate_document_hash, target_hash,
+        engine_fingerprint, expires_at
+      ) values (
+        '43000000-0000-0000-0000-0000000000r1'::uuid,
+        v_tmpl_id,
+        v_cur_draft_id,
+        2,
+        v_sess_3,
+        1,
+        encode(digest('{"elements": [{"id": "el1", "type": "text", "text": "v1"}]}', 'sha256'), 'hex'),
+        'cand_hash',
+        'target_hash',
+        'engine_test',
+        now() + interval '10 minutes'
+      );
 
-      -- 9.10 Discard draft as Admin (current lease holder: Session 3, Epoch 1, Rev 2)
+      v_save_res := public.template_save_draft(
+        v_adm_id,
+        '43000000-0000-0000-0000-0000000000b8',
+        v_cur_draft_id,
+        2,
+        v_sess_3,
+        1,
+        '{"elements": [{"id": "el1", "type": "text", "text": "v2"}]}'::jsonb,
+        1
+      );
+      if (v_save_res->>'ok')::boolean is not true or (v_save_res->'value'->>'revision')::bigint <> 3 then
+        raise exception 'Changed template_save_draft failed or did not advance to revision 3: %', v_save_res;
+      end if;
+
+      -- Verify validation receipt was invalidated (expires_at <= now())
+      if exists (
+        select 1 from public.template_validation_runs
+        where id = '43000000-0000-0000-0000-0000000000r1'::uuid
+          and expires_at > now()
+      ) then
+        raise exception 'Validation receipt was not invalidated after changed save';
+      end if;
+
+      -- 9.10 Discard draft as Admin (current lease holder: Session 3, Epoch 1, Rev 3)
       v_discard_res := public.template_discard_draft(
         v_adm_id,
         '43000000-0000-0000-0000-0000000000d1',
         v_cur_draft_id,
-        2,
+        3,
         v_sess_3,
         1
       );

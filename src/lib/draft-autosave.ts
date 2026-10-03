@@ -31,8 +31,10 @@ export type DraftTimerId = NodeJS.Timeout | number | unknown;
 
 export interface DraftAutosaveOptions<TDocument> {
   initialRevision: number;
+  initialDocument?: TDocument;
   debounceMs?: number;
   maxWaitMs?: number;
+  documentsEqual?: (a: TDocument, b: TDocument) => boolean;
   saveTransport: (input: {
     document: TDocument;
     expectedRevision: number;
@@ -73,11 +75,14 @@ export class DraftAutosaveQueue<TDocument> {
     clearTimeout: (id: DraftTimerId) => void;
   };
   private readonly generateRequestId?: (expectedRevision: number) => string;
+  private readonly documentsEqual: (a: TDocument, b: TDocument) => boolean;
 
   private revision: number;
   private status: SaveStatus = 'idle';
   private latestDocument: TDocument | null = null;
   private pendingDocument: TDocument | null = null;
+  private lastSavedDocument: TDocument | null = null;
+  private inFlightDocument: TDocument | null = null;
   private inFlightPromise: Promise<void> | null = null;
   private debounceTimer: DraftTimerId = null;
   private firstDirtyAt: number | null = null;
@@ -97,6 +102,19 @@ export class DraftAutosaveQueue<TDocument> {
       clearTimeout: (id) => clearTimeout(id as NodeJS.Timeout),
     };
     this.generateRequestId = options.generateRequestId;
+    this.documentsEqual = options.documentsEqual ?? ((a: TDocument, b: TDocument): boolean => {
+      if (a === b) return true;
+      if (a === null || a === undefined || b === null || b === undefined) return false;
+      try {
+        return JSON.stringify(a) === JSON.stringify(b);
+      } catch {
+        return false;
+      }
+    });
+    if (options.initialDocument !== undefined) {
+      this.lastSavedDocument = options.initialDocument;
+      this.latestDocument = options.initialDocument;
+    }
   }
 
   enqueue(document: TDocument): void {
@@ -104,9 +122,54 @@ export class DraftAutosaveQueue<TDocument> {
       return;
     }
 
+    // Semantic debounce: if incoming document matches pending document, ignore redundant call
+    if (this.pendingDocument !== null && this.documentsEqual(this.pendingDocument, document)) {
+      this.latestDocument = document;
+      return;
+    }
+
+    // If queue is not dirty (idle/saved) and document matches latest saved/idle state, do not mark dirty or debounce
+    if (
+      (this.status === 'saved' || this.status === 'idle') &&
+      this.pendingDocument === null &&
+      this.latestDocument !== null &&
+      this.documentsEqual(this.latestDocument, document)
+    ) {
+      this.latestDocument = document;
+      return;
+    }
+
+    // If currently saving identical state and no other edit pending, do not trigger redundant debounce
+    if (
+      this.inFlightDocument !== null &&
+      this.pendingDocument === null &&
+      this.documentsEqual(this.inFlightDocument, document)
+    ) {
+      this.latestDocument = document;
+      return;
+    }
+
+    // If edit reverted back to last saved state while pending edit was debouncing, cancel debounce
+    if (
+      this.inFlightDocument === null &&
+      this.lastSavedDocument !== null &&
+      this.documentsEqual(this.lastSavedDocument, document)
+    ) {
+      this.latestDocument = document;
+      this.pendingDocument = null;
+      this.firstDirtyAt = null;
+      if (this.debounceTimer !== null) {
+        this.timer.clearTimeout(this.debounceTimer);
+        this.debounceTimer = null;
+      }
+      if (this.status === 'dirty') {
+        this.setStatus('saved', { revision: this.revision });
+      }
+      return;
+    }
+
     this.latestDocument = document;
     this.pendingDocument = document;
-
     const currentTime = this.now();
     if (this.firstDirtyAt === null) {
       this.firstDirtyAt = currentTime;
@@ -220,8 +283,8 @@ export class DraftAutosaveQueue<TDocument> {
 
     const docToSave = this.pendingDocument;
     this.pendingDocument = null;
+    this.inFlightDocument = docToSave;
     this.firstDirtyAt = null;
-
     const expectedRev = this.revision;
     const reqId = this.generateRequestId
       ? this.generateRequestId(expectedRev)
@@ -239,9 +302,11 @@ export class DraftAutosaveQueue<TDocument> {
 
         if (res.ok) {
           this.revision = res.value.revision;
+          this.lastSavedDocument = docToSave;
           this.lastErrorDetails = undefined;
           if (this.pendingDocument !== null) {
             this.inFlightPromise = null;
+            this.inFlightDocument = null;
             this.triggerSave();
           } else {
             this.setStatus('saved', { revision: this.revision });
@@ -257,7 +322,9 @@ export class DraftAutosaveQueue<TDocument> {
             res.code === 'ORDER_LOCKED' ||
             res.code === 'PRODUCTION_CHANGED';
 
-          this.pendingDocument = docToSave;
+          if (this.pendingDocument === null) {
+            this.pendingDocument = docToSave;
+          }
           if (isConflict) {
             this.setStatus('conflict', { code: res.code, message: res.message });
           } else {
@@ -273,16 +340,20 @@ export class DraftAutosaveQueue<TDocument> {
       } catch (err: unknown) {
         const msg = err instanceof Error ? err.message : 'Save connection failure';
         this.lastErrorDetails = { code: 'NETWORK_ERROR', message: msg };
-        this.pendingDocument = docToSave;
+        if (this.pendingDocument === null) {
+          this.pendingDocument = docToSave;
+        }
         this.setStatus('error', { message: msg });
 
         const errorObj = new DraftAutosaveError(msg, 'NETWORK_ERROR');
         this.drainFlushWaiters(errorObj);
       } finally {
         this.inFlightPromise = null;
+        this.inFlightDocument = null;
       }
     })();
 
     this.inFlightPromise = savePromise;
   }
+  // ponyfill/ponytail: skip deep structural diff engine, add when fine-grained path diffing needed
 }

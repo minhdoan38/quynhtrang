@@ -302,6 +302,119 @@ describe('State 43 Task 6: Draft Autosave Queue & Concurrency', () => {
 
       queue.dispose();
     });
+
+    it('semantic debounce: ignores identical document enqueues when saved or pending', async () => {
+      const clock = createMockTimer();
+      const savedRequests: Array<{ document: unknown; expectedRevision: number; requestId: string }> = [];
+      const initialDoc = { text: 'Hello' };
+
+      const queue = new DraftAutosaveQueue<{ text: string }>({
+        initialRevision: 1,
+        initialDocument: initialDoc,
+        now: clock.now,
+        timer: clock.timer,
+        saveTransport: async (input) => {
+          savedRequests.push(input);
+          return {
+            ok: true,
+            value: { revision: input.expectedRevision + 1, updatedAt: '2026-10-03T12:00:00Z', requestId: input.requestId },
+          };
+        },
+      });
+
+      // Enqueue identical to initialDocument
+      queue.enqueue({ text: 'Hello' });
+      assert.equal(queue.getStatus(), 'idle');
+      await clock.advance(1000);
+      assert.equal(savedRequests.length, 0);
+
+      // Enqueue distinct document -> marks dirty
+      queue.enqueue({ text: 'Hello World' });
+      assert.equal(queue.getStatus(), 'dirty');
+
+      // Redundant enqueue of same document while pending does not reset or duplicate
+      await clock.advance(400);
+      queue.enqueue({ text: 'Hello World' });
+      await clock.advance(450);
+      assert.equal(savedRequests.length, 1);
+      assert.equal(queue.getStatus(), 'saved');
+
+      // Redundant enqueue of newly saved document does not mark dirty
+      queue.enqueue({ text: 'Hello World' });
+      assert.equal(queue.getStatus(), 'saved');
+      await clock.advance(1000);
+      assert.equal(savedRequests.length, 1);
+
+      queue.dispose();
+    });
+
+    it('cancels pending debounce when document reverts to last saved state', async () => {
+      const clock = createMockTimer();
+      const savedRequests: Array<{ document: unknown; expectedRevision: number; requestId: string }> = [];
+      const initialDoc = { text: 'Base' };
+
+      const queue = new DraftAutosaveQueue<{ text: string }>({
+        initialRevision: 1,
+        initialDocument: initialDoc,
+        now: clock.now,
+        timer: clock.timer,
+        saveTransport: async (input) => {
+          savedRequests.push(input);
+          return {
+            ok: true,
+            value: { revision: input.expectedRevision + 1, updatedAt: '2026-10-03T12:00:00Z', requestId: input.requestId },
+          };
+        },
+      });
+
+      // Edit
+      queue.enqueue({ text: 'Typo' });
+      assert.equal(queue.getStatus(), 'dirty');
+      await clock.advance(300);
+
+      // Revert back to Base before 800ms debounce fires
+      queue.enqueue({ text: 'Base' });
+      assert.equal(queue.getStatus(), 'saved');
+      await clock.advance(1000);
+      assert.equal(savedRequests.length, 0);
+
+      queue.dispose();
+    });
+
+    it('supports custom documentsEqual comparator', async () => {
+      const clock = createMockTimer();
+      const savedRequests: Array<{ document: unknown; expectedRevision: number; requestId: string }> = [];
+
+      // Comparator ignoring volatile timestamp field
+      const queue = new DraftAutosaveQueue<{ id: string; timestamp: number }>({
+        initialRevision: 1,
+        initialDocument: { id: 'item-1', timestamp: 100 },
+        documentsEqual: (a, b) => a.id === b.id,
+        now: clock.now,
+        timer: clock.timer,
+        saveTransport: async (input) => {
+          savedRequests.push(input);
+          return {
+            ok: true,
+            value: { revision: input.expectedRevision + 1, updatedAt: '2026-10-03T12:00:00Z', requestId: input.requestId },
+          };
+        },
+      });
+
+      // Different timestamp, same id -> considered equal, ignored
+      queue.enqueue({ id: 'item-1', timestamp: 200 });
+      assert.equal(queue.getStatus(), 'idle');
+      await clock.advance(1000);
+      assert.equal(savedRequests.length, 0);
+
+      // Different id -> triggers save
+      queue.enqueue({ id: 'item-2', timestamp: 300 });
+      assert.equal(queue.getStatus(), 'dirty');
+      await clock.advance(850);
+      assert.equal(savedRequests.length, 1);
+
+      queue.dispose();
+    });
   });
 
   describe('TemplateRepository Concurrency & RPC Mutations', () => {
@@ -403,9 +516,11 @@ describe('State 43 Task 6: Draft Autosave Queue & Concurrency', () => {
                 return { data: null, error: { message: 'REVISION_CONFLICT: expected revision does not match draft revision' } };
               }
 
-              const nextRev = Number(draftState.draft_revision) + 1;
+              const isChanged = JSON.stringify(params.p_document) !== JSON.stringify(draftState.design_document);
+              const nextRev = isChanged ? Number(draftState.draft_revision) + 1 : Number(draftState.draft_revision);
               draftState.draft_revision = nextRev;
               draftState.design_document = params.p_document as Record<string, unknown>;
+              draftState.source_document_hash = 'sha256-mock-hash';
               draftState.lease_expires_at = new Date(Date.now() + 120_000).toISOString();
               draftState.updated_at = now;
 
@@ -643,6 +758,61 @@ describe('State 43 Task 6: Draft Autosave Queue & Concurrency', () => {
         assert.equal(res.value.draftId, 'draft-100');
         assert.equal(res.value.discarded, true);
       }
+    });
+
+    it('saveDraft updates source_document_hash and preserves revision on semantic no-op', async () => {
+      const activeDraft: DatabaseDraftRow = {
+        ...defaultDraftRow,
+        editor_user_id: '43000000-0000-0000-0000-0000000000e1',
+        lease_session_id: 'session-1',
+        lease_epoch: 0,
+        lease_expires_at: new Date(Date.now() + 100_000).toISOString(),
+        draft_revision: 1,
+        design_document: { elements: [{ id: '1', text: 'v1' }] },
+      };
+      const { mockClient } = createMockSupabaseWithState(activeDraft);
+      const repo = new TemplateRepository(mockClient);
+
+      const actor = '43000000-0000-0000-0000-0000000000e1';
+      const guard: TemplateDraftGuard = {
+        templateId: 'tmpl-100',
+        draftId: 'draft-100',
+        expectedRevision: 1,
+        sessionId: 'session-1',
+        leaseEpoch: 0,
+      };
+
+      // Save changed document -> advances to revision 2
+      const saveChanged = await repo.saveDraft(actor, {
+        ...guard,
+        requestId: randomUUID(),
+        document: { elements: [{ id: '1', text: 'v2' }] } as unknown as DesignState,
+      });
+      assert.equal(saveChanged.ok, true);
+      if (saveChanged.ok) {
+        assert.equal(saveChanged.value.revision, 2);
+      }
+
+      const draftAfterSave = await repo.getDraft('tmpl-100');
+      assert(draftAfterSave !== null);
+      assert.equal(draftAfterSave.draftRevision, 2);
+      assert.equal(draftAfterSave.sourceDocumentHash, 'sha256-mock-hash');
+
+      // Save identical document with expectedRevision 2 -> does NOT advance revision
+      const saveNoop = await repo.saveDraft(actor, {
+        ...guard,
+        expectedRevision: 2,
+        requestId: randomUUID(),
+        document: { elements: [{ id: '1', text: 'v2' }] } as unknown as DesignState,
+      });
+      assert.equal(saveNoop.ok, true);
+      if (saveNoop.ok) {
+        assert.equal(saveNoop.value.revision, 2);
+      }
+
+      const draftAfterNoop = await repo.getDraft('tmpl-100');
+      assert(draftAfterNoop !== null);
+      assert.equal(draftAfterNoop.draftRevision, 2);
     });
   });
 
