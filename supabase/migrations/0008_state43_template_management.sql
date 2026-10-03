@@ -1684,6 +1684,317 @@ begin
 end;
 $$;
 
+-- 21. Get Template Availability (Central SQL contract for list/clone/order gating)
+create or replace function public.get_template_availability(p_template_id text)
+returns jsonb
+language plpgsql
+security invoker
+set search_path = public, pg_temp
+as $$
+declare
+  v_template record;
+  v_version record;
+  v_blockers jsonb := '[]'::jsonb;
+  v_dep record;
+  v_face record;
+  v_family record;
+  v_sticker record;
+  v_broken_asset_count integer;
+begin
+  select * into v_template
+  from public.templates
+  where id = p_template_id;
+
+  if not found then
+    return jsonb_build_object(
+      'available', false,
+      'blockers', jsonb_build_array(
+        jsonb_build_object('code', 'NOT_FOUND', 'message', 'Mẫu không tồn tại')
+      )
+    );
+  end if;
+
+  -- 1. Check if template is archived
+  if v_template.status = 'archived' or v_template.archived_at is not null then
+    v_blockers := v_blockers || jsonb_build_array(
+      jsonb_build_object('code', 'TEMPLATE_ARCHIVED', 'message', 'Mẫu đã được lưu trữ')
+    );
+  end if;
+
+  -- 2. Check if published version exists
+  if v_template.current_published_version_id is null then
+    v_blockers := v_blockers || jsonb_build_array(
+      jsonb_build_object('code', 'NO_PUBLISHED_VERSION', 'message', 'Mẫu chưa có phiên bản xuất bản')
+    );
+    return jsonb_build_object('available', false, 'blockers', v_blockers);
+  end if;
+
+  select * into v_version
+  from public.template_versions
+  where id = v_template.current_published_version_id;
+
+  if not found then
+    v_blockers := v_blockers || jsonb_build_array(
+      jsonb_build_object('code', 'NO_PUBLISHED_VERSION', 'message', 'Phiên bản xuất bản không tồn tại')
+    );
+    return jsonb_build_object('available', false, 'blockers', v_blockers);
+  end if;
+
+  -- 3. Check target snapshot
+  if v_template.product_id is null
+     or (v_template.target_snapshot is not null
+         and v_template.target_snapshot->'surfaces' is not null
+         and jsonb_array_length(v_template.target_snapshot->'surfaces') = 0) then
+    v_blockers := v_blockers || jsonb_build_array(
+      jsonb_build_object('code', 'INVALID_PRODUCT_TARGET', 'message', 'Mục tiêu sản phẩm không hợp lệ')
+    );
+  end if;
+
+  -- 4. Check version manifest health
+  select count(*) into v_broken_asset_count
+  from public.template_version_assets tva
+  left join public.template_assets ta on ta.id = tva.asset_id
+  where tva.version_id = v_version.id
+    and (ta.id is null or ta.status = 'cleaned');
+
+  if v_broken_asset_count > 0 then
+    v_blockers := v_blockers || jsonb_build_array(
+      jsonb_build_object('code', 'VERSION_INVALID', 'message', 'Tài nguyên trong phiên bản bị thiếu hoặc hư hỏng')
+    );
+  end if;
+
+  -- 5. Check dependencies in template_version_dependencies
+  for v_dep in
+    select * from public.template_version_dependencies
+    where version_id = v_version.id
+  loop
+    if v_dep.kind = 'font-face' then
+      select * into v_face
+      from public.font_faces
+      where id = v_dep.asset_id::uuid;
+
+      if not found then
+        v_blockers := v_blockers || jsonb_build_array(
+          jsonb_build_object(
+            'code', 'MISSING_DEPENDENCY',
+            'kind', 'font-face',
+            'id', v_dep.asset_id,
+            'message', 'Phông chữ không tồn tại: ' || v_dep.asset_id
+          )
+        );
+      else
+        if v_dep.checksum is not null and v_face.checksum is not null and v_dep.checksum <> v_face.checksum then
+          v_blockers := v_blockers || jsonb_build_array(
+            jsonb_build_object(
+              'code', 'MISSING_DEPENDENCY',
+              'kind', 'font-face',
+              'id', v_dep.asset_id,
+              'message', 'Mã kiểm tra phông chữ không khớp: ' || v_dep.asset_id
+            )
+          );
+        end if;
+
+        if v_face.status = 'archived' then
+          v_blockers := v_blockers || jsonb_build_array(
+            jsonb_build_object(
+              'code', 'ARCHIVED_DEPENDENCY',
+              'kind', 'font-face',
+              'id', v_dep.asset_id,
+              'message', 'Phông chữ đã bị lưu trữ: ' || v_dep.asset_id
+            )
+          );
+        elsif v_face.status = 'draft' then
+          v_blockers := v_blockers || jsonb_build_array(
+            jsonb_build_object(
+              'code', 'UNPUBLISHED_DEPENDENCY',
+              'kind', 'font-face',
+              'id', v_dep.asset_id,
+              'message', 'Phông chữ chưa xuất bản: ' || v_dep.asset_id
+            )
+          );
+        end if;
+
+        -- Check parent font family
+        select * into v_family
+        from public.fonts
+        where id = v_face.family_id;
+
+        if not found then
+          v_blockers := v_blockers || jsonb_build_array(
+            jsonb_build_object(
+              'code', 'MISSING_DEPENDENCY',
+              'kind', 'font-face',
+              'id', v_face.family_id,
+              'message', 'Bộ phông chữ không tồn tại: ' || v_face.family_id
+            )
+          );
+        elsif v_family.status = 'archived' then
+          v_blockers := v_blockers || jsonb_build_array(
+            jsonb_build_object(
+              'code', 'ARCHIVED_DEPENDENCY',
+              'kind', 'font-face',
+              'id', v_face.family_id,
+              'message', 'Bộ phông chữ đã bị lưu trữ: ' || v_face.family_id
+            )
+          );
+        elsif v_family.status = 'draft' then
+          v_blockers := v_blockers || jsonb_build_array(
+            jsonb_build_object(
+              'code', 'UNPUBLISHED_DEPENDENCY',
+              'kind', 'font-face',
+              'id', v_face.family_id,
+              'message', 'Bộ phông chữ chưa xuất bản: ' || v_face.family_id
+            )
+          );
+        end if;
+      end if;
+
+    elsif v_dep.kind = 'sticker' then
+      select * into v_sticker
+      from public.sticker_assets
+      where id = v_dep.asset_id;
+
+      if not found then
+        v_blockers := v_blockers || jsonb_build_array(
+          jsonb_build_object(
+            'code', 'MISSING_DEPENDENCY',
+            'kind', 'sticker',
+            'id', v_dep.asset_id,
+            'message', 'Nhãn dán không tồn tại: ' || v_dep.asset_id
+          )
+        );
+      else
+        if v_dep.checksum is not null and v_sticker.checksum is not null and v_dep.checksum <> v_sticker.checksum then
+          v_blockers := v_blockers || jsonb_build_array(
+            jsonb_build_object(
+              'code', 'MISSING_DEPENDENCY',
+              'kind', 'sticker',
+              'id', v_dep.asset_id,
+              'message', 'Mã kiểm tra nhãn dán không khớp: ' || v_dep.asset_id
+            )
+          );
+        end if;
+
+        if v_sticker.status = 'archived' then
+          v_blockers := v_blockers || jsonb_build_array(
+            jsonb_build_object(
+              'code', 'ARCHIVED_DEPENDENCY',
+              'kind', 'sticker',
+              'id', v_dep.asset_id,
+              'message', 'Nhãn dán đã bị lưu trữ: ' || v_dep.asset_id
+            )
+          );
+        elsif v_sticker.status = 'draft' then
+          v_blockers := v_blockers || jsonb_build_array(
+            jsonb_build_object(
+              'code', 'UNPUBLISHED_DEPENDENCY',
+              'kind', 'sticker',
+              'id', v_dep.asset_id,
+              'message', 'Nhãn dán chưa xuất bản: ' || v_dep.asset_id
+            )
+          );
+        end if;
+      end if;
+    end if;
+  end loop;
+
+  return jsonb_build_object(
+    'available', jsonb_array_length(v_blockers) = 0,
+    'blockers', v_blockers
+  );
+end;
+$$;
+
+-- 22. Record Template Validation Run (Server-only RPC)
+create or replace function public.template_record_validation_run(
+  p_actor_id uuid,
+  p_template_id text,
+  p_draft_id uuid,
+  p_source_revision bigint,
+  p_lease_session_id uuid,
+  p_lease_epoch bigint,
+  p_source_document_hash text,
+  p_candidate_document_hash text,
+  p_target_hash text,
+  p_dependency_manifest_hash text,
+  p_findings jsonb,
+  p_warning_ids text[],
+  p_validator_version text,
+  p_engine_fingerprint text,
+  p_customer_preview_passed boolean,
+  p_thumbnail_asset_id uuid,
+  p_thumbnail_checksum text,
+  p_preview_metadata jsonb,
+  p_expires_at timestamptz
+)
+returns jsonb
+language plpgsql
+security invoker
+set search_path = public, pg_temp
+as $$
+declare
+  v_id uuid;
+  v_created_at timestamptz;
+begin
+  insert into public.template_validation_runs (
+    template_id,
+    draft_id,
+    source_revision,
+    lease_session_id,
+    lease_epoch,
+    source_document_hash,
+    candidate_document_hash,
+    target_hash,
+    dependency_manifest_hash,
+    findings,
+    warning_ids,
+    validator_version,
+    engine_fingerprint,
+    customer_preview_passed,
+    thumbnail_asset_id,
+    thumbnail_checksum,
+    preview_metadata,
+    expires_at
+  ) values (
+    p_template_id,
+    p_draft_id,
+    p_source_revision,
+    p_lease_session_id,
+    p_lease_epoch,
+    p_source_document_hash,
+    p_candidate_document_hash,
+    p_target_hash,
+    p_dependency_manifest_hash,
+    coalesce(p_findings, '[]'::jsonb),
+    coalesce(p_warning_ids, '{}'::text[]),
+    coalesce(p_validator_version, '1.0.0'),
+    p_engine_fingerprint,
+    p_customer_preview_passed,
+    p_thumbnail_asset_id,
+    p_thumbnail_checksum,
+    coalesce(p_preview_metadata, '{}'::jsonb),
+    p_expires_at
+  )
+  returning id, created_at into v_id, v_created_at;
+
+  return jsonb_build_object(
+    'id', v_id,
+    'template_id', p_template_id,
+    'draft_id', p_draft_id,
+    'source_revision', p_source_revision,
+    'created_at', v_created_at,
+    'expires_at', p_expires_at
+  );
+end;
+$$;
+
+revoke all on function public.get_template_availability(text) from public, anon;
+grant execute on function public.get_template_availability(text) to authenticated, service_role;
+
+revoke all on function public.template_record_validation_run(uuid, text, uuid, bigint, uuid, bigint, text, text, text, text, jsonb, text[], text, text, boolean, uuid, text, jsonb, timestamptz) from public, anon, authenticated;
+grant execute on function public.template_record_validation_run(uuid, text, uuid, bigint, uuid, bigint, text, text, text, text, jsonb, text[], text, text, boolean, uuid, text, jsonb, timestamptz) to service_role;
+
+
 revoke all on function public.template_acquire_draft_lease(uuid, text, uuid, uuid) from public, anon, authenticated;
 grant execute on function public.template_acquire_draft_lease(uuid, text, uuid, uuid) to service_role;
 

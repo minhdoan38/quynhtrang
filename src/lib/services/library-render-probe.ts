@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from 'node:crypto';
-import { chromium } from 'playwright';
+import { chromium, type Page } from 'playwright';
 
 import type {
   LibraryKind,
@@ -150,33 +150,19 @@ export async function probeLibraryBinary(
       }
 
       // Inspect actual platform fonts via Chrome DevTools Protocol
-      try {
-        const cdp = await page.context().newCDPSession(page);
-        await cdp.send('DOM.enable');
-        await cdp.send('CSS.enable');
-        const docNode = await cdp.send('DOM.getDocument');
-        const textNode = await cdp.send('DOM.querySelector', {
-          nodeId: docNode.root.nodeId,
-          selector: '#probe-text',
+      const cdpResult = await verifyCdpFontMatch(page, {
+        selector: '#probe-text',
+        expectedFamilyNames: [
+          'probe',
+          validatedFont.familyName,
+          validatedFont.postscriptName,
+        ],
+      });
+      if (!cdpResult.passed) {
+        failures.push({
+          code: 'PLATFORM_FONT_FALLBACK',
+          detail: cdpResult.detail ?? `Platform used fallback font instead of ProbeFace: ${cdpResult.renderedFonts.map((f) => f.familyName).join(', ')}`,
         });
-        if (textNode.nodeId) {
-          const platformFonts = await cdp.send('CSS.getPlatformFontsForNode', { nodeId: textNode.nodeId });
-          const renderedFonts = platformFonts.fonts || [];
-          const usedProbeFont = renderedFonts.some((f) =>
-            f.familyName.toLowerCase().includes('probe') ||
-            f.familyName.toLowerCase().includes(validatedFont.familyName.toLowerCase()) ||
-            f.familyName.toLowerCase().includes(validatedFont.postscriptName.toLowerCase())
-          );
-          if (renderedFonts.length > 0 && !usedProbeFont) {
-            failures.push({
-              code: 'PLATFORM_FONT_FALLBACK',
-              detail: `Platform used fallback font instead of ProbeFace: ${renderedFonts.map((f) => f.familyName).join(', ')}`,
-            });
-          }
-        }
-        await cdp.detach();
-      } catch {
-        // Fallback for environments where CDP session is not supported
       }
       const screenshot = await page.locator('#probe-canvas').screenshot({
         type: 'png',
@@ -329,4 +315,59 @@ export async function probeLibraryBinary(
     browserProofHash,
     productionProofHash,
   };
+}
+
+export interface CdpFontCheckOptions {
+  selector?: string;
+  expectedFamilyNames?: string[];
+}
+
+export interface CdpFontCheckResult {
+  passed: boolean;
+  renderedFonts: Array<{ familyName: string; isCustomFont?: boolean; count?: number }>;
+  fallbackDetected: boolean;
+  detail?: string;
+}
+
+export async function verifyCdpFontMatch(
+  page: Page,
+  options: CdpFontCheckOptions = {},
+): Promise<CdpFontCheckResult> {
+  try {
+    const cdp = await page.context().newCDPSession(page);
+    await cdp.send('DOM.enable');
+    await cdp.send('CSS.enable');
+    const docNode = await cdp.send('DOM.getDocument');
+    const textNode = await cdp.send('DOM.querySelector', {
+      nodeId: docNode.root.nodeId,
+      selector: options.selector ?? '#probe-text',
+    });
+    if (textNode.nodeId) {
+      const platformFonts = await cdp.send('CSS.getPlatformFontsForNode', { nodeId: textNode.nodeId });
+      const renderedFonts = platformFonts.fonts || [];
+      const expected = (options.expectedFamilyNames ?? []).map((f) => f.toLowerCase());
+      const usedFont = expected.length === 0 || renderedFonts.some((f) => {
+        const familyLower = f.familyName.toLowerCase();
+        return expected.some((exp) => familyLower.includes(exp));
+      });
+      await cdp.detach();
+      if (renderedFonts.length > 0 && !usedFont) {
+        return {
+          passed: false,
+          renderedFonts,
+          fallbackDetected: true,
+          detail: `Platform used fallback font: ${renderedFonts.map((f) => f.familyName).join(', ')}`,
+        };
+      }
+      return {
+        passed: true,
+        renderedFonts,
+        fallbackDetected: false,
+      };
+    }
+    await cdp.detach();
+    return { passed: true, renderedFonts: [], fallbackDetected: false };
+  } catch {
+    return { passed: true, renderedFonts: [], fallbackDetected: false };
+  }
 }

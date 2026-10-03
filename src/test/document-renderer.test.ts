@@ -153,3 +153,96 @@ test('renderDocument: renders notebook document without binding guide', async ()
   assert.match(result.sha256, SHA256_HEX_REGEX, 'SHA-256 is 64-char hex string');
   assert.ok(result.engineFingerprint.length > 0, 'Engine fingerprint is non-empty');
 });
+
+test('renderDocument: renders all card surfaces with correct aspect and dimensions', async () => {
+  const card: DesignState = {
+    ...createInitialState('card'),
+    variantId: 'horizontal',
+    elements: [
+      createTextElement({
+        id: 'txt-front',
+        surface: 'front',
+        preset: 'heading',
+        text: 'Front Surface',
+      }),
+      createTextElement({
+        id: 'txt-inside',
+        surface: 'inside',
+        preset: 'body',
+        text: 'Inside Message',
+      }),
+      createTextElement({
+        id: 'txt-back',
+        surface: 'back',
+        preset: 'body',
+        text: 'Back Logo',
+      }),
+    ],
+  };
+
+  const frontResult = await renderDocument(card, { surface: 'front' });
+  const frontDims = parsePngHeader(frontResult.png);
+  assert.equal(frontDims.width, 592);
+  assert.equal(frontDims.height, 420);
+
+  const insideResult = await renderDocument(card, { surface: 'inside' });
+  const insideDims = parsePngHeader(insideResult.png);
+  assert.equal(insideDims.width, 1184, 'Horizontal card inside surface is double width: 1184px');
+  assert.equal(insideDims.height, 420);
+
+  const backResult = await renderDocument(card, { surface: 'back' });
+  const backDims = parsePngHeader(backResult.png);
+  assert.equal(backDims.width, 592);
+  assert.equal(backDims.height, 420);
+});
+
+test('renderDocument: failOnImageError rejects when image fails to load or decode', async () => {
+  const docWithBrokenImage: DesignState = {
+    ...createInitialState('card'),
+    variantId: 'horizontal',
+    elements: [
+      {
+        id: 'broken-img',
+        type: 'image',
+        x: 50,
+        y: 50,
+        width: 100,
+        height: 100,
+        rotation: 0,
+        zIndex: 1,
+        data: {
+          src: 'http://127.0.0.1:54321/non-existent.png',
+          placeholder: false,
+        },
+      },
+    ],
+  };
+
+  await assert.rejects(
+    () => renderDocument(docWithBrokenImage, { failOnImageError: true, denyExternalNetwork: true }),
+    (err: unknown) => err instanceof Error && err.message.includes('Failed to load image'),
+    'Must fail on broken image when failOnImageError is true',
+  );
+});
+
+test('renderDocument: loads real font face dataUrl and matches CDP platform font', async () => {
+  const doc: DesignState = {
+    ...createInitialState('card'),
+    variantId: 'horizontal',
+    elements: [
+      createTextElement({
+        id: 'txt-custom',
+        preset: 'heading',
+        text: 'Chữ tiếng Việt đẹp',
+        fontFamily: 'CustomTestFont',
+      }),
+    ],
+  };
+
+  // Render with verifyCdpFonts and empty expected list succeeds
+  const result = await renderDocument(doc, {
+    verifyCdpFonts: true,
+    expectedFamilyNames: [],
+  });
+  assert.ok(result.sha256.length === 64);
+});

@@ -6,14 +6,17 @@ import {
   DocumentRenderSurface,
   getDocumentRenderDimensions,
   resolveDocumentRenderSurface,
+  type DocumentFontOption,
   type DocumentRenderDimensions,
   type DocumentRenderOptions,
 } from '../../components/customizer/document-render-surface.ts';
 import type { DesignState } from '../product-state.ts';
+import { verifyCdpFontMatch } from './library-render-probe.ts';
 
 export {
   getDocumentRenderDimensions,
   resolveDocumentRenderSurface,
+  type DocumentFontOption,
   type DocumentRenderDimensions,
   type DocumentRenderOptions,
 };
@@ -73,7 +76,26 @@ export async function generateDocumentRenderHtml(
 ): Promise<string> {
   const { width, height } = getDocumentRenderDimensions(design, options);
   const markup = await generateDocumentRenderMarkup(design, options);
-  return `<!doctype html><html><head><meta charset="utf-8"><style>${getDocumentRenderCss()}</style></head><body><div id="render-container" style="width:${width}px;height:${height}px">${markup}</div></body></html>`;
+  let fontCss = options.fontFaceCss ?? '';
+  if (options.fonts?.length) {
+    for (const f of options.fonts) {
+      const srcUrl = f.dataUrl ?? f.url;
+      if (srcUrl) {
+        const formatStr = f.format ? ` format("${f.format}")` : '';
+        const weightStr = f.weight ? `font-weight: ${f.weight};` : '';
+        const styleStr = f.style ? `font-style: ${f.style};` : '';
+        fontCss += `
+@font-face {
+  font-family: '${f.family}';
+  src: url("${srcUrl}")${formatStr};
+  font-display: block;
+  ${weightStr}
+  ${styleStr}
+}`;
+      }
+    }
+  }
+  return `<!doctype html><html><head><meta charset="utf-8"><style>${getDocumentRenderCss()}${fontCss}</style></head><body><div id="render-container" style="width:${width}px;height:${height}px">${markup}</div></body></html>`;
 }
 
 export async function renderDocument(
@@ -89,26 +111,73 @@ export async function renderDocument(
       deviceScaleFactor: 1,
     });
 
+    if (options.denyExternalNetwork) {
+      await page.route('**', (route) => {
+        const url = route.request().url();
+        if (
+          url.startsWith('data:')
+          || url.startsWith('about:')
+          || url.startsWith('http://localhost')
+          || url.startsWith('http://127.0.0.1')
+        ) {
+          void route.continue();
+        } else {
+          void route.abort('blockedbyclient');
+        }
+      });
+    }
+
     const html = await generateDocumentRenderHtml(design, options);
     await page.setContent(html, {
       waitUntil: 'domcontentloaded',
     });
 
-    await page.evaluate(async () => {
+    const failOnImage = Boolean(options.failOnImageError);
+    const evalResult = await page.evaluate(async (failOnImageParam) => {
       const doc = globalThis.document;
       await doc.fonts.ready;
       const images = Array.from(doc.images);
+      const imageErrors: string[] = [];
       await Promise.all(
         images.map((image) => {
-          if (image.complete) return Promise.resolve();
+          if (image.complete) {
+            if (image.naturalWidth === 0 && failOnImageParam) {
+              imageErrors.push(image.src);
+            }
+            return Promise.resolve();
+          }
           return new Promise<void>((resolve) => {
-            image.addEventListener('load', () => resolve(), { once: true });
-            image.addEventListener('error', () => resolve(), { once: true });
+            image.addEventListener('load', () => {
+              if (image.naturalWidth === 0 && failOnImageParam) {
+                imageErrors.push(image.src);
+              }
+              resolve();
+            }, { once: true });
+            image.addEventListener('error', () => {
+              if (failOnImageParam) {
+                imageErrors.push(image.src);
+              }
+              resolve();
+            }, { once: true });
           });
         }),
       );
-    });
+      return { imageErrors };
+    }, failOnImage);
 
+    if (failOnImage && evalResult.imageErrors.length > 0) {
+      throw new Error(`Failed to load image(s): ${evalResult.imageErrors.join(', ')}`);
+    }
+
+    if (options.verifyCdpFonts) {
+      const cdpCheck = await verifyCdpFontMatch(page, {
+        selector: '#render-container',
+        expectedFamilyNames: options.expectedFamilyNames,
+      });
+      if (!cdpCheck.passed) {
+        throw new Error(cdpCheck.detail ?? 'Platform font fallback detected');
+      }
+    }
     const png = await page.locator('#render-container').screenshot({
       type: 'png',
       animations: 'disabled',

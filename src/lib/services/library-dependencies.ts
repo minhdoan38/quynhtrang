@@ -1,4 +1,9 @@
 import type { LibraryRef } from '../domain/asset-library.ts';
+import type {
+  DependencyMetadataItem,
+  TemplateAvailabilityBlocker,
+} from '../domain/template.ts';
+import { extractTemplateAssetManifest, type TemplateAssetRef } from './template-assets.ts';
 import {
   getStickerData,
   getTextData,
@@ -104,4 +109,110 @@ export function validateNoDraftDependencies(
       throw new Error(`Cannot save design referencing draft asset: ${dep.id}`);
     }
   }
+}
+
+export interface ResolveTemplateDependenciesOptions {
+  purpose?: 'new-use' | 'historical';
+  lookup?: ReadonlyMap<string, DependencyMetadataItem> | Record<string, DependencyMetadataItem>;
+  familyAliases?: Map<string, string> | Record<string, string>;
+}
+
+export interface ResolvedTemplateDependencies {
+  dependencies: LibraryRef[];
+  assetRefs: TemplateAssetRef[];
+  blockers: TemplateAvailabilityBlocker[];
+  valid: boolean;
+}
+
+function getLookupItem(
+  lookup: ReadonlyMap<string, DependencyMetadataItem> | Record<string, DependencyMetadataItem>,
+  key: string,
+): DependencyMetadataItem | undefined {
+  if (lookup instanceof Map) {
+    return lookup.get(key)
+      ?? lookup.get(`font-face:${key}`)
+      ?? lookup.get(`sticker:${key}`);
+  }
+  const record = lookup as Record<string, DependencyMetadataItem>;
+  return record[key] ?? record[`font-face:${key}`] ?? record[`sticker:${key}`];
+}
+
+export function resolveTemplateDependencies(
+  document: DesignState,
+  options: ResolveTemplateDependenciesOptions = {},
+): ResolvedTemplateDependencies {
+  const purpose = options.purpose ?? 'new-use';
+  const dependencies = extractLibraryDependencies(document);
+  const assetRefs = extractTemplateAssetManifest(document);
+  const blockers: TemplateAvailabilityBlocker[] = [];
+
+  if (options.lookup) {
+    for (const dep of dependencies) {
+      const item = getLookupItem(options.lookup, dep.id);
+      if (!item) {
+        blockers.push({
+          code: 'MISSING_DEPENDENCY',
+          kind: dep.kind,
+          id: dep.id,
+          message: `Phụ thuộc không tồn tại: ${dep.id}`,
+        });
+        continue;
+      }
+
+      if (dep.checksum && item.checksum && dep.checksum !== item.checksum) {
+        blockers.push({
+          code: 'MISSING_DEPENDENCY',
+          kind: dep.kind,
+          id: dep.id,
+          message: `Mã kiểm tra không khớp cho ${dep.id}: mong đợi ${dep.checksum}, nhận được ${item.checksum}`,
+        });
+      }
+
+      if (item.status === 'archived' || item.familyStatus === 'archived') {
+        if (purpose !== 'historical') {
+          blockers.push({
+            code: 'ARCHIVED_DEPENDENCY',
+            kind: dep.kind,
+            id: dep.id,
+            message: `Phụ thuộc đã bị lưu trữ: ${dep.id}`,
+          });
+        }
+      } else if (item.status === 'draft' || item.familyStatus === 'draft') {
+        blockers.push({
+          code: 'UNPUBLISHED_DEPENDENCY',
+          kind: dep.kind,
+          id: dep.id,
+          message: `Phụ thuộc chưa được xuất bản: ${dep.id}`,
+        });
+      }
+    }
+  }
+
+  if (options.familyAliases) {
+    const aliases = options.familyAliases instanceof Map
+      ? options.familyAliases
+      : new Map(Object.entries(options.familyAliases));
+
+    for (const element of document.elements ?? []) {
+      const text = getTextData(element);
+      if (text && !text.fontFaceId && text.fontFamily?.trim()) {
+        const normalized = normalizeAlias(text.fontFamily);
+        if (!aliases.has(normalized)) {
+          blockers.push({
+            code: 'MISSING_DEPENDENCY',
+            kind: 'font-face',
+            id: text.fontFamily,
+            message: `Phông chữ không xác định: ${text.fontFamily}`,
+          });
+        }
+      }
+    }
+  }
+
+  return {
+    dependencies,
+    assetRefs,
+    blockers,
+    valid: blockers.length === 0,
+  };
 }

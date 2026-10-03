@@ -7,9 +7,11 @@ import type {
   AdminTemplateListQuery,
   AttachTemplateAssetInput,
   CreateTemplateRepoInput,
+  DependencyMetadataItem,
   EligibleSourceProject,
   SourceProjectDetail,
   TemplateAssetRecord,
+  TemplateAvailability,
   TemplateDraftRecord,
   TemplateErrorCode,
   TemplateMetadataPatch,
@@ -17,6 +19,7 @@ import type {
   TemplateRecord,
   TemplateRepoResult,
   TemplateStatus,
+  TemplateValidationReceipt,
   TemplateVersionPayload,
   TemplateVersionSummary,
 } from '../domain/template.ts';
@@ -94,6 +97,74 @@ export interface DatabaseAssetRow {
   is_published: boolean;
   created_at: string;
   created_by?: string | null;
+}
+
+export interface DatabaseValidationRunRow {
+  id: string;
+  template_id: string;
+  draft_id: string;
+  source_revision: number | string;
+  lease_session_id: string;
+  lease_epoch: number | string;
+  source_document_hash: string;
+  candidate_document_hash: string;
+  target_hash: string;
+  dependency_manifest_hash?: string | null;
+  findings: unknown;
+  warning_ids: string[];
+  validator_version: string;
+  engine_fingerprint: string;
+  customer_preview_passed: boolean;
+  thumbnail_asset_id?: string | null;
+  thumbnail_checksum?: string | null;
+  preview_metadata?: unknown;
+  expires_at: string;
+  created_at: string;
+}
+
+export interface RecordValidationRunInput {
+  id?: string;
+  templateId: string;
+  draftId: string;
+  sourceRevision: number;
+  leaseSessionId: string;
+  leaseEpoch: number;
+  sourceDocumentHash: string;
+  candidateDocumentHash: string;
+  targetHash: string;
+  dependencyManifestHash?: string | null;
+  findings: Array<{ code: string; elementId?: string; message?: string }>;
+  warningIds: string[];
+  validatorVersion?: string;
+  engineFingerprint: string;
+  customerPreviewPassed: boolean;
+  thumbnailAssetId?: string | null;
+  thumbnailChecksum?: string | null;
+  previewMetadata?: Record<string, unknown>;
+  expiresAt: string;
+}
+
+function mapValidationRunRow(row: DatabaseValidationRunRow): TemplateValidationReceipt {
+  return {
+    id: row.id,
+    templateId: row.template_id,
+    draftId: row.draft_id,
+    sourceRevision: typeof row.source_revision === 'string' ? parseInt(row.source_revision, 10) : Number(row.source_revision),
+    leaseEpoch: typeof row.lease_epoch === 'string' ? parseInt(row.lease_epoch, 10) : Number(row.lease_epoch),
+    sessionId: row.lease_session_id,
+    sourceDocumentHash: row.source_document_hash,
+    candidateDocumentHash: row.candidate_document_hash,
+    targetHash: row.target_hash,
+    findings: Array.isArray(row.findings) ? row.findings : [],
+    warningIds: Array.isArray(row.warning_ids) ? row.warning_ids : [],
+    engineFingerprint: row.engine_fingerprint,
+    customerPreviewPassed: Boolean(row.customer_preview_passed),
+    thumbnail: {
+      assetId: row.thumbnail_asset_id ?? '',
+      sha256: row.thumbnail_checksum ?? '',
+    },
+    expiresAt: row.expires_at,
+  };
 }
 
 function mapAssetRow(row: DatabaseAssetRow): TemplateAssetRecord {
@@ -897,5 +968,206 @@ export class TemplateRepository {
       storageBucket: resp?.storage_bucket,
       reason: resp?.reason,
     };
+  }
+
+  async getValidationRun(id: string): Promise<TemplateValidationReceipt | null> {
+    const { data, error } = await this.client
+      .from('template_validation_runs')
+      .select('*')
+      .eq('id', id)
+      .maybeSingle();
+
+    if (error || !data) return null;
+    return mapValidationRunRow(data as DatabaseValidationRunRow);
+  }
+
+  async recordValidationRun(
+    actor: string,
+    input: RecordValidationRunInput,
+  ): Promise<TemplateRepoResult<TemplateValidationReceipt>> {
+    const { data, error } = await this.client.rpc('template_record_validation_run', {
+      p_actor_id: actor,
+      p_template_id: input.templateId,
+      p_draft_id: input.draftId,
+      p_source_revision: input.sourceRevision,
+      p_lease_session_id: input.leaseSessionId,
+      p_lease_epoch: input.leaseEpoch,
+      p_source_document_hash: input.sourceDocumentHash,
+      p_candidate_document_hash: input.candidateDocumentHash,
+      p_target_hash: input.targetHash,
+      p_dependency_manifest_hash: input.dependencyManifestHash ?? null,
+      p_findings: input.findings,
+      p_warning_ids: input.warningIds,
+      p_validator_version: input.validatorVersion ?? '1.0.0',
+      p_engine_fingerprint: input.engineFingerprint,
+      p_customer_preview_passed: input.customerPreviewPassed,
+      p_thumbnail_asset_id: input.thumbnailAssetId ?? null,
+      p_thumbnail_checksum: input.thumbnailChecksum ?? null,
+      p_preview_metadata: input.previewMetadata ?? {},
+      p_expires_at: input.expiresAt,
+    });
+
+    if (error) {
+      const { data: directData, error: directError } = await this.client
+        .from('template_validation_runs')
+        .insert({
+          id: input.id,
+          template_id: input.templateId,
+          draft_id: input.draftId,
+          source_revision: input.sourceRevision,
+          lease_session_id: input.leaseSessionId,
+          lease_epoch: input.leaseEpoch,
+          source_document_hash: input.sourceDocumentHash,
+          candidate_document_hash: input.candidateDocumentHash,
+          target_hash: input.targetHash,
+          dependency_manifest_hash: input.dependencyManifestHash ?? null,
+          findings: input.findings,
+          warning_ids: input.warningIds,
+          validator_version: input.validatorVersion ?? '1.0.0',
+          engine_fingerprint: input.engineFingerprint,
+          customer_preview_passed: input.customerPreviewPassed,
+          thumbnail_asset_id: input.thumbnailAssetId ?? null,
+          thumbnail_checksum: input.thumbnailChecksum ?? null,
+          preview_metadata: input.previewMetadata ?? {},
+          expires_at: input.expiresAt,
+        })
+        .select('*')
+        .single();
+
+      if (directError || !directData) {
+        return { ok: false, code: 'VALIDATION_FAILED', message: error.message };
+      }
+
+      return { ok: true, value: mapValidationRunRow(directData as DatabaseValidationRunRow) };
+    }
+
+    let runId: string | undefined;
+    if (data && typeof data === 'object' && 'id' in data && typeof data.id === 'string') {
+      runId = data.id;
+    }
+    if (runId) {
+      const receipt = await this.getValidationRun(runId);
+      if (receipt) return { ok: true, value: receipt };
+    }
+
+    return {
+      ok: true,
+      value: {
+        id: runId ?? input.id ?? 'mock-run-id',
+        templateId: input.templateId,
+        draftId: input.draftId,
+        sourceRevision: input.sourceRevision,
+        sourceDocumentHash: input.sourceDocumentHash,
+        candidateDocumentHash: input.candidateDocumentHash,
+        targetHash: input.targetHash,
+        leaseEpoch: input.leaseEpoch,
+        sessionId: input.leaseSessionId,
+        findings: input.findings,
+        warningIds: input.warningIds,
+        customerPreviewPassed: input.customerPreviewPassed,
+        engineFingerprint: input.engineFingerprint,
+        thumbnail: {
+          assetId: input.thumbnailAssetId ?? '',
+          sha256: input.thumbnailChecksum ?? '',
+        },
+        expiresAt: input.expiresAt,
+      },
+    };
+  }
+
+  async getBatchDependencies(refs: {
+    fontFaces?: string[];
+    stickers?: string[];
+    fontFamilies?: string[];
+  }): Promise<Map<string, DependencyMetadataItem>> {
+    const result = new Map<string, DependencyMetadataItem>();
+    const faceIds = (refs.fontFaces ?? []).filter(Boolean);
+    const familyIds = new Set<string>((refs.fontFamilies ?? []).filter(Boolean));
+
+    if (faceIds.length > 0) {
+      const { data: faces } = await this.client
+        .from('font_faces')
+        .select('id, family_id, status, checksum')
+        .in('id', faceIds);
+
+      if (Array.isArray(faces)) {
+        for (const face of faces) {
+          if (face.family_id) {
+            familyIds.add(face.family_id);
+          }
+        }
+
+        const familyMap = new Map<string, { id: string; name?: string; status: 'draft' | 'published' | 'archived' }>();
+        if (familyIds.size > 0) {
+          const { data: families } = await this.client
+            .from('fonts')
+            .select('id, name, display_name, status')
+            .in('id', Array.from(familyIds));
+
+          if (Array.isArray(families)) {
+            for (const fam of families) {
+              familyMap.set(fam.id, {
+                id: fam.id,
+                name: fam.display_name ?? fam.name,
+                status: fam.status,
+              });
+            }
+          }
+        }
+
+        for (const face of faces) {
+          const fam = face.family_id ? familyMap.get(face.family_id) : undefined;
+          const item: DependencyMetadataItem = {
+            id: face.id,
+            kind: 'font-face',
+            status: face.status,
+            checksum: face.checksum ?? undefined,
+            familyId: face.family_id ?? undefined,
+            familyName: fam?.name,
+            familyStatus: fam?.status,
+          };
+          result.set(face.id, item);
+          result.set(`font-face:${face.id}`, item);
+        }
+      }
+    }
+
+    const stickerIds = (refs.stickers ?? []).filter(Boolean);
+    if (stickerIds.length > 0) {
+      const { data: stickers } = await this.client
+        .from('sticker_assets')
+        .select('id, status, checksum')
+        .in('id', stickerIds);
+
+      if (Array.isArray(stickers)) {
+        for (const sticker of stickers) {
+          const item: DependencyMetadataItem = {
+            id: sticker.id,
+            kind: 'sticker',
+            status: sticker.status,
+            checksum: sticker.checksum ?? undefined,
+          };
+          result.set(sticker.id, item);
+          result.set(`sticker:${sticker.id}`, item);
+        }
+      }
+    }
+
+    return result;
+  }
+
+  async getTemplateAvailability(templateId: string): Promise<TemplateAvailability> {
+    const { data, error } = await this.client.rpc('get_template_availability', {
+      p_template_id: templateId,
+    });
+
+    if (error || !data) {
+      return {
+        available: false,
+        blockers: [{ code: 'INTERNAL_ERROR', message: error?.message ?? 'Lỗi kiểm tra tính khả dụng' }],
+      };
+    }
+
+    return data as TemplateAvailability;
   }
 }

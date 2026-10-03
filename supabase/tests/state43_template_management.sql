@@ -1107,6 +1107,51 @@ begin
           raise exception 'Cleaned asset was not deleted from template_assets';
         end if;
       end;
+
+      -- 11. Section 11: State 43 Task 11 RPCs (record validation run and get availability)
+      declare
+        v_val_res jsonb;
+        v_avail_res jsonb;
+        v_val_draft_id uuid;
+      begin
+        select id into v_val_draft_id from public.template_drafts where template_id = v_tmpl_id limit 1;
+
+        -- 11.1 Record validation run
+        v_val_res := public.template_record_validation_run(
+          v_ed_id,
+          v_tmpl_id,
+          v_val_draft_id,
+          1::bigint,
+          '43000000-0000-0000-0000-0000000000a1'::uuid,
+          1::bigint,
+          'hash-source-1',
+          'hash-candidate-1',
+          'hash-target-1',
+          null,
+          '[]'::jsonb,
+          '{}'::text[],
+          '1.0.0',
+          'chromium-test',
+          true,
+          null,
+          'sha256-thumb-hex',
+          '{}'::jsonb,
+          now() + interval '10 minutes'
+        );
+
+        if v_val_res->>'id' is null then
+          raise exception 'template_record_validation_run failed to return id';
+        end if;
+
+        -- 11.2 Check template availability on draft-only template
+        v_avail_res := public.get_template_availability(v_tmpl_id);
+        if (v_avail_res->>'available')::boolean is not false then
+          raise exception 'Draft-only template expected available = false';
+        end if;
+        if not (v_avail_res::text like '%NO_PUBLISHED_VERSION%') then
+          raise exception 'Expected NO_PUBLISHED_VERSION blocker, got %', v_avail_res;
+        end if;
+      end;
     end;
   end;
 end $$;

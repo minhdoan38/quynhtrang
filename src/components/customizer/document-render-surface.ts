@@ -17,10 +17,25 @@ import {
   normalizeWrappingOptions,
 } from '../../lib/product-state.ts';
 import { computeStickerContour } from '../../lib/sticker-contour.ts';
+export interface DocumentFontOption {
+  family: string;
+  url?: string;
+  dataUrl?: string;
+  format?: string;
+  weight?: string | number;
+  style?: string;
+}
+
 export interface DocumentRenderOptions {
   surface?: string;
   widthPx?: number;
   heightPx?: number;
+  fonts?: DocumentFontOption[];
+  fontFaceCss?: string;
+  denyExternalNetwork?: boolean;
+  failOnImageError?: boolean;
+  verifyCdpFonts?: boolean;
+  expectedFamilyNames?: string[];
 }
 
 export interface DocumentRenderDimensions {
