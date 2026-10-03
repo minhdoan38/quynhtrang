@@ -201,7 +201,15 @@
         "productId": "wrapping",
         "variantId": "a1",
         "mode": null,
-        "shape": null
+        "shape": null,
+        "surfaces": [
+          {
+            "id": "sheet",
+            "widthMm": 594,
+            "heightMm": 841
+          }
+        ],
+        "geometryKey": "wrapping:a1:mode:none:shape:none:surfaces:sheet-594x841"
       },
       "targets": [
         {
@@ -210,6 +218,14 @@
           "variantId": "a1",
           "mode": null,
           "shape": null,
+          "surfaces": [
+            {
+              "id": "sheet",
+              "widthMm": 594,
+              "heightMm": 841
+            }
+          ],
+          "geometryKey": "wrapping:a1:mode:none:shape:none:surfaces:sheet-594x841",
           "isCanonical": true,
           "deterministicSuccessorId": "blank"
         },
@@ -219,6 +235,14 @@
           "variantId": "a2",
           "mode": null,
           "shape": null,
+          "surfaces": [
+            {
+              "id": "sheet",
+              "widthMm": 420,
+              "heightMm": 594
+            }
+          ],
+          "geometryKey": "wrapping:a2:mode:none:shape:none:surfaces:sheet-420x594",
           "isCanonical": false,
           "deterministicSuccessorId": "blank--wrapping--a2--none--none"
         },
@@ -228,6 +252,24 @@
           "variantId": "horizontal",
           "mode": null,
           "shape": null,
+          "surfaces": [
+            {
+              "id": "front",
+              "widthMm": 148,
+              "heightMm": 105
+            },
+            {
+              "id": "inside",
+              "widthMm": 296,
+              "heightMm": 105
+            },
+            {
+              "id": "back",
+              "widthMm": 148,
+              "heightMm": 105
+            }
+          ],
+          "geometryKey": "card:horizontal:mode:none:shape:none:surfaces:front-148x105_inside-296x105_back-148x105",
           "isCanonical": false,
           "deterministicSuccessorId": "blank--card--horizontal--none--none"
         },
@@ -237,6 +279,24 @@
           "variantId": "vertical",
           "mode": null,
           "shape": null,
+          "surfaces": [
+            {
+              "id": "front",
+              "widthMm": 105,
+              "heightMm": 148
+            },
+            {
+              "id": "inside",
+              "widthMm": 210,
+              "heightMm": 148
+            },
+            {
+              "id": "back",
+              "widthMm": 105,
+              "heightMm": 148
+            }
+          ],
+          "geometryKey": "card:vertical:mode:none:shape:none:surfaces:front-105x148_inside-210x148_back-105x148",
           "isCanonical": false,
           "deterministicSuccessorId": "blank--card--vertical--none--none"
         },
@@ -246,6 +306,14 @@
           "variantId": "die-cut",
           "mode": null,
           "shape": null,
+          "surfaces": [
+            {
+              "id": "front",
+              "widthMm": 50,
+              "heightMm": 50
+            }
+          ],
+          "geometryKey": "sticker:die-cut:mode:none:shape:none:surfaces:front-50x50",
           "isCanonical": false,
           "deterministicSuccessorId": "blank--sticker--die-cut--none--none"
         },
@@ -255,6 +323,14 @@
           "variantId": "fixed-shape",
           "mode": null,
           "shape": null,
+          "surfaces": [
+            {
+              "id": "front",
+              "widthMm": 50,
+              "heightMm": 50
+            }
+          ],
+          "geometryKey": "sticker:fixed-shape:mode:none:shape:none:surfaces:front-50x50",
           "isCanonical": false,
           "deterministicSuccessorId": "blank--sticker--fixed-shape--none--none"
         },
@@ -264,6 +340,14 @@
           "variantId": "phone",
           "mode": null,
           "shape": null,
+          "surfaces": [
+            {
+              "id": "front",
+              "widthMm": 50,
+              "heightMm": 50
+            }
+          ],
+          "geometryKey": "sticker:phone:mode:none:shape:none:surfaces:front-50x50",
           "isCanonical": false,
           "deterministicSuccessorId": "blank--sticker--phone--none--none"
         },
@@ -273,6 +357,14 @@
           "variantId": "standard",
           "mode": null,
           "shape": null,
+          "surfaces": [
+            {
+              "id": "front",
+              "widthMm": 148,
+              "heightMm": 210
+            }
+          ],
+          "geometryKey": "notebook:standard:mode:none:shape:none:surfaces:front-148x210",
           "isCanonical": false,
           "deterministicSuccessorId": "blank--notebook--standard--none--none"
         }
@@ -322,7 +414,25 @@
         "productId": "card",
         "variantId": "horizontal",
         "mode": null,
-        "shape": null
+        "shape": null,
+        "surfaces": [
+          {
+            "id": "front",
+            "widthMm": 148,
+            "heightMm": 105
+          },
+          {
+            "id": "inside",
+            "widthMm": 296,
+            "heightMm": 105
+          },
+          {
+            "id": "back",
+            "widthMm": 148,
+            "heightMm": 105
+          }
+        ],
+        "geometryKey": "card:horizontal:mode:none:shape:none:surfaces:front-148x105_inside-296x105_back-148x105"
       },
       "targets": [
         {
@@ -331,6 +441,24 @@
           "variantId": "horizontal",
           "mode": null,
           "shape": null,
+          "surfaces": [
+            {
+              "id": "front",
+              "widthMm": 148,
+              "heightMm": 105
+            },
+            {
+              "id": "inside",
+              "widthMm": 296,
+              "heightMm": 105
+            },
+            {
+              "id": "back",
+              "widthMm": 148,
+              "heightMm": 105
+            }
+          ],
+          "geometryKey": "card:horizontal:mode:none:shape:none:surfaces:front-148x105_inside-296x105_back-148x105",
           "isCanonical": true,
           "deterministicSuccessorId": "card-h-birthday"
         }
@@ -498,7 +626,25 @@
         "productId": "card",
         "variantId": "horizontal",
         "mode": null,
-        "shape": null
+        "shape": null,
+        "surfaces": [
+          {
+            "id": "front",
+            "widthMm": 148,
+            "heightMm": 105
+          },
+          {
+            "id": "inside",
+            "widthMm": 296,
+            "heightMm": 105
+          },
+          {
+            "id": "back",
+            "widthMm": 148,
+            "heightMm": 105
+          }
+        ],
+        "geometryKey": "card:horizontal:mode:none:shape:none:surfaces:front-148x105_inside-296x105_back-148x105"
       },
       "targets": [
         {
@@ -507,6 +653,24 @@
           "variantId": "horizontal",
           "mode": null,
           "shape": null,
+          "surfaces": [
+            {
+              "id": "front",
+              "widthMm": 148,
+              "heightMm": 105
+            },
+            {
+              "id": "inside",
+              "widthMm": 296,
+              "heightMm": 105
+            },
+            {
+              "id": "back",
+              "widthMm": 148,
+              "heightMm": 105
+            }
+          ],
+          "geometryKey": "card:horizontal:mode:none:shape:none:surfaces:front-148x105_inside-296x105_back-148x105",
           "isCanonical": true,
           "deterministicSuccessorId": "card-h-cute"
         }
@@ -674,7 +838,25 @@
         "productId": "card",
         "variantId": "horizontal",
         "mode": null,
-        "shape": null
+        "shape": null,
+        "surfaces": [
+          {
+            "id": "front",
+            "widthMm": 148,
+            "heightMm": 105
+          },
+          {
+            "id": "inside",
+            "widthMm": 296,
+            "heightMm": 105
+          },
+          {
+            "id": "back",
+            "widthMm": 148,
+            "heightMm": 105
+          }
+        ],
+        "geometryKey": "card:horizontal:mode:none:shape:none:surfaces:front-148x105_inside-296x105_back-148x105"
       },
       "targets": [
         {
@@ -683,6 +865,24 @@
           "variantId": "horizontal",
           "mode": null,
           "shape": null,
+          "surfaces": [
+            {
+              "id": "front",
+              "widthMm": 148,
+              "heightMm": 105
+            },
+            {
+              "id": "inside",
+              "widthMm": 296,
+              "heightMm": 105
+            },
+            {
+              "id": "back",
+              "widthMm": 148,
+              "heightMm": 105
+            }
+          ],
+          "geometryKey": "card:horizontal:mode:none:shape:none:surfaces:front-148x105_inside-296x105_back-148x105",
           "isCanonical": true,
           "deterministicSuccessorId": "card-h-love"
         }
@@ -850,7 +1050,25 @@
         "productId": "card",
         "variantId": "horizontal",
         "mode": null,
-        "shape": null
+        "shape": null,
+        "surfaces": [
+          {
+            "id": "front",
+            "widthMm": 148,
+            "heightMm": 105
+          },
+          {
+            "id": "inside",
+            "widthMm": 296,
+            "heightMm": 105
+          },
+          {
+            "id": "back",
+            "widthMm": 148,
+            "heightMm": 105
+          }
+        ],
+        "geometryKey": "card:horizontal:mode:none:shape:none:surfaces:front-148x105_inside-296x105_back-148x105"
       },
       "targets": [
         {
@@ -859,6 +1077,24 @@
           "variantId": "horizontal",
           "mode": null,
           "shape": null,
+          "surfaces": [
+            {
+              "id": "front",
+              "widthMm": 148,
+              "heightMm": 105
+            },
+            {
+              "id": "inside",
+              "widthMm": 296,
+              "heightMm": 105
+            },
+            {
+              "id": "back",
+              "widthMm": 148,
+              "heightMm": 105
+            }
+          ],
+          "geometryKey": "card:horizontal:mode:none:shape:none:surfaces:front-148x105_inside-296x105_back-148x105",
           "isCanonical": true,
           "deterministicSuccessorId": "card-thanks"
         },
@@ -868,6 +1104,24 @@
           "variantId": "vertical",
           "mode": null,
           "shape": null,
+          "surfaces": [
+            {
+              "id": "front",
+              "widthMm": 105,
+              "heightMm": 148
+            },
+            {
+              "id": "inside",
+              "widthMm": 210,
+              "heightMm": 148
+            },
+            {
+              "id": "back",
+              "widthMm": 105,
+              "heightMm": 148
+            }
+          ],
+          "geometryKey": "card:vertical:mode:none:shape:none:surfaces:front-105x148_inside-210x148_back-105x148",
           "isCanonical": false,
           "deterministicSuccessorId": "card-thanks--card--vertical--none--none"
         }
@@ -1030,7 +1284,25 @@
         "productId": "card",
         "variantId": "vertical",
         "mode": null,
-        "shape": null
+        "shape": null,
+        "surfaces": [
+          {
+            "id": "front",
+            "widthMm": 105,
+            "heightMm": 148
+          },
+          {
+            "id": "inside",
+            "widthMm": 210,
+            "heightMm": 148
+          },
+          {
+            "id": "back",
+            "widthMm": 105,
+            "heightMm": 148
+          }
+        ],
+        "geometryKey": "card:vertical:mode:none:shape:none:surfaces:front-105x148_inside-210x148_back-105x148"
       },
       "targets": [
         {
@@ -1039,6 +1311,24 @@
           "variantId": "vertical",
           "mode": null,
           "shape": null,
+          "surfaces": [
+            {
+              "id": "front",
+              "widthMm": 105,
+              "heightMm": 148
+            },
+            {
+              "id": "inside",
+              "widthMm": 210,
+              "heightMm": 148
+            },
+            {
+              "id": "back",
+              "widthMm": 105,
+              "heightMm": 148
+            }
+          ],
+          "geometryKey": "card:vertical:mode:none:shape:none:surfaces:front-105x148_inside-210x148_back-105x148",
           "isCanonical": true,
           "deterministicSuccessorId": "card-v-floral"
         }
@@ -1206,7 +1496,15 @@
         "productId": "wrapping",
         "variantId": "a1",
         "mode": "pattern",
-        "shape": null
+        "shape": null,
+        "surfaces": [
+          {
+            "id": "sheet",
+            "widthMm": 594,
+            "heightMm": 841
+          }
+        ],
+        "geometryKey": "wrapping:a1:mode:pattern:shape:none:surfaces:sheet-594x841"
       },
       "targets": [
         {
@@ -1215,6 +1513,14 @@
           "variantId": "a1",
           "mode": "pattern",
           "shape": null,
+          "surfaces": [
+            {
+              "id": "sheet",
+              "widthMm": 594,
+              "heightMm": 841
+            }
+          ],
+          "geometryKey": "wrapping:a1:mode:pattern:shape:none:surfaces:sheet-594x841",
           "isCanonical": true,
           "deterministicSuccessorId": "celebrate"
         },
@@ -1224,6 +1530,14 @@
           "variantId": "a2",
           "mode": "pattern",
           "shape": null,
+          "surfaces": [
+            {
+              "id": "sheet",
+              "widthMm": 420,
+              "heightMm": 594
+            }
+          ],
+          "geometryKey": "wrapping:a2:mode:pattern:shape:none:surfaces:sheet-420x594",
           "isCanonical": false,
           "deterministicSuccessorId": "celebrate--wrapping--a2--pattern--none"
         },
@@ -1233,6 +1547,24 @@
           "variantId": "horizontal",
           "mode": null,
           "shape": null,
+          "surfaces": [
+            {
+              "id": "front",
+              "widthMm": 148,
+              "heightMm": 105
+            },
+            {
+              "id": "inside",
+              "widthMm": 296,
+              "heightMm": 105
+            },
+            {
+              "id": "back",
+              "widthMm": 148,
+              "heightMm": 105
+            }
+          ],
+          "geometryKey": "card:horizontal:mode:none:shape:none:surfaces:front-148x105_inside-296x105_back-148x105",
           "isCanonical": false,
           "deterministicSuccessorId": "celebrate--card--horizontal--none--none"
         },
@@ -1242,6 +1574,24 @@
           "variantId": "vertical",
           "mode": null,
           "shape": null,
+          "surfaces": [
+            {
+              "id": "front",
+              "widthMm": 105,
+              "heightMm": 148
+            },
+            {
+              "id": "inside",
+              "widthMm": 210,
+              "heightMm": 148
+            },
+            {
+              "id": "back",
+              "widthMm": 105,
+              "heightMm": 148
+            }
+          ],
+          "geometryKey": "card:vertical:mode:none:shape:none:surfaces:front-105x148_inside-210x148_back-105x148",
           "isCanonical": false,
           "deterministicSuccessorId": "celebrate--card--vertical--none--none"
         },
@@ -1251,6 +1601,14 @@
           "variantId": "die-cut",
           "mode": null,
           "shape": null,
+          "surfaces": [
+            {
+              "id": "front",
+              "widthMm": 50,
+              "heightMm": 50
+            }
+          ],
+          "geometryKey": "sticker:die-cut:mode:none:shape:none:surfaces:front-50x50",
           "isCanonical": false,
           "deterministicSuccessorId": "celebrate--sticker--die-cut--none--none"
         },
@@ -1260,6 +1618,14 @@
           "variantId": "fixed-shape",
           "mode": null,
           "shape": null,
+          "surfaces": [
+            {
+              "id": "front",
+              "widthMm": 50,
+              "heightMm": 50
+            }
+          ],
+          "geometryKey": "sticker:fixed-shape:mode:none:shape:none:surfaces:front-50x50",
           "isCanonical": false,
           "deterministicSuccessorId": "celebrate--sticker--fixed-shape--none--none"
         },
@@ -1269,6 +1635,14 @@
           "variantId": "phone",
           "mode": null,
           "shape": null,
+          "surfaces": [
+            {
+              "id": "front",
+              "widthMm": 50,
+              "heightMm": 50
+            }
+          ],
+          "geometryKey": "sticker:phone:mode:none:shape:none:surfaces:front-50x50",
           "isCanonical": false,
           "deterministicSuccessorId": "celebrate--sticker--phone--none--none"
         },
@@ -1278,6 +1652,14 @@
           "variantId": "standard",
           "mode": null,
           "shape": null,
+          "surfaces": [
+            {
+              "id": "front",
+              "widthMm": 148,
+              "heightMm": 210
+            }
+          ],
+          "geometryKey": "notebook:standard:mode:none:shape:none:surfaces:front-148x210",
           "isCanonical": false,
           "deterministicSuccessorId": "celebrate--notebook--standard--none--none"
         }
@@ -1379,7 +1761,15 @@
         "productId": "wrapping",
         "variantId": "a1",
         "mode": "full-sheet",
-        "shape": null
+        "shape": null,
+        "surfaces": [
+          {
+            "id": "sheet",
+            "widthMm": 594,
+            "heightMm": 841
+          }
+        ],
+        "geometryKey": "wrapping:a1:mode:full-sheet:shape:none:surfaces:sheet-594x841"
       },
       "targets": [
         {
@@ -1388,6 +1778,14 @@
           "variantId": "a1",
           "mode": "full-sheet",
           "shape": null,
+          "surfaces": [
+            {
+              "id": "sheet",
+              "widthMm": 594,
+              "heightMm": 841
+            }
+          ],
+          "geometryKey": "wrapping:a1:mode:full-sheet:shape:none:surfaces:sheet-594x841",
           "isCanonical": true,
           "deterministicSuccessorId": "minimal"
         },
@@ -1397,6 +1795,14 @@
           "variantId": "a2",
           "mode": "full-sheet",
           "shape": null,
+          "surfaces": [
+            {
+              "id": "sheet",
+              "widthMm": 420,
+              "heightMm": 594
+            }
+          ],
+          "geometryKey": "wrapping:a2:mode:full-sheet:shape:none:surfaces:sheet-420x594",
           "isCanonical": false,
           "deterministicSuccessorId": "minimal--wrapping--a2--full-sheet--none"
         },
@@ -1406,6 +1812,24 @@
           "variantId": "horizontal",
           "mode": null,
           "shape": null,
+          "surfaces": [
+            {
+              "id": "front",
+              "widthMm": 148,
+              "heightMm": 105
+            },
+            {
+              "id": "inside",
+              "widthMm": 296,
+              "heightMm": 105
+            },
+            {
+              "id": "back",
+              "widthMm": 148,
+              "heightMm": 105
+            }
+          ],
+          "geometryKey": "card:horizontal:mode:none:shape:none:surfaces:front-148x105_inside-296x105_back-148x105",
           "isCanonical": false,
           "deterministicSuccessorId": "minimal--card--horizontal--none--none"
         },
@@ -1415,6 +1839,24 @@
           "variantId": "vertical",
           "mode": null,
           "shape": null,
+          "surfaces": [
+            {
+              "id": "front",
+              "widthMm": 105,
+              "heightMm": 148
+            },
+            {
+              "id": "inside",
+              "widthMm": 210,
+              "heightMm": 148
+            },
+            {
+              "id": "back",
+              "widthMm": 105,
+              "heightMm": 148
+            }
+          ],
+          "geometryKey": "card:vertical:mode:none:shape:none:surfaces:front-105x148_inside-210x148_back-105x148",
           "isCanonical": false,
           "deterministicSuccessorId": "minimal--card--vertical--none--none"
         },
@@ -1424,6 +1866,14 @@
           "variantId": "die-cut",
           "mode": null,
           "shape": null,
+          "surfaces": [
+            {
+              "id": "front",
+              "widthMm": 50,
+              "heightMm": 50
+            }
+          ],
+          "geometryKey": "sticker:die-cut:mode:none:shape:none:surfaces:front-50x50",
           "isCanonical": false,
           "deterministicSuccessorId": "minimal--sticker--die-cut--none--none"
         },
@@ -1433,6 +1883,14 @@
           "variantId": "fixed-shape",
           "mode": null,
           "shape": null,
+          "surfaces": [
+            {
+              "id": "front",
+              "widthMm": 50,
+              "heightMm": 50
+            }
+          ],
+          "geometryKey": "sticker:fixed-shape:mode:none:shape:none:surfaces:front-50x50",
           "isCanonical": false,
           "deterministicSuccessorId": "minimal--sticker--fixed-shape--none--none"
         },
@@ -1442,6 +1900,14 @@
           "variantId": "phone",
           "mode": null,
           "shape": null,
+          "surfaces": [
+            {
+              "id": "front",
+              "widthMm": 50,
+              "heightMm": 50
+            }
+          ],
+          "geometryKey": "sticker:phone:mode:none:shape:none:surfaces:front-50x50",
           "isCanonical": false,
           "deterministicSuccessorId": "minimal--sticker--phone--none--none"
         },
@@ -1451,6 +1917,14 @@
           "variantId": "standard",
           "mode": null,
           "shape": null,
+          "surfaces": [
+            {
+              "id": "front",
+              "widthMm": 148,
+              "heightMm": 210
+            }
+          ],
+          "geometryKey": "notebook:standard:mode:none:shape:none:surfaces:front-148x210",
           "isCanonical": false,
           "deterministicSuccessorId": "minimal--notebook--standard--none--none"
         }
@@ -1552,7 +2026,15 @@
         "productId": "notebook",
         "variantId": "standard",
         "mode": null,
-        "shape": null
+        "shape": null,
+        "surfaces": [
+          {
+            "id": "front",
+            "widthMm": 148,
+            "heightMm": 210
+          }
+        ],
+        "geometryKey": "notebook:standard:mode:none:shape:none:surfaces:front-148x210"
       },
       "targets": [
         {
@@ -1561,6 +2043,14 @@
           "variantId": "standard",
           "mode": null,
           "shape": null,
+          "surfaces": [
+            {
+              "id": "front",
+              "widthMm": 148,
+              "heightMm": 210
+            }
+          ],
+          "geometryKey": "notebook:standard:mode:none:shape:none:surfaces:front-148x210",
           "isCanonical": true,
           "deterministicSuccessorId": "notebook-floral"
         }
@@ -1619,7 +2109,15 @@
         "productId": "notebook",
         "variantId": "standard",
         "mode": null,
-        "shape": null
+        "shape": null,
+        "surfaces": [
+          {
+            "id": "front",
+            "widthMm": 148,
+            "heightMm": 210
+          }
+        ],
+        "geometryKey": "notebook:standard:mode:none:shape:none:surfaces:front-148x210"
       },
       "targets": [
         {
@@ -1628,6 +2126,14 @@
           "variantId": "standard",
           "mode": null,
           "shape": null,
+          "surfaces": [
+            {
+              "id": "front",
+              "widthMm": 148,
+              "heightMm": 210
+            }
+          ],
+          "geometryKey": "notebook:standard:mode:none:shape:none:surfaces:front-148x210",
           "isCanonical": true,
           "deterministicSuccessorId": "notebook-minimal"
         }
@@ -1688,7 +2194,15 @@
         "productId": "sticker",
         "variantId": "fixed-shape",
         "mode": null,
-        "shape": "rounded-rectangle"
+        "shape": "rounded-rectangle",
+        "surfaces": [
+          {
+            "id": "front",
+            "widthMm": 70,
+            "heightMm": 50
+          }
+        ],
+        "geometryKey": "sticker:fixed-shape:mode:none:shape:rounded-rectangle:surfaces:front-70x50"
       },
       "targets": [
         {
@@ -1697,6 +2211,14 @@
           "variantId": "fixed-shape",
           "mode": null,
           "shape": "rounded-rectangle",
+          "surfaces": [
+            {
+              "id": "front",
+              "widthMm": 70,
+              "heightMm": 50
+            }
+          ],
+          "geometryKey": "sticker:fixed-shape:mode:none:shape:rounded-rectangle:surfaces:front-70x50",
           "isCanonical": true,
           "deterministicSuccessorId": "sticker-coffee-cozy"
         },
@@ -1706,6 +2228,14 @@
           "variantId": "die-cut",
           "mode": null,
           "shape": null,
+          "surfaces": [
+            {
+              "id": "front",
+              "widthMm": 50,
+              "heightMm": 50
+            }
+          ],
+          "geometryKey": "sticker:die-cut:mode:none:shape:none:surfaces:front-50x50",
           "isCanonical": false,
           "deterministicSuccessorId": "sticker-coffee-cozy--sticker--die-cut--none--none"
         }
@@ -1749,7 +2279,15 @@
         "productId": "sticker",
         "variantId": "fixed-shape",
         "mode": null,
-        "shape": "rounded-rectangle"
+        "shape": "rounded-rectangle",
+        "surfaces": [
+          {
+            "id": "front",
+            "widthMm": 70,
+            "heightMm": 50
+          }
+        ],
+        "geometryKey": "sticker:fixed-shape:mode:none:shape:rounded-rectangle:surfaces:front-70x50"
       },
       "targets": [
         {
@@ -1758,6 +2296,14 @@
           "variantId": "fixed-shape",
           "mode": null,
           "shape": "rounded-rectangle",
+          "surfaces": [
+            {
+              "id": "front",
+              "widthMm": 70,
+              "heightMm": 50
+            }
+          ],
+          "geometryKey": "sticker:fixed-shape:mode:none:shape:rounded-rectangle:surfaces:front-70x50",
           "isCanonical": true,
           "deterministicSuccessorId": "sticker-cozy-coffee"
         },
@@ -1767,6 +2313,14 @@
           "variantId": "die-cut",
           "mode": null,
           "shape": null,
+          "surfaces": [
+            {
+              "id": "front",
+              "widthMm": 50,
+              "heightMm": 50
+            }
+          ],
+          "geometryKey": "sticker:die-cut:mode:none:shape:none:surfaces:front-50x50",
           "isCanonical": false,
           "deterministicSuccessorId": "sticker-cozy-coffee--sticker--die-cut--none--none"
         }
@@ -1836,7 +2390,15 @@
         "productId": "sticker",
         "variantId": "fixed-shape",
         "mode": null,
-        "shape": "circle"
+        "shape": "circle",
+        "surfaces": [
+          {
+            "id": "front",
+            "widthMm": 50,
+            "heightMm": 50
+          }
+        ],
+        "geometryKey": "sticker:fixed-shape:mode:none:shape:circle:surfaces:front-50x50"
       },
       "targets": [
         {
@@ -1845,6 +2407,14 @@
           "variantId": "fixed-shape",
           "mode": null,
           "shape": "circle",
+          "surfaces": [
+            {
+              "id": "front",
+              "widthMm": 50,
+              "heightMm": 50
+            }
+          ],
+          "geometryKey": "sticker:fixed-shape:mode:none:shape:circle:surfaces:front-50x50",
           "isCanonical": true,
           "deterministicSuccessorId": "sticker-cute-pack"
         },
@@ -1854,6 +2424,14 @@
           "variantId": "die-cut",
           "mode": null,
           "shape": null,
+          "surfaces": [
+            {
+              "id": "front",
+              "widthMm": 50,
+              "heightMm": 50
+            }
+          ],
+          "geometryKey": "sticker:die-cut:mode:none:shape:none:surfaces:front-50x50",
           "isCanonical": false,
           "deterministicSuccessorId": "sticker-cute-pack--sticker--die-cut--none--none"
         },
@@ -1863,6 +2441,14 @@
           "variantId": "phone",
           "mode": null,
           "shape": null,
+          "surfaces": [
+            {
+              "id": "front",
+              "widthMm": 50,
+              "heightMm": 50
+            }
+          ],
+          "geometryKey": "sticker:phone:mode:none:shape:none:surfaces:front-50x50",
           "isCanonical": false,
           "deterministicSuccessorId": "sticker-cute-pack--sticker--phone--none--none"
         }
@@ -1925,7 +2511,15 @@
         "productId": "sticker",
         "variantId": "die-cut",
         "mode": null,
-        "shape": null
+        "shape": null,
+        "surfaces": [
+          {
+            "id": "front",
+            "widthMm": 50,
+            "heightMm": 50
+          }
+        ],
+        "geometryKey": "sticker:die-cut:mode:none:shape:none:surfaces:front-50x50"
       },
       "targets": [
         {
@@ -1934,6 +2528,14 @@
           "variantId": "die-cut",
           "mode": null,
           "shape": null,
+          "surfaces": [
+            {
+              "id": "front",
+              "widthMm": 50,
+              "heightMm": 50
+            }
+          ],
+          "geometryKey": "sticker:die-cut:mode:none:shape:none:surfaces:front-50x50",
           "isCanonical": true,
           "deterministicSuccessorId": "sticker-diecut-love"
         }
@@ -2001,7 +2603,15 @@
         "productId": "wrapping",
         "variantId": "a1",
         "mode": "pattern",
-        "shape": null
+        "shape": null,
+        "surfaces": [
+          {
+            "id": "sheet",
+            "widthMm": 594,
+            "heightMm": 841
+          }
+        ],
+        "geometryKey": "wrapping:a1:mode:pattern:shape:none:surfaces:sheet-594x841"
       },
       "targets": [
         {
@@ -2010,6 +2620,14 @@
           "variantId": "a1",
           "mode": "pattern",
           "shape": null,
+          "surfaces": [
+            {
+              "id": "sheet",
+              "widthMm": 594,
+              "heightMm": 841
+            }
+          ],
+          "geometryKey": "wrapping:a1:mode:pattern:shape:none:surfaces:sheet-594x841",
           "isCanonical": true,
           "deterministicSuccessorId": "wrapping-a1-cute"
         }
@@ -2095,7 +2713,15 @@
         "productId": "wrapping",
         "variantId": "a1",
         "mode": "pattern",
-        "shape": null
+        "shape": null,
+        "surfaces": [
+          {
+            "id": "sheet",
+            "widthMm": 594,
+            "heightMm": 841
+          }
+        ],
+        "geometryKey": "wrapping:a1:mode:pattern:shape:none:surfaces:sheet-594x841"
       },
       "targets": [
         {
@@ -2104,6 +2730,14 @@
           "variantId": "a1",
           "mode": "pattern",
           "shape": null,
+          "surfaces": [
+            {
+              "id": "sheet",
+              "widthMm": 594,
+              "heightMm": 841
+            }
+          ],
+          "geometryKey": "wrapping:a1:mode:pattern:shape:none:surfaces:sheet-594x841",
           "isCanonical": true,
           "deterministicSuccessorId": "wrapping-a1-floral"
         }
@@ -2189,7 +2823,15 @@
         "productId": "wrapping",
         "variantId": "a2",
         "mode": "pattern",
-        "shape": null
+        "shape": null,
+        "surfaces": [
+          {
+            "id": "sheet",
+            "widthMm": 420,
+            "heightMm": 594
+          }
+        ],
+        "geometryKey": "wrapping:a2:mode:pattern:shape:none:surfaces:sheet-420x594"
       },
       "targets": [
         {
@@ -2198,6 +2840,14 @@
           "variantId": "a2",
           "mode": "pattern",
           "shape": null,
+          "surfaces": [
+            {
+              "id": "sheet",
+              "widthMm": 420,
+              "heightMm": 594
+            }
+          ],
+          "geometryKey": "wrapping:a2:mode:pattern:shape:none:surfaces:sheet-420x594",
           "isCanonical": true,
           "deterministicSuccessorId": "wrapping-a2-minimal"
         }
@@ -2283,7 +2933,15 @@
         "productId": "wrapping",
         "variantId": "a1",
         "mode": "pattern",
-        "shape": null
+        "shape": null,
+        "surfaces": [
+          {
+            "id": "sheet",
+            "widthMm": 594,
+            "heightMm": 841
+          }
+        ],
+        "geometryKey": "wrapping:a1:mode:pattern:shape:none:surfaces:sheet-594x841"
       },
       "targets": [
         {
@@ -2292,6 +2950,14 @@
           "variantId": "a1",
           "mode": "pattern",
           "shape": null,
+          "surfaces": [
+            {
+              "id": "sheet",
+              "widthMm": 594,
+              "heightMm": 841
+            }
+          ],
+          "geometryKey": "wrapping:a1:mode:pattern:shape:none:surfaces:sheet-594x841",
           "isCanonical": true,
           "deterministicSuccessorId": "wrapping-birthday-balloons"
         },
@@ -2301,6 +2967,14 @@
           "variantId": "a2",
           "mode": "pattern",
           "shape": null,
+          "surfaces": [
+            {
+              "id": "sheet",
+              "widthMm": 420,
+              "heightMm": 594
+            }
+          ],
+          "geometryKey": "wrapping:a2:mode:pattern:shape:none:surfaces:sheet-420x594",
           "isCanonical": false,
           "deterministicSuccessorId": "wrapping-birthday-balloons--wrapping--a2--pattern--none"
         }
