@@ -2760,6 +2760,10 @@ declare
   v_new_id text;
   v_new_name text;
   v_result jsonb;
+  v_asset record;
+  v_new_asset_id uuid;
+  v_new_storage_path text;
+  v_has_draft_assets boolean := false;
 begin
   perform public.template_authorize_actor(p_actor, 'editor');
 
@@ -2860,6 +2864,64 @@ begin
     1, v_doc_hash, p_actor, p_actor, now(), now()
   ) returning * into v_new_draft;
 
+  -- Copy private draft assets and rewrite document references
+  for v_asset in
+    select * from public.template_assets
+    where template_id = p_source_template_id and status = 'draft'
+  loop
+    v_new_asset_id := gen_random_uuid();
+    v_new_storage_path := v_new_id || '/' || v_new_asset_id::text ||
+      coalesce(
+        substring(v_asset.storage_path from '\.[a-zA-Z0-9]+$'),
+        case v_asset.mime_type
+          when 'image/png' then '.png'
+          when 'image/jpeg' then '.jpg'
+          when 'image/webp' then '.webp'
+          when 'image/svg+xml' then '.svg'
+          else ''
+        end
+      );
+
+    insert into public.template_assets (
+      id, template_id, draft_id, storage_bucket, storage_path, checksum,
+      mime_type, byte_size, pixel_width, pixel_height, upload_status,
+      status, ever_published_at, expires_at, is_published,
+      created_by, created_at, updated_at
+    ) values (
+      v_new_asset_id,
+      v_new_id,
+      v_new_draft.id,
+      v_asset.storage_bucket,
+      v_new_storage_path,
+      v_asset.checksum,
+      v_asset.mime_type,
+      v_asset.byte_size,
+      v_asset.pixel_width,
+      v_asset.pixel_height,
+      v_asset.upload_status,
+      'draft',
+      null,
+      v_asset.expires_at,
+      false,
+      p_actor,
+      now(),
+      now()
+    );
+
+    v_doc := replace(v_doc::text, v_asset.id::text, v_new_asset_id::text)::jsonb;
+    v_has_draft_assets := true;
+  end loop;
+
+  if v_has_draft_assets then
+    v_doc := replace(v_doc::text, '/api/admin/content/templates/' || p_source_template_id || '/', '/api/admin/content/templates/' || v_new_id || '/')::jsonb;
+    v_doc_hash := encode(digest(v_doc::text, 'sha256'), 'hex');
+    update public.template_drafts
+    set design_document = v_doc,
+        source_document_hash = v_doc_hash,
+        updated_at = now()
+    where id = v_new_draft.id
+    returning * into v_new_draft;
+  end if;
   insert into public.asset_events (
     actor_user_id, request_id, kind, target_id, before_revision, after_revision, event, metadata_diff
   ) values (

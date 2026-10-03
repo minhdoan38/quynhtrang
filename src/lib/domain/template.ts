@@ -219,12 +219,14 @@ export interface TemplateAssetRecord {
   draftId: string | null;
   storageBucket: string;
   storageKey: string;
+  storagePath?: string;
   checksum: string;
   mimeType: string;
   byteSize: number;
   widthPx?: number;
   heightPx?: number;
   uploadStatus?: string;
+  status?: 'draft' | 'published' | 'archived' | 'cleaned';
   isPublished: boolean;
   createdAt: string;
   createdBy?: string | null;

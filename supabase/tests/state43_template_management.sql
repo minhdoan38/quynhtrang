@@ -1576,6 +1576,10 @@ begin
         v_l_count integer;
         v_l_stick_id text := 'stick-life-1';
         v_l_draft_ref uuid := gen_random_uuid();
+        v_l_asset_src_id uuid := gen_random_uuid();
+        v_l_src_draft_id uuid := gen_random_uuid();
+        v_l_dup_asset record;
+        v_l_dup_draft record;
       begin
         -- 13.1 Archive published template (v_p_tmpl_id is currently at revision 3)
         v_l_res := public.template_archive(v_ed_id, 't13-req-arch-1', v_p_tmpl_id, 3::bigint);
@@ -1621,6 +1625,107 @@ begin
           raise exception 'Duplicate did not create draft';
         end if;
 
+
+        -- 13.3.1 Duplicate copies private draft assets, rewrites document references, and isolates duplicate
+        insert into public.templates (
+          id, name, slug, product_id, variant_id, product_mode, category_id,
+          tags, sort_order, status, revision, target_snapshot, created_by, updated_by
+        ) values (
+          't13-src-draft-tmpl', 'Source Draft With Assets', 't13-src-draft-tmpl', 'card', 'horizontal',
+          null, 'cat-card', array['test'], 0, 'draft', 1, jsonb_build_object('productId', 'card'), v_ed_id, v_ed_id
+        );
+
+        insert into public.template_drafts (
+          id, template_id, draft_revision, source_document_hash,
+          design_document, created_by, updated_by
+        ) values (
+          v_l_src_draft_id,
+          't13-src-draft-tmpl',
+          1,
+          'hash-src-doc',
+          jsonb_build_object(
+            'productId', 'card',
+            'elements', jsonb_build_array(
+              jsonb_build_object(
+                'id', 'el-img-1',
+                'type', 'image',
+                'src', 'template-asset://' || v_l_asset_src_id::text,
+                'viewUrl', '/api/admin/content/templates/t13-src-draft-tmpl/assets/' || v_l_asset_src_id::text
+              )
+            )
+          ),
+          v_ed_id,
+          v_ed_id
+        );
+
+        insert into public.template_assets (
+          id, template_id, draft_id, storage_bucket, storage_path, checksum,
+          mime_type, byte_size, upload_status, status, is_published, created_by
+        ) values (
+          v_l_asset_src_id,
+          't13-src-draft-tmpl',
+          v_l_src_draft_id,
+          'template-drafts',
+          't13-src-draft-tmpl/' || v_l_asset_src_id::text || '.png',
+          'chk-private-draft-asset',
+          'image/png',
+          1024,
+          'verified',
+          'draft',
+          false,
+          v_ed_id
+        );
+
+        v_l_res := public.template_duplicate(v_ed_id, 't13-req-dup-asset-1', 't13-src-draft-tmpl', 't13-dup-asset-tmpl');
+        if (v_l_res->>'ok')::boolean is not true then
+          raise exception 'template_duplicate with private draft assets failed: %', v_l_res;
+        end if;
+
+        select * into v_l_dup_asset from public.template_assets where template_id = 't13-dup-asset-tmpl';
+        if not found or v_l_dup_asset.id is null then
+          raise exception 'Duplicated template does not have its own template_assets record';
+        end if;
+        if v_l_dup_asset.id = v_l_asset_src_id then
+          raise exception 'Duplicated asset retained original asset ID';
+        end if;
+        if v_l_dup_asset.status <> 'draft' or v_l_dup_asset.is_published is not false then
+          raise exception 'Duplicated asset has invalid status or is_published';
+        end if;
+
+        select * into v_l_dup_draft from public.template_drafts where template_id = 't13-dup-asset-tmpl';
+        if not found then
+          raise exception 'Duplicated draft not found';
+        end if;
+        if v_l_dup_draft.design_document::text not like '%' || v_l_dup_asset.id::text || '%' then
+          raise exception 'Duplicated draft document does not reference new asset ID';
+        end if;
+        if v_l_dup_draft.design_document::text like '%' || v_l_asset_src_id::text || '%' then
+          raise exception 'Duplicated draft document still references original asset ID';
+        end if;
+
+        -- Deleting source draft template deletes source asset but does NOT affect duplicate draft or its assets
+        v_l_res := public.template_delete_draft(v_adm_id, 't13-req-del-src-asset', 't13-src-draft-tmpl');
+        if (v_l_res->>'deleted')::boolean is not true then
+          raise exception 'Failed to delete source draft template: %', v_l_res;
+        end if;
+
+        select count(*) into v_l_count from public.template_assets where id = v_l_asset_src_id;
+        if v_l_count <> 0 then
+          raise exception 'Original asset was not deleted when source draft was deleted';
+        end if;
+
+        select count(*) into v_l_count from public.template_assets where id = v_l_dup_asset.id;
+        if v_l_count <> 1 then
+          raise exception 'Duplicate asset was affected by source draft deletion';
+        end if;
+
+        select count(*) into v_l_count from public.template_drafts where template_id = 't13-dup-asset-tmpl';
+        if v_l_count <> 1 then
+          raise exception 'Duplicate draft was affected by source draft deletion';
+        end if;
+
+        -- Cleanup duplicate test template
+        perform public.template_delete_draft(v_adm_id, 't13-req-del-dup-cleanup', 't13-dup-asset-tmpl');
         -- 13.4 Delete draft: Editor forbidden
         v_l_denied := false;
         begin

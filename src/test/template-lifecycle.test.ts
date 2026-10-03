@@ -6,6 +6,7 @@ import type { StaffIdentity } from '../lib/domain/order.ts';
 import type {
   DeleteDraftTemplateInput,
   DuplicateTemplateInput,
+  TemplateAssetRecord,
   TemplateDraftRecord,
   TemplateMutation,
   TemplateRecord,
@@ -13,7 +14,7 @@ import type {
   TemplateVersionPayload,
 } from '../lib/domain/template.ts';
 import { TemplateServiceError } from '../lib/domain/template.ts';
-import type { DesignState } from '../lib/product-state.ts';
+import type { CanvasElement, DesignState } from '../lib/product-state.ts';
 import { createInitialState, createTextElement } from '../lib/product-state.ts';
 import { TemplateRepository } from '../lib/repositories/template-repository.ts';
 import { AssetLibraryRepository } from '../lib/repositories/asset-library-repository.ts';
@@ -64,8 +65,21 @@ function createMockLifecycleHarness() {
   const projects = new Map<string, { id: string; sourceTemplateId?: string | null; workingDocument: DesignState }>();
   const operations = new Map<string, { actor: string; payloadHash: string; result: TemplateRepoResult<unknown> }>();
   const assetEvents: MockAssetEvent[] = [];
+  const assets = new Map<string, TemplateAssetRecord>();
 
   const repo = {
+    async getAsset(assetId: string) {
+      const a = assets.get(assetId);
+      return a ? structuredClone(a) : null;
+    },
+    async listAssetsForTemplate(templateId: string) {
+      return Array.from(assets.values())
+        .filter((a) => a.templateId === templateId)
+        .map((a) => structuredClone(a));
+    },
+    async deleteAssetRecord(assetId: string) {
+      assets.delete(assetId);
+    },
     async getTemplate(id: string) {
       const tmpl = templates.get(id);
       return tmpl ? structuredClone(tmpl) : null;
@@ -276,6 +290,41 @@ function createMockLifecycleHarness() {
       };
       drafts.set(newId, newDraft);
 
+      // Copy private draft assets and rewrite document references
+      const sourceDraftAssets = Array.from(assets.values()).filter(
+        (a) => a.templateId === input.sourceTemplateId && (a.status === 'draft' || !a.isPublished),
+      );
+
+      let docJson = JSON.stringify(docToCopy);
+      for (const asset of sourceDraftAssets) {
+        const newAssetId = randomUUID();
+        const p = asset.storagePath ?? asset.storageKey;
+        const ext = p.includes('.') ? p.slice(p.lastIndexOf('.')) : '.png';
+        const newAsset: TemplateAssetRecord = {
+          ...structuredClone(asset),
+          id: newAssetId,
+          templateId: newId,
+          draftId: newDraft.id,
+          storageKey: `${newId}/${newAssetId}${ext}`,
+          storagePath: `${newId}/${newAssetId}${ext}`,
+          status: 'draft',
+          isPublished: false,
+          createdAt: new Date().toISOString(),
+        };
+        assets.set(newAssetId, newAsset);
+
+        docJson = docJson.replaceAll(asset.id, newAssetId);
+      }
+
+      if (sourceDraftAssets.length > 0 && docToCopy) {
+        docJson = docJson.replaceAll(
+          `/api/admin/content/templates/${input.sourceTemplateId}/`,
+          `/api/admin/content/templates/${newId}/`,
+        );
+        docToCopy = JSON.parse(docJson) as DesignState;
+        newDraft.designDocument = docToCopy;
+        newDraft.sourceDocumentHash = createHash('sha256').update(docJson).digest('hex');
+      }
       assetEvents.push({
         id: randomUUID(),
         targetId: newId,
@@ -326,6 +375,11 @@ function createMockLifecycleHarness() {
       templates.delete(input.templateId);
       drafts.delete(input.templateId);
 
+      for (const [id, a] of assets.entries()) {
+        if (a.templateId === input.templateId) {
+          assets.delete(id);
+        }
+      }
       assetEvents.push({
         id: randomUUID(),
         targetId: input.templateId,
@@ -350,6 +404,11 @@ function createMockLifecycleHarness() {
       }
       drafts.delete(draft.templateId);
 
+      for (const [id, a] of assets.entries()) {
+        if (a.draftId === input.draftId) {
+          assets.set(id, { ...a, draftId: null });
+        }
+      }
       assetEvents.push({
         id: randomUUID(),
         targetId: draft.templateId,
@@ -373,6 +432,7 @@ function createMockLifecycleHarness() {
     versionDeps,
     projects,
     assetEvents,
+    assets,
   };
 }
 
@@ -617,6 +677,174 @@ describe('State 43 Task 13: Template Lifecycle Actions', () => {
     copyDraft.designDocument.elements = [];
     assert.notEqual(copyDraft.designDocument.elements.length, originalVersion.document.elements?.length);
     assert.deepEqual(await harness.repo.getVersion(originalVersion.versionId), originalVersion);
+  });
+
+  it('duplicate copies private draft assets, rewrites document references, and isolates duplicate from source draft deletion/discard', async () => {
+    const harness = createMockLifecycleHarness();
+    const editor = createMockEditor();
+    const admin = createMockAdmin();
+
+    const target = createTemplateTarget({ productId: 'card', variantId: 'horizontal', mode: null, shape: null });
+    const sourceId = 'tmpl-card-source';
+    const sourceDraftId = randomUUID();
+    const sourceAssetId = randomUUID();
+
+    const initialDoc = createInitialState('card');
+    initialDoc.elements = [
+      {
+        id: 'el-img-1',
+        type: 'image',
+        x: 0,
+        y: 0,
+        width: 100,
+        height: 100,
+        rotation: 0,
+        opacity: 1,
+        locked: false,
+        data: {
+          src: `template-asset://${sourceAssetId}`,
+          originalSrc: `/api/admin/content/templates/${sourceId}/assets/${sourceAssetId}`,
+          templateAssetId: sourceAssetId,
+        },
+      } as unknown as CanvasElement,
+    ];
+
+    const sourceTemplate: TemplateRecord = {
+      id: sourceId,
+      name: 'Source Card With Assets',
+      status: 'draft',
+      revision: 1,
+      productId: 'card',
+      variantId: 'horizontal',
+      mode: null,
+      shape: null,
+      target,
+      categoryId: 'all',
+      tags: ['photo'],
+      sortOrder: 1,
+      currentPublishedVersionId: null,
+      everPublishedAt: null,
+      archivedAt: null,
+      createdAt: '2026-10-04T00:00:00Z',
+      updatedAt: '2026-10-04T00:00:00Z',
+    };
+    harness.templates.set(sourceId, sourceTemplate);
+
+    const sourceDraft: TemplateDraftRecord = {
+      id: sourceDraftId,
+      templateId: sourceId,
+      basedOnVersionId: null,
+      designDocument: initialDoc,
+      documentSchemaVersion: 1,
+      draftRevision: 1,
+      sourceDocumentHash: createHash('sha256').update(JSON.stringify(initialDoc)).digest('hex'),
+      editorUserId: editor.userId,
+      leaseSessionId: 'sess-1',
+      leaseEpoch: 1,
+      leaseExpiresAt: new Date(Date.now() + 60000).toISOString(),
+      lastActivityAt: new Date().toISOString(),
+      createdAt: '2026-10-04T00:00:00Z',
+      updatedAt: '2026-10-04T00:00:00Z',
+    };
+    harness.drafts.set(sourceId, sourceDraft);
+
+    const sourceAsset: TemplateAssetRecord = {
+      id: sourceAssetId,
+      templateId: sourceId,
+      draftId: sourceDraftId,
+      storageBucket: 'template-drafts',
+      storageKey: `${sourceId}/${sourceAssetId}.png`,
+      storagePath: `${sourceId}/${sourceAssetId}.png`,
+      checksum: 'sha256-source-asset',
+      mimeType: 'image/png',
+      byteSize: 2048,
+      widthPx: 200,
+      heightPx: 200,
+      uploadStatus: 'verified',
+      status: 'draft',
+      isPublished: false,
+      createdAt: '2026-10-04T00:00:00Z',
+    };
+    harness.assets.set(sourceAssetId, sourceAsset);
+
+    // 1. Duplicate the template
+    const duplicateResult = await harness.service.duplicateTemplate(editor, {
+      requestId: 'req-dup-asset-test',
+      sourceTemplateId: sourceId,
+      newName: 'Duplicated Card With Independent Assets',
+    });
+
+    const dupTmpl = duplicateResult.template;
+    const dupDraft = duplicateResult.draft;
+
+    assert.notEqual(dupTmpl.id, sourceId);
+    assert.equal(dupTmpl.status, 'draft');
+
+    // 2. Verify duplicate has its own independent template_assets records
+    const dupAssets = await harness.repo.listAssetsForTemplate(dupTmpl.id);
+    assert.equal(dupAssets.length, 1);
+    const newAsset = dupAssets[0]!;
+    assert.notEqual(newAsset.id, sourceAssetId);
+    assert.equal(newAsset.templateId, dupTmpl.id);
+    assert.equal(newAsset.draftId, dupDraft.id);
+    assert.equal(newAsset.status, 'draft');
+    assert.equal(newAsset.isPublished, false);
+    assert.equal(newAsset.checksum, 'sha256-source-asset');
+
+    // 3. Document references in duplicate draft point to the new asset ID
+    const dupDocStr = JSON.stringify(dupDraft.designDocument);
+    assert.ok(dupDocStr.includes(newAsset.id), 'Duplicate document must reference new asset ID');
+    assert.equal(dupDocStr.includes(sourceAssetId), false, 'Duplicate document must not reference original asset ID');
+    assert.ok(
+      dupDocStr.includes(`template-asset://${newAsset.id}`),
+      'Duplicate document must have updated canonical locator',
+    );
+    assert.ok(
+      dupDocStr.includes(`/api/admin/content/templates/${dupTmpl.id}/assets/${newAsset.id}`),
+      'Duplicate document must have updated viewUrl path',
+    );
+
+    // 4. Deleting the source draft template does NOT affect the duplicate draft or its assets
+    await harness.service.deleteDraftTemplate(admin, {
+      requestId: 'req-del-source',
+      templateId: sourceId,
+    });
+
+    // Source template and source asset are deleted
+    assert.equal(await harness.repo.getTemplate(sourceId), null);
+    assert.equal(await harness.repo.getAsset(sourceAssetId), null);
+    assert.equal((await harness.repo.listAssetsForTemplate(sourceId)).length, 0);
+
+    // Duplicate template, duplicate draft, and duplicate asset survive intact
+    assert.ok(await harness.repo.getTemplate(dupTmpl.id));
+    assert.ok(await harness.repo.getDraft(dupTmpl.id));
+    const survivingAssets = await harness.repo.listAssetsForTemplate(dupTmpl.id);
+    assert.equal(survivingAssets.length, 1);
+    assert.equal(survivingAssets[0]!.id, newAsset.id);
+    assert.ok(await harness.repo.getAsset(newAsset.id));
+
+    // 5. Test discard scenario on another duplicate
+    const secondDup = await harness.service.duplicateTemplate(editor, {
+      requestId: 'req-dup-discard-test',
+      sourceTemplateId: dupTmpl.id,
+      newName: 'Second Dup For Discard Test',
+    });
+    const secondAssets = await harness.repo.listAssetsForTemplate(secondDup.template.id);
+    assert.equal(secondAssets.length, 1);
+    const secondAsset = secondAssets[0]!;
+
+    // Discard source draft
+    await harness.repo.discardDraft(editor.userId, {
+      requestId: 'req-discard-draft',
+      draftId: dupDraft.id,
+      expectedRevision: 1,
+      sessionId: 'sess-1',
+      epoch: 1,
+    });
+
+    // Second dup draft and its assets are completely unaffected
+    assert.ok(await harness.repo.getDraft(secondDup.template.id));
+    assert.ok(await harness.repo.getAsset(secondAsset.id));
   });
 
   it('delete draft is admin-only, rejected if template was ever published or has versions', async () => {
