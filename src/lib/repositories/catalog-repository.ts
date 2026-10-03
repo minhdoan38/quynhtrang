@@ -17,24 +17,33 @@ import {
   type PublishedSticker,
   type PublishedTemplate,
   type PublishedVariant,
+  type BrowseAvailableTemplatesOptions,
+  type TemplateCard,
+  type TemplatePage,
+  type TemplateVersionPayload,
 } from '../domain/catalog.ts';
 import { FONT_REGISTRY } from '../fonts.ts';
 import { CATALOG_PRODUCTS } from '../product-catalog.ts';
 import { type ProductId, TEMPLATES } from '../product-state.ts';
-
+import { TemplateRepository } from './template-repository.ts';
 export interface PublishedCatalogRepository {
   listProducts(): Promise<PublishedProduct[]>;
   listVariants(productId?: ProductId): Promise<PublishedVariant[]>;
   listTemplates(productId?: ProductId): Promise<PublishedTemplate[]>;
   listPublishedTemplates(productId?: ProductId): Promise<PublishedTemplate[]>;
+  browseAvailableTemplates?(options?: BrowseAvailableTemplatesOptions): Promise<TemplatePage>;
+  resolveTemplateVersionById?(
+    versionId: string,
+    access?: { role?: string; userId?: string | null; projectId?: string | null },
+  ): Promise<TemplateVersionPayload>;
   listFonts(): Promise<PublishedFont[]>;
   listPublishedFonts(): Promise<PublishedFont[]>;
   listStickers(category?: string): Promise<PublishedSticker[]>;
   listPublishedStickers(category?: string): Promise<PublishedSticker[]>;
 }
-
 export class CatalogRepository implements PublishedCatalogRepository {
   private readonly client: SupabaseClient | null;
+  private readonly templateRepo: TemplateRepository | null;
 
   constructor(client?: SupabaseClient | null) {
     if (client !== undefined) {
@@ -56,6 +65,7 @@ export class CatalogRepository implements PublishedCatalogRepository {
         }
       }
     }
+    this.templateRepo = this.client ? new TemplateRepository(this.client) : null;
   }
 
   async listProducts(): Promise<PublishedProduct[]> {
@@ -93,22 +103,41 @@ export class CatalogRepository implements PublishedCatalogRepository {
 
   async listTemplates(productId?: ProductId): Promise<PublishedTemplate[]> {
     if (!this.client) return this.getStaticTemplates(productId);
-    try {
-      let query = this.client
-        .from('templates')
-        .select('*')
-        .eq('published', true);
-      if (productId) {
-        query = query.or(`product_id.eq.${productId},product_id.is.null`);
-      }
-      const { data, error } = await query.order('id');
-      if (error || data === null || data === undefined) return this.getStaticTemplates(productId);
-      const rows = (data as DatabaseTemplateRow[]).map(mapTemplateRow);
-      if (!productId) return rows;
-      return rows.filter((tpl) => !tpl.productId || tpl.productId === productId);
-    } catch {
-      return this.getStaticTemplates(productId);
+    // When database client is configured, failure yields error, not fallback to static templates
+    let query = this.client
+      .from('templates')
+      .select('*')
+      .eq('published', true);
+    if (productId) {
+      query = query.or(`product_id.eq.${productId},product_id.is.null`);
     }
+    const { data, error } = await query.order('id');
+    if (error) {
+      throw new Error(`Failed to query published templates: ${error.message}`);
+    }
+    if (!data) return [];
+    const rows = (data as DatabaseTemplateRow[]).map(mapTemplateRow);
+    if (!productId) return rows;
+    return rows.filter((tpl) => !tpl.productId || tpl.productId === productId);
+  }
+
+  async browseAvailableTemplates(
+    options: BrowseAvailableTemplatesOptions = {},
+  ): Promise<TemplatePage> {
+    if (this.templateRepo) {
+      return this.templateRepo.browseAvailableTemplates(options);
+    }
+    return { items: [], nextCursor: null };
+  }
+
+  async resolveTemplateVersionById(
+    versionId: string,
+    access?: { role?: string; userId?: string | null; projectId?: string | null },
+  ): Promise<TemplateVersionPayload> {
+    if (this.templateRepo) {
+      return this.templateRepo.resolveTemplateVersionById(versionId, access);
+    }
+    throw new Error('Template repository is unconfigured');
   }
 
   async listFonts(): Promise<PublishedFont[]> {

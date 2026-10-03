@@ -353,11 +353,6 @@ export async function getPublishedTemplates(
   productId?: ProductId,
   repository?: CatalogRepository
 ): Promise<PublishedTemplate[]> {
-  try {
-    const repo = repository ?? new CatalogRepository();
-    return await repo.listTemplates(productId);
-  } catch {
-    const repo = new CatalogRepository(null);
-    return repo.listTemplates(productId);
-  }
+  const repo = repository ?? new CatalogRepository();
+  return repo.listTemplates(productId);
 }

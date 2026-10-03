@@ -3,33 +3,58 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import type { DesignState, FixedStickerShape, ProductId } from '../product-state.ts';
 import type { LibraryRef } from '../domain/asset-library.ts';
 import { createTemplateTarget } from '../template-target.ts';
-import type {
-  AdminTemplateListQuery,
-  AttachTemplateAssetInput,
-  DeleteDraftTemplateInput,
-  DuplicateTemplateInput,
-  CreateTemplateRepoInput,
-  DependencyMetadataItem,
-  EligibleSourceProject,
-  PublishTemplateInput,
-  SourceProjectDetail,
-  TemplateAssetRecord,
-  TemplateAvailability,
-  TemplateDraftRecord,
-  TemplateErrorCode,
-  TemplateCategoryRecord,
-  TemplateMetadataPatch,
-  TemplateMutation,
-  TemplateRecord,
-  TemplateRepoResult,
-  TemplateStatus,
-  TemplateTarget,
-  TemplateValidationReceipt,
-  TemplateVersionPayload,
-  TemplateVersionSummary,
+import {
+  TemplateServiceError,
+  type AdminTemplateListQuery,
+  type AttachTemplateAssetInput,
+  type BrowseAvailableTemplatesOptions,
+  type DeleteDraftTemplateInput,
+  type DuplicateTemplateInput,
+  type CreateTemplateRepoInput,
+  type DependencyMetadataItem,
+  type EligibleSourceProject,
+  type PublishTemplateInput,
+  type SourceProjectDetail,
+  type TemplateAssetRecord,
+  type TemplateAvailability,
+  type TemplateCard,
+  type TemplateDraftRecord,
+  type TemplateErrorCode,
+  type TemplateCategoryRecord,
+  type TemplateMetadataPatch,
+  type TemplateMutation,
+  type TemplatePage,
+  type TemplateRecord,
+  type TemplateRepoResult,
+  type TemplateStatus,
+  type TemplateTarget,
+  type TemplateValidationReceipt,
+  type TemplateVersionPayload,
+  type TemplateVersionSummary,
 } from '../domain/template.ts';
 
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+function encodeTemplateCursor(item?: { sortOrder?: number | string; sort_order?: number | string; id: string }): string | null {
+  if (!item) return null;
+  const sort = item.sortOrder ?? item.sort_order ?? 0;
+  const payload = JSON.stringify([Number(sort), String(item.id)]);
+  return Buffer.from(payload, 'utf8').toString('base64url');
+}
+
+function decodeTemplateCursor(cursor?: string | null): { sortOrder: number; id: string } | null {
+  if (!cursor) return null;
+  try {
+    const raw = Buffer.from(cursor, 'base64url').toString('utf8');
+    const parsed = JSON.parse(raw);
+    if (Array.isArray(parsed) && parsed.length === 2 && typeof parsed[0] === 'number' && typeof parsed[1] === 'string') {
+      return { sortOrder: parsed[0], id: parsed[1] };
+    }
+  } catch {
+    // Ignore invalid cursor
+  }
+  return null;
+}
 
 export interface DatabaseTemplateRow {
   id: string;
@@ -1449,5 +1474,258 @@ export class TemplateRepository {
     }
 
     return data as TemplateAvailability;
+  }
+
+  async browseAvailableTemplates(
+    options: BrowseAvailableTemplatesOptions = {},
+  ): Promise<TemplatePage> {
+    const limit = Math.max(1, Math.min(60, options.limit ?? 24));
+    const decodedCursor = decodeTemplateCursor(options.cursor);
+
+    // 1. Try PostgreSQL RPC browse_available_templates if available
+    if (typeof this.client.rpc === 'function') {
+      try {
+        const { data, error } = await this.client.rpc('browse_available_templates', {
+          p_product_id: options.target?.productId ?? null,
+          p_variant_id: options.target?.variantId ?? null,
+          p_mode: options.target?.mode ?? null,
+          p_shape: options.target?.shape ?? null,
+          p_category_id: (options.categoryId && options.categoryId !== 'all') ? options.categoryId : null,
+          p_query: options.query?.trim() ? options.query.trim() : null,
+          p_cursor_sort_order: decodedCursor?.sortOrder ?? null,
+          p_cursor_id: decodedCursor?.id ?? null,
+          p_limit: limit + 1,
+        });
+
+        if (!error && Array.isArray(data)) {
+          const hasNext = data.length > limit;
+          const pageRows = hasNext ? data.slice(0, limit) : data;
+          const nextCursor = hasNext ? encodeTemplateCursor(pageRows[pageRows.length - 1]) : null;
+
+          const items: TemplateCard[] = pageRows.map((row: DatabaseTemplateRow & { thumbnail_path?: string | null }) => {
+            const productId = (row.product_id ?? 'wrapping') as ProductId;
+            const variantId = row.variant_id ?? 'default';
+            const mode = (row.product_mode ?? null) as 'pattern' | 'full-sheet' | null;
+            const shape = (row.fixed_sticker_shape ?? null) as FixedStickerShape | null;
+            let target: TemplateTarget;
+            try {
+              target = createTemplateTarget({ productId, variantId, mode, shape });
+            } catch {
+              target = {
+                productId,
+                variantId,
+                mode,
+                shape,
+                geometryKey: `${productId}:${variantId}`,
+                surfaces: [],
+              };
+            }
+
+            return {
+              id: String(row.id),
+              slug: row.slug ? String(row.slug) : String(row.id),
+              name: String(row.name),
+              target,
+              categoryId: row.category_id ? String(row.category_id) : '',
+              tags: Array.isArray(row.tags) ? row.tags : [],
+              currentVersionId: row.current_published_version_id ? String(row.current_published_version_id) : null,
+              thumbnailUrl: row.thumbnail_path ? String(row.thumbnail_path) : null,
+              status: 'published',
+              updatedAt: row.updated_at ? String(row.updated_at) : undefined,
+            };
+          });
+
+          return { items, nextCursor };
+        }
+      } catch {
+        // Fallback to table query
+      }
+    }
+
+    // 2. Fallback table query (for mock client or offline environments)
+    let query = this.client
+      .from('templates')
+      .select('id, slug, name, product_id, variant_id, product_mode, fixed_sticker_shape, category_id, tags, sort_order, current_published_version_id, thumbnail_path, target_snapshot, status, updated_at')
+      .eq('status', 'published')
+      .is('archived_at', null)
+      .not('current_published_version_id', 'is', null);
+
+    if (options.target?.productId) {
+      query = query.eq('product_id', options.target.productId);
+    }
+    if (options.target?.variantId) {
+      query = query.eq('variant_id', options.target.variantId);
+    }
+    if (options.target?.mode !== undefined) {
+      if (options.target.mode === null) {
+        query = query.is('product_mode', null);
+      } else {
+        query = query.eq('product_mode', options.target.mode);
+      }
+    }
+    if (options.target?.shape !== undefined) {
+      if (options.target.shape === null) {
+        query = query.is('fixed_sticker_shape', null);
+      } else {
+        query = query.eq('fixed_sticker_shape', options.target.shape);
+      }
+    }
+    if (options.categoryId && options.categoryId !== 'all') {
+      query = query.eq('category_id', options.categoryId);
+    }
+    if (options.query && options.query.trim()) {
+      const q = options.query.trim();
+      query = query.or(`name.ilike.%${q}%,id.ilike.%${q}%,slug.ilike.%${q}%`);
+    }
+
+    query = query.order('sort_order', { ascending: true }).order('id', { ascending: true });
+
+    const { data, error } = await query;
+    if (error) throw new Error(error.message);
+
+    const rawRows = (data ?? []) as Array<DatabaseTemplateRow & { thumbnail_path?: string | null }>;
+    const availableItems: TemplateCard[] = [];
+
+    for (const row of rawRows) {
+      const rowSort = Number(row.sort_order ?? 0);
+      const rowId = String(row.id);
+
+      if (decodedCursor) {
+        if (rowSort < decodedCursor.sortOrder || (rowSort === decodedCursor.sortOrder && rowId <= decodedCursor.id)) {
+          continue;
+        }
+      }
+
+      // Check template availability
+      try {
+        const avail = await this.getTemplateAvailability(row.id);
+        if (!avail.available) {
+          continue;
+        }
+      } catch {
+        // If availability check method fails, skip or keep
+      }
+
+      const productId = (row.product_id ?? 'wrapping') as ProductId;
+      const variantId = row.variant_id ?? 'default';
+      const mode = (row.product_mode ?? null) as 'pattern' | 'full-sheet' | null;
+      const shape = (row.fixed_sticker_shape ?? null) as FixedStickerShape | null;
+      let target: TemplateTarget;
+      try {
+        target = createTemplateTarget({ productId, variantId, mode, shape });
+      } catch {
+        target = {
+          productId,
+          variantId,
+          mode,
+          shape,
+          geometryKey: `${productId}:${variantId}`,
+          surfaces: [],
+        };
+      }
+
+      availableItems.push({
+        id: String(row.id),
+        slug: row.slug ? String(row.slug) : String(row.id),
+        name: String(row.name),
+        target,
+        categoryId: row.category_id ? String(row.category_id) : '',
+        tags: Array.isArray(row.tags) ? row.tags : [],
+        currentVersionId: row.current_published_version_id ? String(row.current_published_version_id) : null,
+        thumbnailUrl: row.thumbnail_path ? String(row.thumbnail_path) : null,
+        status: 'published',
+        updatedAt: row.updated_at ? String(row.updated_at) : undefined,
+      });
+
+      if (availableItems.length >= limit + 1) break;
+    }
+
+    const hasNext = availableItems.length > limit;
+    const pageItems = hasNext ? availableItems.slice(0, limit) : availableItems;
+    const nextCursor = hasNext ? encodeTemplateCursor(pageItems[pageItems.length - 1]) : null;
+
+    return { items: pageItems, nextCursor };
+  }
+
+  async resolveTemplateVersionById(
+    versionId: string,
+    access?: { role?: string; userId?: string | null; projectId?: string | null },
+  ): Promise<TemplateVersionPayload> {
+    if (!versionId || !versionId.trim()) {
+      throw new TemplateServiceError('INVALID_INPUT', 'versionId is required', 400);
+    }
+
+    const version = await this.getVersion(versionId);
+    if (!version) {
+      throw new TemplateServiceError('NOT_FOUND', 'Template version not found', 404);
+    }
+
+    const template = await this.getTemplate(version.templateId);
+    if (!template) {
+      throw new TemplateServiceError('NOT_FOUND', 'Template not found', 404);
+    }
+
+    const isCurrentPublished =
+      template.status === 'published' &&
+      template.currentPublishedVersionId === version.versionId;
+
+    if (isCurrentPublished) {
+      let isAvailable = true;
+      try {
+        const availability = await this.getTemplateAvailability(template.id);
+        isAvailable = availability.available;
+      } catch {
+        isAvailable = template.status === 'published' && !template.archivedAt;
+      }
+
+      if (isAvailable) {
+        return version;
+      }
+
+      if (access?.role === 'admin' || access?.role === 'editor') {
+        return version;
+      }
+
+      throw new TemplateServiceError('FORBIDDEN', 'Mẫu này hiện không còn khả dụng.', 403);
+    }
+
+    // Historical version
+    if (access?.role === 'admin' || access?.role === 'editor') {
+      return version;
+    }
+
+    if (access?.userId) {
+      try {
+        const { data: projectRows, error } = await this.client
+          .from('projects')
+          .select('id, user_id, source_template_version_id, working_document')
+          .eq('user_id', access.userId);
+
+        if (!error && Array.isArray(projectRows)) {
+          interface ProvenanceProjectRow {
+            id: string;
+            user_id: string;
+            source_template_version_id?: string | null;
+            working_document?: { sourceTemplate?: { templateVersionId?: string } };
+          }
+          const hasProvenance = (projectRows as unknown as ProvenanceProjectRow[]).some((p) => {
+            if (p.source_template_version_id === versionId) return true;
+            const srcVer = p.working_document?.sourceTemplate?.templateVersionId;
+            return srcVer === versionId;
+          });
+          if (hasProvenance) {
+            return version;
+          }
+        }
+      } catch {
+        // Continue to unauthorized check
+      }
+    }
+
+    if (!access?.userId) {
+      throw new TemplateServiceError('UNAUTHENTICATED', 'Authentication required to access historical template version', 401);
+    }
+
+    throw new TemplateServiceError('FORBIDDEN', 'Access to historical template version denied', 403);
   }
 }

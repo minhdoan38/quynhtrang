@@ -126,3 +126,15 @@ test('getPublishedTemplates returns published templates and supports productId f
   assert.ok(cardTemplates.length > 0);
   assert.ok(cardTemplates.every((t) => !t.productId || t.productId === 'card'));
 });
+
+test('getPublishedTemplates throws error when configured repository fails without falling back to static templates', async () => {
+  const failingRepo = {
+    listTemplates: async () => {
+      throw new Error('db failure');
+    },
+  };
+  await assert.rejects(
+    () => getPublishedTemplates('card', failingRepo as never),
+    /db failure/,
+  );
+});

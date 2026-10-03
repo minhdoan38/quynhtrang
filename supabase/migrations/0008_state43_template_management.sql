@@ -1905,6 +1905,119 @@ begin
 end;
 $$;
 
+-- 21.1 Browse Available Templates (Set-based SQL availability query for customer browsing)
+create or replace function public.browse_available_templates(
+  p_product_id text default null,
+  p_variant_id text default null,
+  p_mode text default null,
+  p_shape text default null,
+  p_category_id text default null,
+  p_query text default null,
+  p_cursor_sort_order integer default null,
+  p_cursor_id text default null,
+  p_limit integer default 24
+)
+returns table (
+  id text,
+  slug text,
+  name text,
+  product_id text,
+  variant_id text,
+  product_mode text,
+  fixed_sticker_shape text,
+  category_id text,
+  tags text[],
+  sort_order integer,
+  current_published_version_id uuid,
+  thumbnail_path text,
+  target_snapshot jsonb,
+  updated_at timestamptz
+)
+language sql
+stable
+security invoker
+set search_path = public, pg_temp
+as $$
+  select
+    t.id,
+    t.slug,
+    t.name,
+    t.product_id,
+    t.variant_id,
+    t.product_mode,
+    t.fixed_sticker_shape,
+    t.category_id,
+    t.tags,
+    t.sort_order,
+    t.current_published_version_id,
+    coalesce(tv.thumbnail_path, t.thumbnail_path) as thumbnail_path,
+    coalesce(tv.target_snapshot, t.target_snapshot) as target_snapshot,
+    t.updated_at
+  from public.templates t
+  join public.template_versions tv on tv.id = t.current_published_version_id
+  where t.status = 'published'
+    and t.archived_at is null
+    and t.current_published_version_id is not null
+    and t.product_id is not null
+    and (p_product_id is null or t.product_id = p_product_id)
+    and (p_variant_id is null or t.variant_id = p_variant_id)
+    and (p_mode is null or t.product_mode = p_mode)
+    and (p_shape is null or t.fixed_sticker_shape = p_shape)
+    and (p_category_id is null or p_category_id = 'all' or t.category_id = p_category_id)
+    and (
+      p_query is null
+      or p_query = ''
+      or t.name ilike '%' || p_query || '%'
+      or t.id ilike '%' || p_query || '%'
+      or (t.slug is not null and t.slug ilike '%' || p_query || '%')
+      or (p_query = any(t.tags))
+    )
+    and not exists (
+      select 1
+      from public.template_version_assets tva
+      left join public.template_assets ta on ta.id = tva.asset_id
+      where tva.version_id = tv.id
+        and (ta.id is null or ta.status = 'cleaned')
+    )
+    and not exists (
+      select 1
+      from public.template_version_dependencies tvd
+      left join public.font_faces ff on ff.id = tvd.asset_id::uuid
+      left join public.fonts f on f.id = ff.family_id
+      where tvd.version_id = tv.id
+        and tvd.kind = 'font-face'
+        and (
+          ff.id is null
+          or ff.status <> 'published'
+          or f.id is null
+          or f.status <> 'published'
+          or (tvd.checksum is not null and ff.checksum is not null and tvd.checksum <> ff.checksum)
+        )
+    )
+    and not exists (
+      select 1
+      from public.template_version_dependencies tvd
+      left join public.sticker_assets sa on sa.id = tvd.asset_id
+      where tvd.version_id = tv.id
+        and tvd.kind = 'sticker'
+        and (
+          sa.id is null
+          or sa.status <> 'published'
+          or (tvd.checksum is not null and sa.checksum is not null and tvd.checksum <> sa.checksum)
+        )
+    )
+    and (
+      p_cursor_sort_order is null or p_cursor_id is null
+      or (t.sort_order > p_cursor_sort_order)
+      or (t.sort_order = p_cursor_sort_order and t.id > p_cursor_id)
+    )
+  order by t.sort_order asc, t.id asc
+  limit least(coalesce(p_limit, 24), 60);
+$$;
+
+revoke all on function public.browse_available_templates(text, text, text, text, text, text, integer, text, integer) from public;
+grant execute on function public.browse_available_templates(text, text, text, text, text, text, integer, text, integer) to authenticated, service_role, anon;
+
 -- 22. Record Template Validation Run (Server-only RPC)
 create or replace function public.template_record_validation_run(
   p_actor_id uuid,

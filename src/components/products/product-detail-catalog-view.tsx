@@ -1,18 +1,15 @@
 'use client';
 
-import { useState, useMemo, useRef } from 'react';
+import { useState, useRef } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import gsap from 'gsap';
 import { useGSAP } from '@gsap/react';
-import { ArrowLeft, Search, Plus, X } from 'lucide-react';
+import { ArrowLeft, Search, Plus, X, Sparkles, AlertCircle } from 'lucide-react';
 import type { CatalogProduct } from '@/lib/product-catalog';
-import {
-  type TemplateConfig,
-  getCompatibleTemplates,
-  type ProductId,
-} from '@/lib/product-state';
-import { DesignCanvas } from '@/components/customizer/design-canvas';
+import type { ProductId } from '@/lib/product-state';
+import type { TemplateCard } from '@/lib/domain/template';
+import { useTemplateCatalog } from '@/lib/use-template-catalog';
 import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
@@ -42,22 +39,23 @@ const VARIANT_FILTER_LABELS: Record<string, string> = {
   a1: 'A1',
   a2: 'A2',
   horizontal: 'Ngang',
-  vertical: 'Dọc',
-  'die-cut': 'Die-cut',
-  'fixed-shape': 'Shape',
-  phone: 'Điện thoại',
+  vertical: 'Đứng',
+  'die-cut': 'Cắt rời',
+  phone: 'Ốp lưng',
+  'fixed-shape': 'Hình dạng có sẵn',
   standard: 'Tiêu chuẩn',
 };
 
 const MOOD_CATEGORIES: Array<{ id: string; label: string }> = [
   { id: 'all', label: 'Tất cả' },
   { id: 'birthday', label: 'Sinh nhật' },
+  { id: 'cute', label: 'Dễ thương' },
+  { id: 'floral', label: 'Hoa lá' },
+  { id: 'minimal', label: 'Tối giản' },
   { id: 'love', label: 'Tình yêu' },
-  { id: 'friends', label: 'Bạn bè' },
-  { id: 'grad', label: 'Tốt nghiệp' },
   { id: 'thanks', label: 'Cảm ơn' },
-  { id: 'cute', label: 'Cute' },
-  { id: 'minimal', label: 'Minimal' },
+  { id: 'vintage', label: 'Cổ điển' },
+  { id: 'modern', label: 'Hiện đại' },
 ];
 
 function getTemplateAspectRatio(productId: ProductId, variantId: string): number {
@@ -67,10 +65,10 @@ function getTemplateAspectRatio(productId: ProductId, variantId: string): number
   if (productId === 'notebook') {
     return 3 / 4;
   }
-  if (productId === 'sticker') {
-    return 1;
+  if (productId === 'wrapping') {
+    return 4 / 5;
   }
-  return 4 / 5;
+  return 1;
 }
 
 export function ProductDetailCatalogView({ product }: ProductDetailCatalogViewProps) {
@@ -84,20 +82,20 @@ export function ProductDetailCatalogView({ product }: ProductDetailCatalogViewPr
   const [searchQuery, setSearchQuery] = useState('');
 
   // 2. Responsive preview drawer/dialog state
-  const [previewItem, setPreviewItem] = useState<{
-    id: string;
-    template: TemplateConfig;
-  } | null>(null);
+  const [previewItem, setPreviewItem] = useState<TemplateCard | null>(null);
 
-  // 3. Compatible templates query
-  const templates = useMemo(() => {
-    return getCompatibleTemplates({
-      productId: product.id,
-      variantId: selectedVariantId,
-      category: selectedCategory,
-      searchQuery,
-    });
-  }, [product.id, selectedVariantId, selectedCategory, searchQuery]);
+  // 3. Database catalog hook
+  const {
+    items: templates,
+    isLoading,
+    error,
+    reload,
+  } = useTemplateCatalog({
+    productId: product.id,
+    variantId: selectedVariantId !== 'all' ? selectedVariantId : undefined,
+    categoryId: selectedCategory === 'all' ? undefined : selectedCategory,
+    query: searchQuery,
+  });
 
   useGSAP(
     () => {
@@ -111,10 +109,10 @@ export function ProductDetailCatalogView({ product }: ProductDetailCatalogViewPr
           duration: reduceMotion ? 0 : 0.4,
           stagger: reduceMotion ? 0 : 0.03,
           ease: 'power2.out',
-        }
+        },
       );
     },
-    { dependencies: [selectedVariantId, selectedCategory, searchQuery], scope: gridRef }
+    { dependencies: [templates, selectedVariantId, selectedCategory, searchQuery], scope: gridRef },
   );
 
   const startWithBlank = () => {
@@ -127,7 +125,7 @@ export function ProductDetailCatalogView({ product }: ProductDetailCatalogViewPr
     const targetVariant =
       selectedVariantId !== 'all' ? selectedVariantId : product.variants[0].id;
     router.push(
-      `/?product=${product.id}&variant=${targetVariant}&template=${templateId}&view=editor`
+      `/?product=${product.id}&variant=${targetVariant}&template=${templateId}&view=editor`,
     );
   };
 
@@ -161,7 +159,7 @@ export function ProductDetailCatalogView({ product }: ProductDetailCatalogViewPr
       </section>
 
       <main className="mx-auto max-w-4xl px-4 pt-4 sm:pt-6 space-y-4">
-        {/* 2. Variant Filter: using shadcn ToggleGroup (hidden for notebook where only 1 variant exists) */}
+        {/* 2. Variant Filter: using shadcn ToggleGroup */}
         {product.variants.length > 1 && (
           <div className="space-y-1.5">
             <div className="overflow-x-auto pb-1 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
@@ -186,7 +184,7 @@ export function ProductDetailCatalogView({ product }: ProductDetailCatalogViewPr
           </div>
         )}
 
-        {/* 3. Search Bar: shadcn Input + Lucide Search, height ~48px */}
+        {/* 3. Search Bar */}
         <div className="relative">
           <Search
             size={18}
@@ -205,15 +203,15 @@ export function ProductDetailCatalogView({ product }: ProductDetailCatalogViewPr
             <button
               type="button"
               onClick={() => setSearchQuery('')}
-              aria-label="Xóa từ khóa tìm kiếm"
-              className="absolute right-3 top-1/2 -translate-y-1/2 p-1 text-[#71706F] hover:text-[#343338]"
+              aria-label="Xóa tìm kiếm"
+              className="absolute right-3.5 top-1/2 -translate-y-1/2 text-[#71706F] hover:text-[#343338]"
             >
-              <X size={15} />
+              <X size={16} />
             </button>
           )}
         </div>
 
-        {/* 4. Mood / Category Filters: compact horizontal scroll */}
+        {/* 4. Mood/Category Filter */}
         <div className="overflow-x-auto pb-1 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
           <div className="inline-flex items-center gap-1.5">
             {MOOD_CATEGORIES.map((cat) => {
@@ -225,8 +223,8 @@ export function ProductDetailCatalogView({ product }: ProductDetailCatalogViewPr
                   onClick={() => setSelectedCategory(cat.id)}
                   aria-pressed={isSelected}
                   className={`inline-flex h-8 shrink-0 items-center justify-center rounded-full px-3 text-xs font-medium transition-all select-none ${isSelected
-                    ? 'border border-[#315F86] bg-[#DCEBF4] font-semibold text-[#315F86] shadow-2xs'
-                    : 'border border-[#DED7CD] bg-white text-[#343338] hover:bg-[#F8F1E5]'
+                      ? 'border border-[#315F86] bg-[#DCEBF4] font-semibold text-[#315F86] shadow-2xs'
+                      : 'border border-[#DED7CD] bg-white text-[#343338] hover:bg-[#F8F1E5]'
                     }`}
                 >
                   {cat.label}
@@ -236,7 +234,27 @@ export function ProductDetailCatalogView({ product }: ProductDetailCatalogViewPr
           </div>
         </div>
 
-        {/* 5. Template Grid: 2 columns on mobile, 3-4 on desktop */}
+        {/* Error Alert (distinct from empty) */}
+        {error && (
+          <div className="rounded-2xl border border-red-200 bg-red-50/70 p-6 text-center my-4">
+            <AlertCircle size={28} className="mx-auto text-red-500 mb-2" />
+            <p className="text-sm font-semibold text-red-800">
+              Không thể tải danh sách mẫu thiết kế
+            </p>
+            <p className="text-xs text-red-600 mt-1 max-w-sm mx-auto">{error.message}</p>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={reload}
+              className="mt-3 h-8 border-red-300 text-xs font-semibold text-red-700 hover:bg-red-50"
+            >
+              Thử lại
+            </Button>
+          </div>
+        )}
+
+        {/* 5. Template Grid */}
         <div
           ref={gridRef}
           className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 pt-1"
@@ -263,60 +281,73 @@ export function ProductDetailCatalogView({ product }: ProductDetailCatalogViewPr
             </button>
           </div>
 
-          {/* Actual Template Cards */}
-          {templates.map(({ id, template }) => {
-            const previewOptions = {
-              ...(template.productOptions[product.id] || {}),
-            };
+          {/* Skeletons when loading */}
+          {isLoading &&
+            [1, 2, 3].map((i) => (
+              <div key={i} className="template-card-cell">
+                <div className="flex h-full flex-col overflow-hidden rounded-[14px] border border-[#EBE5DC] bg-white p-2 animate-pulse">
+                  <AspectRatio ratio={ratio}>
+                    <div className="h-full w-full rounded-lg bg-[#F8F1E5]" />
+                  </AspectRatio>
+                  <div className="h-4 w-3/4 bg-[#F8F1E5] rounded mt-2 mx-1" />
+                </div>
+              </div>
+            ))}
 
-            return (
-              <div key={id} className="template-card-cell">
+          {/* Actual Template Cards */}
+          {!isLoading &&
+            templates.map((tpl) => (
+              <div key={tpl.id} className="template-card-cell">
                 <Card
-                  onClick={() => setPreviewItem({ id, template })}
+                  onClick={() => setPreviewItem(tpl)}
                   className="group flex h-full cursor-pointer flex-col overflow-hidden rounded-[14px] border border-[#EBE5DC] bg-white p-2 shadow-[0_1px_4px_rgba(52,51,56,0.04)] transition-all duration-200 hover:border-[#DED7CD] hover:shadow-[0_6px_16px_rgba(52,51,56,0.08)] active:scale-[0.985] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#315F86]/30"
                   tabIndex={0}
                   role="button"
-                  aria-label={`Xem trước mẫu ${template.name}`}
+                  aria-label={`Xem trước mẫu ${tpl.name}`}
                   onKeyDown={(e) => {
                     if (e.key === 'Enter' || e.key === ' ') {
                       e.preventDefault();
-                      setPreviewItem({ id, template });
+                      setPreviewItem(tpl);
                     }
                   }}
                 >
                   {/* Artwork Container with AspectRatio */}
                   <AspectRatio ratio={ratio}>
-                    <div className="flex h-full w-full items-center justify-center overflow-hidden rounded-lg bg-[#F8F1E5] p-2">
-                      <div className="scale-80 transform transition-transform duration-200 group-hover:scale-85 pointer-events-none drop-shadow-xs">
-                        <DesignCanvas
-                          productId={product.id}
-                          text={template.text}
-                          color={template.color}
-                          backgroundColor={template.backgroundColor}
-                          image={null}
-                          productOptions={previewOptions}
+                    <div className="flex h-full w-full items-center justify-center overflow-hidden rounded-lg bg-[#F8F1E5] p-1">
+                      {tpl.thumbnailUrl ? (
+                        <img
+                          src={tpl.thumbnailUrl}
+                          alt={tpl.name}
+                          className="h-full w-full object-cover transition-transform duration-200 group-hover:scale-102"
+                          loading="lazy"
                         />
-                      </div>
+                      ) : (
+                        <div className="flex flex-col items-center justify-center p-2 text-center">
+                          <Sparkles size={20} className="text-[#315F86] opacity-60 mb-1" />
+                          <span className="text-[11px] font-medium text-[#71706F] line-clamp-2">
+                            {tpl.name}
+                          </span>
+                        </div>
+                      )}
                     </div>
                   </AspectRatio>
 
                   {/* Template Meta */}
                   <div className="p-2 pt-2.5">
                     <h2 className="text-xs sm:text-sm font-semibold text-[#343338] truncate group-hover:text-[#315F86] transition-colors">
-                      {template.name}
+                      {tpl.name}
                     </h2>
                     <span className="text-xs text-[#71706F] capitalize">
-                      {template.category}
+                      {tpl.categoryId || 'Mẫu thiết kế'}
                     </span>
                   </div>
                 </Card>
               </div>
-            );
-          })}
+            ))}
         </div>
 
         {/* 6. Empty State */}
-        {templates.length === 0 && (
+        {!isLoading && !error && templates.length === 0 && (
           <div className="rounded-2xl border border-dashed border-[#DED7CD] bg-[#F8F1E5]/60 p-8 sm:p-12 text-center my-6">
             <h2 className="font-serif text-base sm:text-lg font-bold text-[#343338]">
               Không tìm thấy mẫu phù hợp
@@ -355,3 +386,5 @@ export function ProductDetailCatalogView({ product }: ProductDetailCatalogViewPr
     </div>
   );
 }
+
+// ponytail: basic catalog detail layout with lazy cards → skipped: virtualization windowing, add when > 200 templates on a single product.

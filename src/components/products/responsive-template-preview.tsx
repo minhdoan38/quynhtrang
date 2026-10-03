@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import { Check, X } from 'lucide-react';
 import type { CatalogProduct } from '@/lib/product-catalog';
-import type { TemplateConfig } from '@/lib/product-state';
+import type { TemplateCard, TemplateVersionPayload } from '@/lib/domain/template';
 import { DesignCanvas } from '@/components/customizer/design-canvas';
 import { Button } from '@/components/ui/button';
 import {
@@ -26,7 +26,7 @@ import { AspectRatio } from '@/components/ui/aspect-ratio';
 interface ResponsiveTemplatePreviewProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  templateItem: { id: string; template: TemplateConfig } | null;
+  templateItem: TemplateCard | null;
   product: CatalogProduct;
   selectedVariantId: string;
   onApply: (templateId: string) => void;
@@ -56,14 +56,48 @@ export function ResponsiveTemplatePreview({
 }: ResponsiveTemplatePreviewProps) {
   const isDesktop = useIsDesktop();
   const [previewTab, setPreviewTab] = useState<string>('default');
+  const [versionPayload, setVersionPayload] = useState<TemplateVersionPayload | null>(null);
+  const [isLoadingVersion, setIsLoadingVersion] = useState<boolean>(false);
 
   // Reset preview tab when item changes
   useEffect(() => {
     setPreviewTab('default');
   }, [templateItem?.id]);
 
+  // Lazy-load version on preview open
+  useEffect(() => {
+    if (!open || !templateItem?.currentVersionId) {
+      setVersionPayload(null);
+      return;
+    }
+
+    let isMounted = true;
+    setIsLoadingVersion(true);
+
+    fetch(`/api/templates/versions/${templateItem.currentVersionId}`)
+      .then(async (res) => {
+        if (!res.ok) throw new Error('Không thể tải phiên bản');
+        return res.json() as Promise<TemplateVersionPayload>;
+      })
+      .then((data) => {
+        if (isMounted) {
+          setVersionPayload(data);
+          setIsLoadingVersion(false);
+        }
+      })
+      .catch(() => {
+        if (isMounted) {
+          setIsLoadingVersion(false);
+        }
+      });
+
+    return () => {
+      isMounted = false;
+    };
+  }, [open, templateItem?.currentVersionId]);
+
   if (!templateItem) return null;
-  const { id, template } = templateItem;
+  const { id } = templateItem;
 
   const currentVariant =
     selectedVariantId !== 'all'
@@ -80,9 +114,8 @@ export function ResponsiveTemplatePreview({
     ratio = 4 / 5;
   }
 
-  // Derive preview options based on product tab
   const baseOptions = {
-    ...(template.productOptions[product.id] || {}),
+    ...((versionPayload?.document?.productOptions as Record<string, unknown>) || {}),
   };
 
   const previewOptions: Record<string, unknown> = {
@@ -99,8 +132,8 @@ export function ResponsiveTemplatePreview({
             type="button"
             onClick={() => setPreviewTab('default')}
             className={`rounded-full px-3 py-1 font-medium transition-all ${previewTab === 'default'
-              ? 'bg-[#315F86] text-white shadow-2xs'
-              : 'text-[#71706F] hover:text-[#343338]'
+                ? 'bg-[#315F86] text-white shadow-2xs'
+                : 'text-[#71706F] hover:text-[#343338]'
               }`}
           >
             Mặt trước
@@ -109,8 +142,8 @@ export function ResponsiveTemplatePreview({
             type="button"
             onClick={() => setPreviewTab('inside')}
             className={`rounded-full px-3 py-1 font-medium transition-all ${previewTab === 'inside'
-              ? 'bg-[#315F86] text-white shadow-2xs'
-              : 'text-[#71706F] hover:text-[#343338]'
+                ? 'bg-[#315F86] text-white shadow-2xs'
+                : 'text-[#71706F] hover:text-[#343338]'
               }`}
           >
             Bên trong
@@ -119,8 +152,8 @@ export function ResponsiveTemplatePreview({
             type="button"
             onClick={() => setPreviewTab('back')}
             className={`rounded-full px-3 py-1 font-medium transition-all ${previewTab === 'back'
-              ? 'bg-[#315F86] text-white shadow-2xs'
-              : 'text-[#71706F] hover:text-[#343338]'
+                ? 'bg-[#315F86] text-white shadow-2xs'
+                : 'text-[#71706F] hover:text-[#343338]'
               }`}
           >
             Mặt sau
@@ -136,8 +169,8 @@ export function ResponsiveTemplatePreview({
             type="button"
             onClick={() => setPreviewTab('default')}
             className={`rounded-full px-3 py-1 font-medium transition-all ${previewTab === 'default'
-              ? 'bg-[#315F86] text-white shadow-2xs'
-              : 'text-[#71706F] hover:text-[#343338]'
+                ? 'bg-[#315F86] text-white shadow-2xs'
+                : 'text-[#71706F] hover:text-[#343338]'
               }`}
           >
             Thiết kế
@@ -146,8 +179,8 @@ export function ResponsiveTemplatePreview({
             type="button"
             onClick={() => setPreviewTab('cutout')}
             className={`rounded-full px-3 py-1 font-medium transition-all ${previewTab === 'cutout'
-              ? 'bg-[#315F86] text-white shadow-2xs'
-              : 'text-[#71706F] hover:text-[#343338]'
+                ? 'bg-[#315F86] text-white shadow-2xs'
+                : 'text-[#71706F] hover:text-[#343338]'
               }`}
           >
             Sau khi cắt
@@ -163,8 +196,8 @@ export function ResponsiveTemplatePreview({
             type="button"
             onClick={() => setPreviewTab('default')}
             className={`rounded-full px-3 py-1 font-medium transition-all ${previewTab === 'default'
-              ? 'bg-[#315F86] text-white shadow-2xs'
-              : 'text-[#71706F] hover:text-[#343338]'
+                ? 'bg-[#315F86] text-white shadow-2xs'
+                : 'text-[#71706F] hover:text-[#343338]'
               }`}
           >
             Thiết kế
@@ -173,8 +206,8 @@ export function ResponsiveTemplatePreview({
             type="button"
             onClick={() => setPreviewTab('box')}
             className={`rounded-full px-3 py-1 font-medium transition-all ${previewTab === 'box'
-              ? 'bg-[#315F86] text-white shadow-2xs'
-              : 'text-[#71706F] hover:text-[#343338]'
+                ? 'bg-[#315F86] text-white shadow-2xs'
+                : 'text-[#71706F] hover:text-[#343338]'
               }`}
           >
             Trên hộp
@@ -189,8 +222,8 @@ export function ResponsiveTemplatePreview({
           type="button"
           onClick={() => setPreviewTab('default')}
           className={`rounded-full px-3 py-1 font-medium transition-all ${previewTab === 'default'
-            ? 'bg-[#315F86] text-white shadow-2xs'
-            : 'text-[#71706F] hover:text-[#343338]'
+              ? 'bg-[#315F86] text-white shadow-2xs'
+              : 'text-[#71706F] hover:text-[#343338]'
             }`}
         >
           Bìa
@@ -199,8 +232,8 @@ export function ResponsiveTemplatePreview({
           type="button"
           onClick={() => setPreviewTab('mockup')}
           className={`rounded-full px-3 py-1 font-medium transition-all ${previewTab === 'mockup'
-            ? 'bg-[#315F86] text-white shadow-2xs'
-            : 'text-[#71706F] hover:text-[#343338]'
+              ? 'bg-[#315F86] text-white shadow-2xs'
+              : 'text-[#71706F] hover:text-[#343338]'
             }`}
         >
           Mockup
@@ -216,15 +249,28 @@ export function ResponsiveTemplatePreview({
         <div className="w-full max-w-[280px] sm:max-w-[320px]">
           <AspectRatio ratio={ratio}>
             <div className="flex h-full w-full items-center justify-center drop-shadow-md">
-              <DesignCanvas
-                productId={product.id}
-                text={template.text}
-                color={template.color}
-                backgroundColor={template.backgroundColor}
-                image={null}
-                productOptions={previewOptions}
-                isMockup={previewTab !== 'default'}
-              />
+              {isLoadingVersion ? (
+                <div className="flex flex-col items-center justify-center gap-2">
+                  <div className="h-8 w-8 animate-spin rounded-full border-2 border-[#315F86] border-t-transparent" />
+                  <span className="text-xs text-[#71706F]">Đang nạp bố cục...</span>
+                </div>
+              ) : templateItem.thumbnailUrl && !versionPayload ? (
+                <img
+                  src={templateItem.thumbnailUrl}
+                  alt={templateItem.name}
+                  className="max-h-full max-w-full object-contain"
+                />
+              ) : (
+                <DesignCanvas
+                  productId={product.id}
+                  text={versionPayload?.document?.text ?? templateItem.name}
+                  color={versionPayload?.document?.color ?? '#2E3338'}
+                  backgroundColor={versionPayload?.document?.backgroundColor ?? '#FFFFFF'}
+                  image={versionPayload?.document?.image ?? null}
+                  productOptions={previewOptions}
+                  isMockup={previewTab !== 'default'}
+                />
+              )}
             </div>
           </AspectRatio>
         </div>
@@ -238,7 +284,7 @@ export function ResponsiveTemplatePreview({
         <div className="flex items-start justify-between gap-2">
           <div>
             <h3 className="font-serif text-base sm:text-lg font-bold text-[#343338]">
-              {template.name}
+              {templateItem.name}
             </h3>
             <p className="text-xs text-[#71706F] mt-0.5">
               {product.cardTitle} · {currentVariant.name}
@@ -330,3 +376,5 @@ export function ResponsiveTemplatePreview({
     </Drawer>
   );
 }
+
+// ponytail: responsive preview modal without full screen zoom → skipped: pinch-zoom in mobile drawer, add when customer mobile detail view demands zoom.

@@ -1,6 +1,7 @@
+'use client';
+
 import { Sparkles } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { TEMPLATES } from '@/lib/product-state';
 
 interface TemplateChooserProps {
   templateId: string | null;
@@ -13,7 +14,7 @@ export function TemplateChooser({
   onSelectTemplate,
   onOpenTemplateBrowser,
 }: TemplateChooserProps) {
-  const currentTemplate = templateId ? TEMPLATES[templateId] : null;
+  const isBlankSelected = !templateId || templateId === 'blank';
 
   return (
     <div className="space-y-2">
@@ -34,39 +35,33 @@ export function TemplateChooser({
       </div>
 
       <div className="flex flex-wrap items-center gap-2">
-        {/* Quick picks */}
-        {['blank', 'minimal', 'celebrate'].map((key) => {
-          const tpl = TEMPLATES[key];
-          if (!tpl) return null;
-          const isSelected = templateId === key;
-          return (
-            <Button
-              key={key}
-              type="button"
-              variant={isSelected ? 'default' : 'outline'}
-              size="sm"
-              data-action="select-template"
-              data-value={key}
-              onClick={() => onSelectTemplate(key)}
-              className="text-xs font-medium"
-            >
-              {tpl.name}
-            </Button>
-          );
-        })}
+        {/* Blank template option - always retained outside catalog */}
+        <Button
+          type="button"
+          variant={isBlankSelected ? 'default' : 'outline'}
+          size="sm"
+          data-action="select-template"
+          data-value="blank"
+          onClick={() => onSelectTemplate('blank')}
+          className="text-xs font-medium"
+        >
+          Mẫu trống
+        </Button>
 
-        {/* If another template is currently selected from the browser, show active pill */}
-        {templateId && !['blank', 'minimal', 'celebrate'].includes(templateId) && currentTemplate && (
+        {/* If a dynamic template is currently selected from the browser */}
+        {templateId && templateId !== 'blank' && (
           <Button
             type="button"
             variant="default"
             size="sm"
             className="text-xs font-medium bg-[#315F86]"
           >
-            {currentTemplate.name}
+            {templateId}
           </Button>
         )}
       </div>
     </div>
   );
 }
+
+// ponytail: basic template chooser pill row → skipped: dynamic quick picks row, add when customer quick pick curation is needed.

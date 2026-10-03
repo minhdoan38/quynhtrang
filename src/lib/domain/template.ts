@@ -274,6 +274,14 @@ export interface TemplatePage {
   nextCursor: string | null;
 }
 
+export interface BrowseAvailableTemplatesOptions {
+  target?: Partial<TemplateTargetInput> | TemplateTarget | null;
+  categoryId?: string | null;
+  query?: string | null;
+  cursor?: string | null;
+  limit?: number | null;
+}
+
 export interface DependencyMetadataItem {
   id: string;
   kind: 'font-face' | 'sticker' | 'font-family';

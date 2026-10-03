@@ -1,4 +1,19 @@
 import type { ProductId } from '../product-state.ts';
+import type {
+  TemplateCard,
+  TemplatePage,
+  BrowseAvailableTemplatesOptions,
+  TemplateTarget,
+  TemplateVersionPayload,
+} from './template.ts';
+
+export type {
+  TemplateCard,
+  TemplatePage,
+  BrowseAvailableTemplatesOptions,
+  TemplateTarget,
+  TemplateVersionPayload,
+};
 
 export interface PublishedVariant {
   id: string;

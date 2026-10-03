@@ -85,6 +85,16 @@ test('catalog repository falls back to static catalog when unconfigured or query
   assert.ok((await failing.listProducts()).some((product: { id: string }) => product.id === 'card'));
 });
 
+test('configured database failure in listTemplates throws error and does not fall back to static templates', async () => {
+  const failing = new CatalogRepository(new CatalogClient({
+    templates: { data: null, error: new Error('connection refused') },
+  }) as never);
+  await assert.rejects(
+    () => failing.listTemplates('card'),
+    /Failed to query published templates: connection refused/,
+  );
+});
+
 test('catalog repository preserves successful empty queries and returns empty sticker fallback', async () => {
   const emptyRepo = new CatalogRepository(new CatalogClient({
     products: { data: [], error: null },
