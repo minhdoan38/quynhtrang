@@ -7,8 +7,14 @@ import type { TemplateCard } from './domain/template.ts';
 export interface UseTemplateCatalogOptions {
   productId?: ProductId;
   variantId?: string;
-  mode?: 'pattern' | 'full-sheet' | null;
-  shape?: FixedStickerShape | null;
+  mode?: 'pattern' | 'full-sheet' | 'none' | null;
+  shape?: FixedStickerShape | 'none' | null;
+  target?: {
+    productId?: ProductId;
+    variantId?: string;
+    mode?: 'pattern' | 'full-sheet' | 'none' | null;
+    shape?: FixedStickerShape | 'none' | null;
+  } | null;
   categoryId?: string;
   query?: string;
   limit?: number;
@@ -32,6 +38,7 @@ export function useTemplateCatalog({
   variantId,
   mode,
   shape,
+  target,
   categoryId,
   query,
   limit = 24,
@@ -48,20 +55,33 @@ export function useTemplateCatalog({
   const reloadCountRef = useRef<number>(0);
   const [, setReloadCounter] = useState<number>(0);
 
+  const resolvedProductId = target?.productId ?? productId;
+  const resolvedVariantId = target?.variantId ?? variantId;
+  let resolvedMode = target?.mode !== undefined ? target.mode : mode;
+  let resolvedShape = target?.shape !== undefined ? target.shape : shape;
+
+  if (resolvedProductId === 'sticker' && resolvedVariantId === 'die-cut' && resolvedShape === undefined) {
+    resolvedShape = null;
+  }
+
   const buildUrl = useCallback(
     (cursor?: string | null): string => {
       const params = new URLSearchParams();
-      if (productId) params.set('productId', productId);
-      if (variantId && variantId !== 'all') params.set('variantId', variantId);
-      if (mode) params.set('mode', mode);
-      if (shape) params.set('shape', shape);
+      if (resolvedProductId) params.set('productId', resolvedProductId);
+      if (resolvedVariantId && resolvedVariantId !== 'all') params.set('variantId', resolvedVariantId);
+      if (resolvedMode !== undefined) {
+        params.set('mode', resolvedMode === null || resolvedMode === 'none' ? 'none' : resolvedMode);
+      }
+      if (resolvedShape !== undefined) {
+        params.set('shape', resolvedShape === null || resolvedShape === 'none' ? 'none' : resolvedShape);
+      }
       if (categoryId && categoryId !== 'all') params.set('categoryId', categoryId);
       if (query && query.trim()) params.set('query', query.trim());
       if (limit) params.set('limit', String(limit));
       if (cursor) params.set('cursor', cursor);
       return `/api/templates?${params.toString()}`;
     },
-    [productId, variantId, mode, shape, categoryId, query, limit],
+    [resolvedProductId, resolvedVariantId, resolvedMode, resolvedShape, categoryId, query, limit],
   );
 
   useEffect(() => {

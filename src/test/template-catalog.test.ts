@@ -48,6 +48,8 @@ function createLocalCatalogFixtureHarness() {
     }
   >();
 
+  let availabilityRpcError: Error | null = null;
+
   function evaluateAvailability(templateId: string): { available: boolean; blockers: unknown[] } {
     const tmpl = templates.get(templateId);
     if (!tmpl) return { available: false, blockers: [{ code: 'NOT_FOUND' }] };
@@ -106,9 +108,23 @@ function createLocalCatalogFixtureHarness() {
       // target matching
       if (params.p_product_id && t.product_id !== params.p_product_id) return false;
       if (params.p_variant_id && t.variant_id !== params.p_variant_id) return false;
-      if (params.p_mode !== undefined && params.p_mode !== null && t.product_mode !== params.p_mode) return false;
-      if (params.p_shape !== undefined && params.p_shape !== null && t.fixed_sticker_shape !== params.p_shape) return false;
+      // mode matching
+      if (params.p_mode !== undefined && params.p_mode !== null) {
+        if (params.p_mode === 'none') {
+          if (t.product_mode !== null && t.product_mode !== undefined) return false;
+        } else if (t.product_mode !== params.p_mode) {
+          return false;
+        }
+      }
 
+      // shape matching
+      if (params.p_shape !== undefined && params.p_shape !== null) {
+        if (params.p_shape === 'none') {
+          if (t.fixed_sticker_shape !== null && t.fixed_sticker_shape !== undefined) return false;
+        } else if (t.fixed_sticker_shape !== params.p_shape) {
+          return false;
+        }
+      }
       // category
       if (params.p_category_id && params.p_category_id !== 'all' && t.category_id !== params.p_category_id) return false;
 
@@ -161,8 +177,7 @@ function createLocalCatalogFixtureHarness() {
         fixed_sticker_shape: t.fixed_sticker_shape,
         category_id: t.category_id,
         tags: t.tags ?? [],
-        sort_order: t.sort_order ?? 0,
-        current_published_version_id: t.current_published_version_id,
+        sort_order: Number(t.sort_order ?? 0),
         thumbnail_path: ver?.thumbnail_path ?? t.thumbnail_path ?? null,
         target_snapshot: t.target_snapshot ?? null,
         updated_at: t.updated_at,
@@ -177,6 +192,9 @@ function createLocalCatalogFixtureHarness() {
         return { data: rows, error: null };
       }
       if (fn === 'get_template_availability') {
+        if (availabilityRpcError) {
+          return { data: null, error: availabilityRpcError };
+        }
         const templateId = String(args.p_template_id);
         const avail = evaluateAvailability(templateId);
         return { data: avail, error: null };
@@ -263,6 +281,9 @@ function createLocalCatalogFixtureHarness() {
       if (face) {
         face.status = 'archived';
       }
+    },
+    setAvailabilityRpcError: (err: Error | null) => {
+      availabilityRpcError = err;
     },
   };
 }
@@ -698,6 +719,210 @@ describe('State 43 Task 15: Available-only catalog and current-version preview',
       },
     );
     assert.equal(resOldStaff.status, 200);
+  });
+
+  it('exact target query with shape: null (die-cut) returns only die-cut templates, excluding fixed-shape stickers', async () => {
+    const harness = createLocalCatalogFixtureHarness();
+
+    // 1. Die-cut template (shape: null)
+    const dieCutId = 'tmpl-sticker-die-cut';
+    const dieCutVerId = '43000000-0000-0000-0000-0000000000d1';
+    harness.templates.set(dieCutId, {
+      id: dieCutId,
+      name: 'Sticker Die-cut Cắt Theo Hình',
+      product_id: 'sticker',
+      variant_id: 'die-cut',
+      product_mode: null,
+      fixed_sticker_shape: null,
+      status: 'published',
+      sort_order: 1,
+      current_published_version_id: dieCutVerId,
+      created_at: '2026-10-04T00:00:00Z',
+      updated_at: '2026-10-04T00:00:00Z',
+    });
+    harness.versions.set(dieCutVerId, {
+      id: dieCutVerId,
+      template_id: dieCutId,
+      version: 1,
+      design_document: { ...createInitialState('sticker'), variantId: 'die-cut' } as unknown as Record<string, unknown>,
+      created_at: '2026-10-04T00:00:00Z',
+    });
+
+    // 2. Fixed-shape circle template
+    const circleId = 'tmpl-sticker-circle-fixed';
+    const circleVerId = '43000000-0000-0000-0000-0000000000c2';
+    harness.templates.set(circleId, {
+      id: circleId,
+      name: 'Sticker Tròn Cố Định',
+      product_id: 'sticker',
+      variant_id: 'fixed-shape',
+      product_mode: null,
+      fixed_sticker_shape: 'circle',
+      status: 'published',
+      sort_order: 2,
+      current_published_version_id: circleVerId,
+      created_at: '2026-10-04T00:00:00Z',
+      updated_at: '2026-10-04T00:00:00Z',
+    });
+    harness.versions.set(circleVerId, {
+      id: circleVerId,
+      template_id: circleId,
+      version: 1,
+      design_document: { ...createInitialState('sticker'), variantId: 'fixed-shape' } as unknown as Record<string, unknown>,
+      created_at: '2026-10-04T00:00:00Z',
+    });
+
+    // Direct repo query with target specifying shape: null
+    const dieCutTarget = createTemplateTarget({
+      productId: 'sticker',
+      variantId: 'die-cut',
+      mode: null,
+      shape: null,
+    });
+    const dieCutResult = await harness.templateRepo.browseAvailableTemplates({
+      target: dieCutTarget,
+    });
+    assert.equal(dieCutResult.items.length, 1);
+    assert.equal(dieCutResult.items[0]?.id, dieCutId);
+    assert.equal(dieCutResult.items[0]?.target.shape, null);
+
+    // API query with shape=none
+    const apiReqNone = new Request('http://localhost:3000/api/templates?productId=sticker&variantId=die-cut&shape=none');
+    const apiResNone = await getTemplatesRoute(apiReqNone, { repo: harness.templateRepo });
+    assert.equal(apiResNone.status, 200);
+    const bodyNone = (await apiResNone.json()) as { items: TemplateCard[] };
+    assert.equal(bodyNone.items.length, 1);
+    assert.equal(bodyNone.items[0]?.id, dieCutId);
+
+    // API query with shape=circle returns only circle template
+    const apiReqCircle = new Request('http://localhost:3000/api/templates?productId=sticker&variantId=fixed-shape&shape=circle');
+    const apiResCircle = await getTemplatesRoute(apiReqCircle, { repo: harness.templateRepo });
+    assert.equal(apiResCircle.status, 200);
+    const bodyCircle = (await apiResCircle.json()) as { items: TemplateCard[] };
+    assert.equal(bodyCircle.items.length, 1);
+    assert.equal(bodyCircle.items[0]?.id, circleId);
+  });
+
+  it('DB failure during availability check throws error rather than marking available', async () => {
+    const harness = createLocalCatalogFixtureHarness();
+
+    const tmplId = 'tmpl-db-failure-test';
+    const verId = '43000000-0000-0000-0000-0000000000f1';
+    harness.templates.set(tmplId, {
+      id: tmplId,
+      name: 'Mẫu Kiểm Tra Lỗi DB',
+      product_id: 'card',
+      variant_id: 'horizontal',
+      status: 'published',
+      sort_order: 1,
+      current_published_version_id: verId,
+      created_at: '2026-10-04T00:00:00Z',
+      updated_at: '2026-10-04T00:00:00Z',
+    });
+    harness.versions.set(verId, {
+      id: verId,
+      template_id: tmplId,
+      version: 1,
+      design_document: { ...createInitialState('card'), variantId: 'horizontal' } as unknown as Record<string, unknown>,
+      created_at: '2026-10-04T00:00:00Z',
+    });
+
+    // Simulate DB failure on availability RPC
+    harness.setAvailabilityRpcError(new Error('connection to database server lost'));
+
+    // 1. Repo method must throw
+    await assert.rejects(
+      () => harness.templateRepo.getTemplateAvailability(tmplId),
+      /connection to database server lost/,
+    );
+
+    // 2. resolveTemplateVersionById must propagate error and NOT mark available
+    await assert.rejects(
+      () => harness.templateRepo.resolveTemplateVersionById(verId),
+      /connection to database server lost/,
+    );
+
+    // 3. GET /api/templates/[id] must yield 500 error, not 200 available
+    const req = new Request(`http://localhost:3000/api/templates/${tmplId}`);
+    const res = await getTemplateByIdRoute(
+      req,
+      { params: Promise.resolve({ id: tmplId }), repo: harness.templateRepo },
+    );
+    assert.equal(res.status, 500);
+    const body = (await res.json()) as { code: string; message: string };
+    assert.equal(body.code, 'INTERNAL_ERROR');
+    assert.ok(body.message.includes('connection to database server lost'));
+  });
+
+  it('keyset pagination across items with null/0 sort_order progresses cleanly without infinite loop', async () => {
+    const harness = createLocalCatalogFixtureHarness();
+
+    // Create 5 templates with null or 0 sort_order
+    const itemsData = [
+      { id: 'tmpl-sort-null-1', sort_order: null },
+      { id: 'tmpl-sort-zero-2', sort_order: 0 },
+      { id: 'tmpl-sort-null-3', sort_order: null },
+      { id: 'tmpl-sort-pos-4', sort_order: 5 },
+      { id: 'tmpl-sort-null-5', sort_order: null },
+    ];
+
+    for (const item of itemsData) {
+      const vId = `43000000-0000-0000-0000-${item.id.slice(-12).padStart(12, '0')}`;
+      harness.templates.set(item.id, {
+        id: item.id,
+        name: `Mẫu ${item.id}`,
+        product_id: 'card',
+        variant_id: 'horizontal',
+        status: 'published',
+        sort_order: item.sort_order,
+        current_published_version_id: vId,
+        created_at: '2026-10-04T00:00:00Z',
+        updated_at: '2026-10-04T00:00:00Z',
+      });
+      harness.versions.set(vId, {
+        id: vId,
+        template_id: item.id,
+        version: 1,
+        design_document: { ...createInitialState('card'), variantId: 'horizontal' } as unknown as Record<string, unknown>,
+        created_at: '2026-10-04T00:00:00Z',
+      });
+    }
+
+    const cardTarget = createTemplateTarget({
+      productId: 'card',
+      variantId: 'horizontal',
+      mode: null,
+      shape: null,
+    });
+
+    const collectedIds: string[] = [];
+    let currentCursor: string | null = null;
+    let pageCount = 0;
+    const maxPagesSafetyBound = 10;
+
+    while (pageCount < maxPagesSafetyBound) {
+      pageCount++;
+      const page = await harness.templateRepo.browseAvailableTemplates({
+        target: cardTarget,
+        limit: 2,
+        cursor: currentCursor,
+      });
+
+      for (const t of page.items) {
+        collectedIds.push(t.id);
+      }
+
+      if (!page.nextCursor) {
+        break;
+      }
+      currentCursor = page.nextCursor;
+    }
+
+    // Safety: must have terminated without hitting the bound
+    assert.ok(pageCount < maxPagesSafetyBound, `Exceeded safety bound (${pageCount} pages), potential infinite loop`);
+    assert.equal(pageCount, 3, '5 items with limit 2 should paginate in exactly 3 pages');
+    assert.equal(collectedIds.length, 5, 'Should collect exactly 5 items');
+    assert.equal(new Set(collectedIds).size, 5, 'All collected items should be distinct (no repeat/loop)');
   });
 });
 

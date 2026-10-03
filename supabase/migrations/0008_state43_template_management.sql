@@ -1961,8 +1961,16 @@ as $$
     and t.product_id is not null
     and (p_product_id is null or t.product_id = p_product_id)
     and (p_variant_id is null or t.variant_id = p_variant_id)
-    and (p_mode is null or t.product_mode = p_mode)
-    and (p_shape is null or t.fixed_sticker_shape = p_shape)
+    and (
+      p_mode is null
+      or (p_mode = 'none' and t.product_mode is null)
+      or (p_mode <> 'none' and t.product_mode = p_mode)
+    )
+    and (
+      p_shape is null
+      or (p_shape = 'none' and t.fixed_sticker_shape is null)
+      or (p_shape <> 'none' and t.fixed_sticker_shape = p_shape)
+    )
     and (p_category_id is null or p_category_id = 'all' or t.category_id = p_category_id)
     and (
       p_query is null
@@ -2008,10 +2016,10 @@ as $$
     )
     and (
       p_cursor_sort_order is null or p_cursor_id is null
-      or (t.sort_order > p_cursor_sort_order)
-      or (t.sort_order = p_cursor_sort_order and t.id > p_cursor_id)
+      or (coalesce(t.sort_order, 0) > p_cursor_sort_order)
+      or (coalesce(t.sort_order, 0) = p_cursor_sort_order and t.id > p_cursor_id)
     )
-  order by t.sort_order asc, t.id asc
+  order by coalesce(t.sort_order, 0) asc, t.id asc
   limit least(coalesce(p_limit, 24), 60);
 $$;
 

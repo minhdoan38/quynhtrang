@@ -77,3 +77,33 @@ Connected customer-facing template browser, chooser, and product detail catalog 
 ## Verification Evidence
 - `node --test --experimental-strip-types src/test/template-catalog.test.ts src/test/catalog-repository.test.ts src/test/product-catalog.test.ts`: 24 tests passed (0 failures).
 - `npm run typecheck`: Passed (0 errors).
+
+## Fix Round 1: Exact Null Target Filtering, DB Failure Propagation, and Keyset Pagination Stability
+
+### Addressed Findings
+1. **Exact target matching ignores explicit null filters for shape and mode**:
+   - `0008_state43_template_management.sql`: Updated `browse_available_templates` RPC to distinguish `'none'` (requires `t.product_mode IS NULL` or `t.fixed_sticker_shape IS NULL`) from wildcard (`p_mode IS NULL` / `p_shape IS NULL`).
+   - `/api/templates`: Supported query parameters `shape=none` and `mode=none`, translating to `target.shape = null` and `target.mode = null`. Also auto-resolved die-cut sticker target to `shape = null`.
+   - `useTemplateCatalog`: Serialized explicit null shape and mode as `shape=none` and `mode=none`.
+   - `TemplateRepository`: In `browseAvailableTemplates`, passed `p_shape: 'none'` / `p_mode: 'none'` to SQL RPC when `target.shape === null` / `target.mode === null`, and applied `is('fixed_sticker_shape', null)` / `is('product_mode', null)` in fallback queries.
+
+2. **Silent catch in availability check bypasses DB failure constraint**:
+   - `TemplateRepository.getTemplateAvailability`: Throws error on database RPC error or missing data instead of returning `{ available: false }`.
+   - `api/templates/[id]/route.ts`: Removed `try { ... } catch { isAvailable = ... }` wrapper around `getTemplateAvailability`. Database failures propagate to HTTP 500 `INTERNAL_ERROR`.
+   - `TemplateRepository.resolveTemplateVersionById`: Removed fallback catch block; database failure propagates as thrown error.
+   - `TemplateRepository.browseAvailableTemplates`: Propagates DB errors in both RPC and fallback availability checks.
+
+3. **Infinite pagination loop for templates with null sort_order**:
+   - `0008_state43_template_management.sql`: Used `COALESCE(t.sort_order, 0)` consistently for `ORDER BY COALESCE(t.sort_order, 0) ASC, t.id ASC` and keyset pagination filter `(COALESCE(t.sort_order, 0) > p_cursor_sort_order) OR (COALESCE(t.sort_order, 0) = p_cursor_sort_order AND t.id > p_cursor_id)`.
+   - `TemplateRepository`:
+     - Cleanly encoded and decoded `sortOrder` as integer in `encodeTemplateCursor` and `decodeTemplateCursor`.
+     - Added `sortOrder: Number(row.sort_order ?? 0)` to `TemplateCard` and in-memory sort `(COALESCE(sort_order, 0) ASC, id ASC)` in fallback path.
+
+4. **Test Additions** (`src/test/template-catalog.test.ts`):
+   - Verified exact target query with `shape: null` (die-cut) returns only die-cut templates and excludes fixed-shape stickers (both via repo and `/api/templates?shape=none`).
+   - Verified DB failure during availability check throws error and returns 500 `INTERNAL_ERROR`, never false available pass.
+   - Verified keyset pagination across items with null/0 `sort_order` progresses cleanly without infinite loop.
+
+### Verification Evidence
+- `node --test --experimental-strip-types src/test/template-catalog.test.ts src/test/catalog-repository.test.ts src/test/product-catalog.test.ts`: 27 tests passed (0 failures).
+- `npm run typecheck`: Passed (0 errors).

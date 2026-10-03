@@ -60,15 +60,8 @@ export async function GET(
       );
     }
 
-    let isAvailable = true;
-    try {
-      const availability = await repo.getTemplateAvailability(template.id);
-      isAvailable = availability.available;
-    } catch {
-      isAvailable = template.status === 'published' && !template.archivedAt;
-    }
-
-    if (!isAvailable) {
+    const availability = await repo.getTemplateAvailability(template.id);
+    if (!availability.available) {
       return NextResponse.json(
         { code: 'TEMPLATE_UNAVAILABLE', message: 'Mẫu này hiện không còn khả dụng.' },
         { status: 403 },

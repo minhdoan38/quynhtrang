@@ -193,6 +193,7 @@ export interface TemplateCard {
   target: TemplateTarget;
   categoryId: string;
   tags: string[];
+  sortOrder?: number;
   currentVersionId: string | null;
   thumbnailUrl: string | null;
   status?: TemplateStatus;

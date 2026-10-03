@@ -35,20 +35,33 @@ import {
 
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-function encodeTemplateCursor(item?: { sortOrder?: number | string; sort_order?: number | string; id: string }): string | null {
-  if (!item) return null;
-  const sort = item.sortOrder ?? item.sort_order ?? 0;
-  const payload = JSON.stringify([Number(sort), String(item.id)]);
+export function encodeTemplateCursor(item?: {
+  sortOrder?: number | string | null;
+  sort_order?: number | string | null;
+  id: string;
+}): string | null {
+  if (!item || !item.id) return null;
+  const rawSort = item.sortOrder ?? item.sort_order ?? 0;
+  const parsedSort = Number(rawSort);
+  const sort = Number.isFinite(parsedSort) ? Math.trunc(parsedSort) : 0;
+  const payload = JSON.stringify([sort, String(item.id)]);
   return Buffer.from(payload, 'utf8').toString('base64url');
 }
 
-function decodeTemplateCursor(cursor?: string | null): { sortOrder: number; id: string } | null {
-  if (!cursor) return null;
+export function decodeTemplateCursor(cursor?: string | null): { sortOrder: number; id: string } | null {
+  if (!cursor || typeof cursor !== 'string') return null;
   try {
     const raw = Buffer.from(cursor, 'base64url').toString('utf8');
     const parsed = JSON.parse(raw);
-    if (Array.isArray(parsed) && parsed.length === 2 && typeof parsed[0] === 'number' && typeof parsed[1] === 'string') {
-      return { sortOrder: parsed[0], id: parsed[1] };
+    if (
+      Array.isArray(parsed) &&
+      parsed.length === 2 &&
+      typeof parsed[0] === 'number' &&
+      Number.isFinite(parsed[0]) &&
+      typeof parsed[1] === 'string' &&
+      parsed[1].length > 0
+    ) {
+      return { sortOrder: Math.trunc(parsed[0]), id: parsed[1] };
     }
   } catch {
     // Ignore invalid cursor
@@ -1466,11 +1479,11 @@ export class TemplateRepository {
       p_template_id: templateId,
     });
 
-    if (error || !data) {
-      return {
-        available: false,
-        blockers: [{ code: 'INTERNAL_ERROR', message: error?.message ?? 'Lỗi kiểm tra tính khả dụng' }],
-      };
+    if (error) {
+      throw new Error(error.message ?? 'Lỗi kiểm tra tính khả dụng');
+    }
+    if (!data) {
+      throw new Error('Không nhận được dữ liệu tính khả dụng');
     }
 
     return data as TemplateAvailability;
@@ -1482,63 +1495,73 @@ export class TemplateRepository {
     const limit = Math.max(1, Math.min(60, options.limit ?? 24));
     const decodedCursor = decodeTemplateCursor(options.cursor);
 
+    let targetShape = options.target?.shape;
+    let targetMode = options.target?.mode;
+    if (options.target?.productId === 'sticker' && options.target?.variantId === 'die-cut' && targetShape === undefined) {
+      targetShape = null;
+    }
+
+    const pShape = targetShape !== undefined ? (targetShape === null || (targetShape as string) === 'none' ? 'none' : targetShape) : null;
+    const pMode = targetMode !== undefined ? (targetMode === null || (targetMode as string) === 'none' ? 'none' : targetMode) : null;
+
     // 1. Try PostgreSQL RPC browse_available_templates if available
     if (typeof this.client.rpc === 'function') {
-      try {
-        const { data, error } = await this.client.rpc('browse_available_templates', {
-          p_product_id: options.target?.productId ?? null,
-          p_variant_id: options.target?.variantId ?? null,
-          p_mode: options.target?.mode ?? null,
-          p_shape: options.target?.shape ?? null,
-          p_category_id: (options.categoryId && options.categoryId !== 'all') ? options.categoryId : null,
-          p_query: options.query?.trim() ? options.query.trim() : null,
-          p_cursor_sort_order: decodedCursor?.sortOrder ?? null,
-          p_cursor_id: decodedCursor?.id ?? null,
-          p_limit: limit + 1,
+      const { data, error } = await this.client.rpc('browse_available_templates', {
+        p_product_id: options.target?.productId ?? null,
+        p_variant_id: options.target?.variantId ?? null,
+        p_mode: pMode,
+        p_shape: pShape,
+        p_category_id: (options.categoryId && options.categoryId !== 'all') ? options.categoryId : null,
+        p_query: options.query?.trim() ? options.query.trim() : null,
+        p_cursor_sort_order: decodedCursor?.sortOrder ?? null,
+        p_cursor_id: decodedCursor?.id ?? null,
+        p_limit: limit + 1,
+      });
+
+      if (error) {
+        throw new Error(error.message);
+      }
+
+      if (Array.isArray(data)) {
+        const hasNext = data.length > limit;
+        const pageRows = hasNext ? data.slice(0, limit) : data;
+        const nextCursor = hasNext ? encodeTemplateCursor(pageRows[pageRows.length - 1]) : null;
+
+        const items: TemplateCard[] = pageRows.map((row: DatabaseTemplateRow & { thumbnail_path?: string | null }) => {
+          const productId = (row.product_id ?? 'wrapping') as ProductId;
+          const variantId = row.variant_id ?? 'default';
+          const mode = (row.product_mode ?? null) as 'pattern' | 'full-sheet' | null;
+          const shape = (row.fixed_sticker_shape ?? null) as FixedStickerShape | null;
+          let target: TemplateTarget;
+          try {
+            target = createTemplateTarget({ productId, variantId, mode, shape });
+          } catch {
+            target = {
+              productId,
+              variantId,
+              mode,
+              shape,
+              geometryKey: `${productId}:${variantId}`,
+              surfaces: [],
+            };
+          }
+
+          return {
+            id: String(row.id),
+            slug: row.slug ? String(row.slug) : String(row.id),
+            name: String(row.name),
+            target,
+            categoryId: row.category_id ? String(row.category_id) : '',
+            tags: Array.isArray(row.tags) ? row.tags : [],
+            sortOrder: Number(row.sort_order ?? 0),
+            currentVersionId: row.current_published_version_id ? String(row.current_published_version_id) : null,
+            thumbnailUrl: row.thumbnail_path ? String(row.thumbnail_path) : null,
+            status: 'published',
+            updatedAt: row.updated_at ? String(row.updated_at) : undefined,
+          };
         });
 
-        if (!error && Array.isArray(data)) {
-          const hasNext = data.length > limit;
-          const pageRows = hasNext ? data.slice(0, limit) : data;
-          const nextCursor = hasNext ? encodeTemplateCursor(pageRows[pageRows.length - 1]) : null;
-
-          const items: TemplateCard[] = pageRows.map((row: DatabaseTemplateRow & { thumbnail_path?: string | null }) => {
-            const productId = (row.product_id ?? 'wrapping') as ProductId;
-            const variantId = row.variant_id ?? 'default';
-            const mode = (row.product_mode ?? null) as 'pattern' | 'full-sheet' | null;
-            const shape = (row.fixed_sticker_shape ?? null) as FixedStickerShape | null;
-            let target: TemplateTarget;
-            try {
-              target = createTemplateTarget({ productId, variantId, mode, shape });
-            } catch {
-              target = {
-                productId,
-                variantId,
-                mode,
-                shape,
-                geometryKey: `${productId}:${variantId}`,
-                surfaces: [],
-              };
-            }
-
-            return {
-              id: String(row.id),
-              slug: row.slug ? String(row.slug) : String(row.id),
-              name: String(row.name),
-              target,
-              categoryId: row.category_id ? String(row.category_id) : '',
-              tags: Array.isArray(row.tags) ? row.tags : [],
-              currentVersionId: row.current_published_version_id ? String(row.current_published_version_id) : null,
-              thumbnailUrl: row.thumbnail_path ? String(row.thumbnail_path) : null,
-              status: 'published',
-              updatedAt: row.updated_at ? String(row.updated_at) : undefined,
-            };
-          });
-
-          return { items, nextCursor };
-        }
-      } catch {
-        // Fallback to table query
+        return { items, nextCursor };
       }
     }
 
@@ -1556,18 +1579,18 @@ export class TemplateRepository {
     if (options.target?.variantId) {
       query = query.eq('variant_id', options.target.variantId);
     }
-    if (options.target?.mode !== undefined) {
-      if (options.target.mode === null) {
+    if (targetMode !== undefined) {
+      if (targetMode === null || (targetMode as string) === 'none') {
         query = query.is('product_mode', null);
       } else {
-        query = query.eq('product_mode', options.target.mode);
+        query = query.eq('product_mode', targetMode);
       }
     }
-    if (options.target?.shape !== undefined) {
-      if (options.target.shape === null) {
+    if (targetShape !== undefined) {
+      if (targetShape === null || (targetShape as string) === 'none') {
         query = query.is('fixed_sticker_shape', null);
       } else {
-        query = query.eq('fixed_sticker_shape', options.target.shape);
+        query = query.eq('fixed_sticker_shape', targetShape);
       }
     }
     if (options.categoryId && options.categoryId !== 'all') {
@@ -1584,6 +1607,11 @@ export class TemplateRepository {
     if (error) throw new Error(error.message);
 
     const rawRows = (data ?? []) as Array<DatabaseTemplateRow & { thumbnail_path?: string | null }>;
+    rawRows.sort((a, b) => {
+      const soDiff = Number(a.sort_order ?? 0) - Number(b.sort_order ?? 0);
+      if (soDiff !== 0) return soDiff;
+      return String(a.id).localeCompare(String(b.id));
+    });
     const availableItems: TemplateCard[] = [];
 
     for (const row of rawRows) {
@@ -1596,14 +1624,10 @@ export class TemplateRepository {
         }
       }
 
-      // Check template availability
-      try {
-        const avail = await this.getTemplateAvailability(row.id);
-        if (!avail.available) {
-          continue;
-        }
-      } catch {
-        // If availability check method fails, skip or keep
+      // Check template availability (throws on DB failure)
+      const avail = await this.getTemplateAvailability(row.id);
+      if (!avail.available) {
+        continue;
       }
 
       const productId = (row.product_id ?? 'wrapping') as ProductId;
@@ -1631,6 +1655,7 @@ export class TemplateRepository {
         target,
         categoryId: row.category_id ? String(row.category_id) : '',
         tags: Array.isArray(row.tags) ? row.tags : [],
+        sortOrder: Number(row.sort_order ?? 0),
         currentVersionId: row.current_published_version_id ? String(row.current_published_version_id) : null,
         thumbnailUrl: row.thumbnail_path ? String(row.thumbnail_path) : null,
         status: 'published',
@@ -1670,15 +1695,8 @@ export class TemplateRepository {
       template.currentPublishedVersionId === version.versionId;
 
     if (isCurrentPublished) {
-      let isAvailable = true;
-      try {
-        const availability = await this.getTemplateAvailability(template.id);
-        isAvailable = availability.available;
-      } catch {
-        isAvailable = template.status === 'published' && !template.archivedAt;
-      }
-
-      if (isAvailable) {
+      const availability = await this.getTemplateAvailability(template.id);
+      if (availability.available) {
         return version;
       }
 

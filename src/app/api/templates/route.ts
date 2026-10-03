@@ -47,8 +47,8 @@ export async function GET(
     const url = new URL(request.url);
     const productId = url.searchParams.get('productId') as ProductId | null;
     const variantId = url.searchParams.get('variantId');
-    const mode = url.searchParams.get('mode') as 'pattern' | 'full-sheet' | null;
-    const shape = url.searchParams.get('shape') as FixedStickerShape | null;
+    const modeParam = url.searchParams.get('mode');
+    const shapeParam = url.searchParams.get('shape');
     const categoryId = url.searchParams.get('categoryId');
     const query = url.searchParams.get('query');
     const cursor = url.searchParams.get('cursor');
@@ -58,9 +58,18 @@ export async function GET(
     const target: Partial<TemplateTargetInput> = {};
     if (productId) target.productId = productId;
     if (variantId) target.variantId = variantId;
-    if (mode) target.mode = mode;
-    if (shape) target.shape = shape;
-
+    if (url.searchParams.has('mode')) {
+      target.mode = (modeParam === 'none' || modeParam === 'null' || !modeParam)
+        ? null
+        : (modeParam as 'pattern' | 'full-sheet');
+    }
+    if (url.searchParams.has('shape')) {
+      target.shape = (shapeParam === 'none' || shapeParam === 'null' || !shapeParam)
+        ? null
+        : (shapeParam as FixedStickerShape);
+    } else if (productId === 'sticker' && variantId === 'die-cut') {
+      target.shape = null;
+    }
     const options: BrowseAvailableTemplatesOptions = {
       target: Object.keys(target).length > 0 ? target : undefined,
       categoryId: categoryId ?? undefined,
