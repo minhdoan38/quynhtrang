@@ -415,6 +415,144 @@ describe('State 43 Task 6: Draft Autosave Queue & Concurrency', () => {
 
       queue.dispose();
     });
+
+    it('chained saves maintain inFlightPromise throughout until all pending saves finish', async () => {
+      const clock = createMockTimer();
+      const savedRequests: Array<{ document: unknown; expectedRevision: number; requestId: string }> = [];
+      const resolvers: Array<(res: DraftSaveResult) => void> = [];
+
+      const queue = new DraftAutosaveQueue<{ text: string }>({
+        initialRevision: 1,
+        initialDocument: { text: 'Base' },
+        now: clock.now,
+        timer: clock.timer,
+        saveTransport: (input) => {
+          savedRequests.push(input);
+          return new Promise<DraftSaveResult>((resolve) => {
+            resolvers.push(resolve);
+          });
+        },
+      });
+
+      assert.equal(queue.isInFlight(), false);
+
+      // Trigger first save
+      queue.enqueue({ text: 'Edit 1' });
+      await clock.advance(850);
+
+      assert.equal(savedRequests.length, 1);
+      assert.equal(queue.isInFlight(), true);
+      const firstInFlightPromise = queue.getInFlightPromise();
+      assert.notEqual(firstInFlightPromise, null);
+
+      // Enqueue while save 1 is in-flight
+      queue.enqueue({ text: 'Edit 2' });
+
+      // Resolve save 1
+      resolvers[0]({
+        ok: true,
+        value: { revision: 2, updatedAt: '2026-10-03T12:01:00Z', requestId: savedRequests[0].requestId },
+      });
+
+      // Microtask tick
+      await Promise.resolve();
+
+      // Save 2 is now in-flight, inFlightPromise MUST remain identical and NOT be wiped to null
+      assert.equal(savedRequests.length, 2);
+      assert.equal(queue.isInFlight(), true);
+      assert.equal(queue.getInFlightPromise(), firstInFlightPromise);
+
+      // Enqueue Edit 3 while save 2 is in-flight
+      queue.enqueue({ text: 'Edit 3' });
+
+      // Resolve save 2
+      resolvers[1]({
+        ok: true,
+        value: { revision: 3, updatedAt: '2026-10-03T12:02:00Z', requestId: savedRequests[1].requestId },
+      });
+
+      await Promise.resolve();
+
+      // Save 3 is in flight, same promise remains
+      assert.equal(savedRequests.length, 3);
+      assert.equal(queue.isInFlight(), true);
+      assert.equal(queue.getInFlightPromise(), firstInFlightPromise);
+
+      // Resolve save 3
+      resolvers[2]({
+        ok: true,
+        value: { revision: 4, updatedAt: '2026-10-03T12:03:00Z', requestId: savedRequests[2].requestId },
+      });
+
+      await Promise.resolve();
+
+      // All saves completed, inFlightPromise is now null
+      assert.equal(queue.isInFlight(), false);
+      assert.equal(queue.getInFlightPromise(), null);
+      assert.equal(queue.getStatus(), 'saved');
+      assert.equal(queue.getRevision(), 4);
+
+      queue.dispose();
+    });
+
+    it('reverting an edit while in error state restores status to saved and unblocks flush', async () => {
+      const clock = createMockTimer();
+      const savedRequests: Array<{ document: unknown; expectedRevision: number; requestId: string }> = [];
+
+      let shouldFail = true;
+      const queue = new DraftAutosaveQueue<{ text: string }>({
+        initialRevision: 1,
+        initialDocument: { text: 'Base' },
+        now: clock.now,
+        timer: clock.timer,
+        saveTransport: async (input) => {
+          savedRequests.push(input);
+          if (shouldFail) {
+            return {
+              ok: false,
+              code: 'NETWORK_ERROR',
+              message: 'Connection failed',
+            };
+          }
+          return {
+            ok: true,
+            value: { revision: input.expectedRevision + 1, updatedAt: '2026-10-03T12:00:00Z', requestId: input.requestId },
+          };
+        },
+      });
+
+      // Enqueue edit that will fail
+      queue.enqueue({ text: 'Broken edit' });
+      await clock.advance(850);
+
+      assert.equal(savedRequests.length, 1);
+      assert.equal(queue.getStatus(), 'error');
+
+      // Flush while in error should throw
+      await assert.rejects(
+        async () => {
+          await queue.flush();
+        },
+        (err: unknown) => {
+          assert(err instanceof DraftAutosaveError);
+          assert.equal(err.code, 'NETWORK_ERROR');
+          return true;
+        }
+      );
+
+      // User reverts edit to match lastSavedDocument ('Base')
+      queue.enqueue({ text: 'Base' });
+
+      // Status should be restored to 'saved'
+      assert.equal(queue.getStatus(), 'saved');
+
+      // Flush should now succeed immediately without throwing
+      const flushResult = await queue.flush();
+      assert.equal(flushResult.revision, 1);
+      assert.equal(queue.getStatus(), 'saved');
+
+      queue.dispose();
+    });
   });
 
   describe('TemplateRepository Concurrency & RPC Mutations', () => {

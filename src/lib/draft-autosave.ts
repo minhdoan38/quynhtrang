@@ -162,7 +162,8 @@ export class DraftAutosaveQueue<TDocument> {
         this.timer.clearTimeout(this.debounceTimer);
         this.debounceTimer = null;
       }
-      if (this.status === 'dirty') {
+      this.lastErrorDetails = undefined;
+      if (this.status === 'dirty' || this.status === 'error') {
         this.setStatus('saved', { revision: this.revision });
       }
       return;
@@ -248,6 +249,14 @@ export class DraftAutosaveQueue<TDocument> {
     return this.latestDocument;
   }
 
+  isInFlight(): boolean {
+    return this.inFlightPromise !== null;
+  }
+
+  getInFlightPromise(): Promise<void> | null {
+    return this.inFlightPromise;
+  }
+
   dispose(): void {
     if (this.debounceTimer !== null) {
       this.timer.clearTimeout(this.debounceTimer);
@@ -280,80 +289,114 @@ export class DraftAutosaveQueue<TDocument> {
     if (this.inFlightPromise !== null || this.pendingDocument === null) {
       return;
     }
+    if (this.status === 'conflict' || this.status === 'stopped') {
+      return;
+    }
 
-    const docToSave = this.pendingDocument;
-    this.pendingDocument = null;
-    this.inFlightDocument = docToSave;
-    this.firstDirtyAt = null;
-    const expectedRev = this.revision;
-    const reqId = this.generateRequestId
-      ? this.generateRequestId(expectedRev)
-      : `req:${expectedRev}:${this.now()}:${++this.reqCounter}`;
+    if (this.debounceTimer !== null) {
+      this.timer.clearTimeout(this.debounceTimer);
+      this.debounceTimer = null;
+    }
 
-    this.setStatus('saving');
+    const { promise, resolve } = Promise.withResolvers<void>();
+    this.inFlightPromise = promise;
 
-    const savePromise = (async () => {
+    (async () => {
+      let currentDocToSave: TDocument | null = null;
       try {
-        const res = await this.saveTransport({
-          document: docToSave,
-          expectedRevision: expectedRev,
-          requestId: reqId,
-        });
+        while (
+          this.pendingDocument !== null &&
+          this.status !== 'conflict' &&
+          this.status !== 'stopped'
+        ) {
+          if (this.debounceTimer !== null) {
+            this.timer.clearTimeout(this.debounceTimer);
+            this.debounceTimer = null;
+          }
 
-        if (res.ok) {
-          this.revision = res.value.revision;
-          this.lastSavedDocument = docToSave;
-          this.lastErrorDetails = undefined;
-          if (this.pendingDocument !== null) {
-            this.inFlightPromise = null;
-            this.inFlightDocument = null;
-            this.triggerSave();
+          const docToSave = this.pendingDocument;
+          currentDocToSave = docToSave;
+          this.pendingDocument = null;
+          this.firstDirtyAt = null;
+          this.inFlightDocument = docToSave;
+          this.setStatus('saving');
+
+          const expectedRev = this.revision;
+          const reqId = this.generateRequestId
+            ? this.generateRequestId(expectedRev)
+            : `req:${expectedRev}:${this.now()}:${++this.reqCounter}`;
+
+          const res = await this.saveTransport({
+            document: docToSave,
+            expectedRevision: expectedRev,
+            requestId: reqId,
+          });
+
+          if (res.ok) {
+            this.revision = res.value.revision;
+            this.lastSavedDocument = docToSave;
+            currentDocToSave = null;
+            if ((this.status as SaveStatus) !== 'stopped' && (this.status as SaveStatus) !== 'conflict') {
+              this.lastErrorDetails = undefined;
+              if (
+                this.pendingDocument !== null &&
+                this.documentsEqual(this.lastSavedDocument, this.pendingDocument)
+              ) {
+                this.pendingDocument = null;
+                this.firstDirtyAt = null;
+              }
+              if (this.pendingDocument === null) {
+                this.setStatus('saved', { revision: this.revision });
+                this.drainFlushWaiters();
+              }
+            }
           } else {
-            this.setStatus('saved', { revision: this.revision });
-            this.drainFlushWaiters();
-          }
-        } else {
-          this.lastErrorDetails = { code: res.code, message: res.message };
-          const isConflict =
-            res.code === 'REVISION_CONFLICT' ||
-            res.code === 'LEASE_LOST' ||
-            res.code === 'LEASE_CONFLICT' ||
-            res.code === 'LEASE_EXPIRED' ||
-            res.code === 'ORDER_LOCKED' ||
-            res.code === 'PRODUCTION_CHANGED';
+            if ((this.status as SaveStatus) !== 'stopped') {
+              this.lastErrorDetails = { code: res.code, message: res.message };
+              const isConflict =
+                res.code === 'REVISION_CONFLICT' ||
+                res.code === 'LEASE_LOST' ||
+                res.code === 'LEASE_CONFLICT' ||
+                res.code === 'LEASE_EXPIRED' ||
+                res.code === 'ORDER_LOCKED' ||
+                res.code === 'PRODUCTION_CHANGED';
 
-          if (this.pendingDocument === null) {
-            this.pendingDocument = docToSave;
-          }
-          if (isConflict) {
-            this.setStatus('conflict', { code: res.code, message: res.message });
-          } else {
-            this.setStatus('error', { code: res.code, message: res.message });
-          }
+              if (this.pendingDocument === null) {
+                this.pendingDocument = docToSave;
+              }
+              if (isConflict) {
+                this.setStatus('conflict', { code: res.code, message: res.message });
+              } else {
+                this.setStatus('error', { code: res.code, message: res.message });
+              }
 
-          const err = new DraftAutosaveError(
-            res.message ?? `Save failed with code ${res.code}`,
-            res.code,
-          );
-          this.drainFlushWaiters(err);
+              const err = new DraftAutosaveError(
+                res.message ?? `Save failed with code ${res.code}`,
+                res.code,
+              );
+              this.drainFlushWaiters(err);
+            }
+            break;
+          }
         }
       } catch (err: unknown) {
-        const msg = err instanceof Error ? err.message : 'Save connection failure';
-        this.lastErrorDetails = { code: 'NETWORK_ERROR', message: msg };
-        if (this.pendingDocument === null) {
-          this.pendingDocument = docToSave;
-        }
-        this.setStatus('error', { message: msg });
+        if ((this.status as SaveStatus) !== 'stopped') {
+          const msg = err instanceof Error ? err.message : 'Save connection failure';
+          this.lastErrorDetails = { code: 'NETWORK_ERROR', message: msg };
+          if (currentDocToSave !== null && this.pendingDocument === null) {
+            this.pendingDocument = currentDocToSave;
+          }
+          this.setStatus('error', { message: msg });
 
-        const errorObj = new DraftAutosaveError(msg, 'NETWORK_ERROR');
-        this.drainFlushWaiters(errorObj);
+          const errorObj = new DraftAutosaveError(msg, 'NETWORK_ERROR');
+          this.drainFlushWaiters(errorObj);
+        }
       } finally {
         this.inFlightPromise = null;
         this.inFlightDocument = null;
+        resolve();
       }
     })();
-
-    this.inFlightPromise = savePromise;
   }
   // ponyfill/ponytail: skip deep structural diff engine, add when fine-grained path diffing needed
 }

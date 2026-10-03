@@ -88,6 +88,10 @@ export class StaffDraftSaveQueue {
     return this.inner.getLatestDocument();
   }
 
+  isInFlight(): boolean {
+    return this.inner.isInFlight();
+  }
+
   dispose(): void {
     this.inner.dispose();
   }

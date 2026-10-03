@@ -106,6 +106,7 @@ test('StaffDraftSaveQueue ensures single-flight and chains new revision', async 
   assert.equal(savedRequests.length, 1);
   assert.equal(savedRequests[0].expectedRevision, 1);
   assert.equal(queue.getStatus(), 'saving');
+  assert.equal(queue.isInFlight(), true);
 
   // Enqueue while first is in flight
   queue.enqueue(doc2);
@@ -122,6 +123,7 @@ test('StaffDraftSaveQueue ensures single-flight and chains new revision', async 
   // Microtask tick
   await Promise.resolve();
 
+  assert.equal(queue.isInFlight(), true);
   assert.equal(savedRequests.length, 2);
   assert.equal(savedRequests[1].expectedRevision, 2);
   assert.deepEqual(savedRequests[1].document, doc3);
@@ -135,6 +137,7 @@ test('StaffDraftSaveQueue ensures single-flight and chains new revision', async 
   await Promise.resolve();
   assert.equal(queue.getRevision(), 3);
   assert.equal(queue.getStatus(), 'saved');
+  assert.equal(queue.isInFlight(), false);
 
   queue.dispose();
 });
@@ -214,6 +217,49 @@ test('StaffDraftSaveQueue ignores semantically identical enqueues when saved', a
   assert.equal(queue.getStatus(), 'saved');
   await clock.advance(1000);
   assert.equal(savedRequests.length, 1);
+
+  queue.dispose();
+});
+
+test('StaffDraftSaveQueue restores saved status when reverting edit during error state', async () => {
+  const clock = createMockTimer();
+  let failSave = true;
+  const initialDoc = { text: 'Initial' } as unknown as DesignState;
+
+  const queue = new StaffDraftSaveQueue({
+    draftId: 'draft-1',
+    initialRevision: 1,
+    initialDocument: initialDoc,
+    expectedProductionVersionId: 'ver-1',
+    sessionId: 'session-1',
+    epoch: 1,
+    now: clock.now,
+    timer: clock.timer,
+    saveTransport: async (input: SaveStaffDraftInput) => {
+      if (failSave) {
+        throw new Error('Connection timed out');
+      }
+      return {
+        ok: true,
+        value: { revision: input.expectedRevision + 1, updatedAt: '2026-09-30T16:00:00Z', requestId: input.requestId },
+      };
+    },
+  });
+
+  queue.enqueue({ text: 'Broken edit' } as unknown as DesignState);
+  await clock.advance(850);
+  assert.equal(queue.getStatus(), 'error');
+  assert.equal(queue.isInFlight(), false);
+
+  // Revert back to initial saved state
+  queue.enqueue(initialDoc);
+  assert.equal(queue.getStatus(), 'saved');
+  assert.equal(queue.isInFlight(), false);
+
+  // Flush succeeds cleanly
+  await queue.flush();
+  assert.equal(queue.getStatus(), 'saved');
+  assert.equal(queue.getRevision(), 1);
 
   queue.dispose();
 });
