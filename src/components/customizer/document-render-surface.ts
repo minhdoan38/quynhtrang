@@ -24,6 +24,7 @@ export interface DocumentFontOption {
   format?: string;
   weight?: string | number;
   style?: string;
+  postscriptName?: string;
 }
 
 export interface DocumentRenderOptions {

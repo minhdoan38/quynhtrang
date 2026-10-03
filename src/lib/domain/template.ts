@@ -253,12 +253,17 @@ export interface TemplatePage {
 
 export interface DependencyMetadataItem {
   id: string;
-  kind: 'font-face' | 'sticker';
+  kind: 'font-face' | 'sticker' | 'font-family';
   status: 'draft' | 'published' | 'archived';
   checksum?: string;
   familyName?: string;
   familyId?: string;
   familyStatus?: 'draft' | 'published' | 'archived';
+  storageBucket?: string;
+  storagePath?: string;
+  format?: string;
+  postscriptName?: string;
+  cssFamily?: string;
 }
 
 export interface TemplateAvailabilityDependencies {

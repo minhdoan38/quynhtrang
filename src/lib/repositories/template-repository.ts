@@ -24,6 +24,8 @@ import type {
   TemplateVersionSummary,
 } from '../domain/template.ts';
 
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 export interface DatabaseTemplateRow {
   id: string;
   name: string;
@@ -1084,52 +1086,83 @@ export class TemplateRepository {
     const faceIds = (refs.fontFaces ?? []).filter(Boolean);
     const familyIds = new Set<string>((refs.fontFamilies ?? []).filter(Boolean));
 
-    if (faceIds.length > 0) {
-      const { data: faces } = await this.client
-        .from('font_faces')
-        .select('id, family_id, status, checksum')
-        .in('id', faceIds);
+    const validFaceIds = faceIds.filter((id) => UUID_REGEX.test(id));
+    let faces: Array<{
+      id: string;
+      family_id?: string | null;
+      status: 'draft' | 'published' | 'archived';
+      checksum?: string | null;
+      storage_bucket?: string | null;
+      storage_path?: string | null;
+      format?: string | null;
+      postscript_name?: string | null;
+      css_family?: string | null;
+    }> = [];
 
-      if (Array.isArray(faces)) {
+    if (validFaceIds.length > 0) {
+      const { data } = await this.client
+        .from('font_faces')
+        .select('id, family_id, status, checksum, storage_bucket, storage_path, format, postscript_name, css_family')
+        .in('id', validFaceIds);
+
+      if (Array.isArray(data)) {
+        faces = data as typeof faces;
         for (const face of faces) {
           if (face.family_id) {
             familyIds.add(face.family_id);
           }
         }
+      }
+    }
 
-        const familyMap = new Map<string, { id: string; name?: string; status: 'draft' | 'published' | 'archived' }>();
-        if (familyIds.size > 0) {
-          const { data: families } = await this.client
-            .from('fonts')
-            .select('id, name, display_name, status')
-            .in('id', Array.from(familyIds));
+    const familyMap = new Map<string, { id: string; name?: string; status: 'draft' | 'published' | 'archived' }>();
+    if (familyIds.size > 0) {
+      const { data: families } = await this.client
+        .from('fonts')
+        .select('id, name, display_name, status')
+        .in('id', Array.from(familyIds));
 
-          if (Array.isArray(families)) {
-            for (const fam of families) {
-              familyMap.set(fam.id, {
-                id: fam.id,
-                name: fam.display_name ?? fam.name,
-                status: fam.status,
-              });
-            }
+      if (Array.isArray(families)) {
+        for (const fam of families) {
+          const displayName = fam.display_name ?? fam.name;
+          familyMap.set(fam.id, {
+            id: fam.id,
+            name: displayName,
+            status: fam.status,
+          });
+          const famItem: DependencyMetadataItem = {
+            id: fam.id,
+            kind: 'font-family',
+            status: fam.status,
+            familyName: displayName,
+          };
+          result.set(fam.id, famItem);
+          result.set(`font-family:${fam.id}`, famItem);
+          if (fam.name && fam.name !== fam.id) {
+            result.set(fam.name, famItem);
           }
         }
-
-        for (const face of faces) {
-          const fam = face.family_id ? familyMap.get(face.family_id) : undefined;
-          const item: DependencyMetadataItem = {
-            id: face.id,
-            kind: 'font-face',
-            status: face.status,
-            checksum: face.checksum ?? undefined,
-            familyId: face.family_id ?? undefined,
-            familyName: fam?.name,
-            familyStatus: fam?.status,
-          };
-          result.set(face.id, item);
-          result.set(`font-face:${face.id}`, item);
-        }
       }
+    }
+
+    for (const face of faces) {
+      const fam = face.family_id ? familyMap.get(face.family_id) : undefined;
+      const item: DependencyMetadataItem = {
+        id: face.id,
+        kind: 'font-face',
+        status: face.status,
+        checksum: face.checksum ?? undefined,
+        familyId: face.family_id ?? undefined,
+        familyName: fam?.name ?? face.css_family ?? undefined,
+        familyStatus: fam?.status,
+        storageBucket: face.storage_bucket ?? undefined,
+        storagePath: face.storage_path ?? undefined,
+        format: face.format ?? undefined,
+        postscriptName: face.postscript_name ?? undefined,
+        cssFamily: face.css_family ?? undefined,
+      };
+      result.set(face.id, item);
+      result.set(`font-face:${face.id}`, item);
     }
 
     const stickerIds = (refs.stickers ?? []).filter(Boolean);

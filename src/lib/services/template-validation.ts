@@ -401,10 +401,21 @@ export async function validateTemplateDraft(
   const fonts: DocumentFontOption[] = [];
   for (const dep of libraryDependencies) {
     if (dep.kind === 'font-face') {
-      const meta = dependencyLookup.get(dep.id);
-      if (meta?.familyName) {
+      const meta = dependencyLookup.get(dep.id)
+        ?? dependencyLookup.get(`${dep.kind}:${dep.id}`);
+      if (meta) {
+        let dataUrl: string | undefined;
+        if (meta.storageBucket && meta.storagePath) {
+          const bytes = await repo.downloadStorageObject(meta.storageBucket, meta.storagePath);
+          if (bytes) {
+            dataUrl = `data:font/${meta.format || 'woff2'};base64,${Buffer.from(bytes).toString('base64')}`;
+          }
+        }
         fonts.push({
-          family: meta.familyName,
+          family: meta.familyName || meta.cssFamily || 'CustomFont',
+          dataUrl,
+          format: meta.format,
+          postscriptName: meta.postscriptName,
         });
       }
     }
@@ -417,7 +428,7 @@ export async function validateTemplateDraft(
       denyExternalNetwork: true,
       failOnImageError: true,
       verifyCdpFonts: fonts.length > 0,
-      expectedFamilyNames: fonts.map((f) => f.family),
+      expectedFamilyNames: fonts.flatMap((f) => [f.family, f.postscriptName]).filter((n): n is string => Boolean(n)),
     });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : String(err);

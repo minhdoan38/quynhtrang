@@ -1,5 +1,7 @@
 import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
 import { describe, it } from 'node:test';
+import type { SupabaseClient } from '@supabase/supabase-js';
 import type { StaffIdentity } from '../lib/domain/order.ts';
 import type {
   AttachTemplateAssetInput,
@@ -22,6 +24,7 @@ import {
 } from '../lib/services/template-validation.ts';
 import { resolveTemplateDependencies } from '../lib/services/library-dependencies.ts';
 import { POST as validateRoute } from '../app/api/admin/content/templates/[id]/validate/route.ts';
+import { generateDocumentRenderHtml } from '../lib/services/document-renderer.ts';
 
 function createMockEditor(userId = '43000000-0000-0000-0000-0000000000e1'): StaffIdentity {
   return {
@@ -45,6 +48,7 @@ function makeTextElementWithFontFace(params: {
   text: string;
   fontFaceId: string;
   fontChecksum?: string;
+  fontFamily?: string;
   surface?: 'front' | 'inside' | 'back';
 }): CanvasElement {
   const el = createTextElement({
@@ -52,6 +56,7 @@ function makeTextElementWithFontFace(params: {
     preset: params.preset,
     text: params.text,
     surface: params.surface,
+    fontFamily: params.fontFamily,
   });
   el.x = 20;
   el.y = 20;
@@ -153,6 +158,9 @@ function createMockValidationRepository() {
     async uploadStorageObject(bucket: string, path: string, bytes: Uint8Array): Promise<void> {
       storage.set(`${bucket}/${path}`, bytes);
     },
+    async downloadStorageObject(bucket: string, path: string): Promise<Uint8Array | null> {
+      return storage.get(`${bucket}/${path}`) ?? null;
+    },
     async getBatchDependencies(refs: { fontFaces?: string[]; stickers?: string[]; fontFamilies?: string[] }) {
       const result = new Map<string, DependencyMetadataItem>();
       for (const id of refs.fontFaces ?? []) {
@@ -170,9 +178,10 @@ function createMockValidationRepository() {
         }
       }
       for (const fam of refs.fontFamilies ?? []) {
-        const item = dependencies.get(fam);
+        const item = dependencies.get(fam) ?? dependencies.get(`font-family:${fam}`);
         if (item) {
           result.set(fam, item);
+          result.set(`font-family:${fam}`, item);
         }
       }
       return result;
@@ -1057,6 +1066,231 @@ describe('Template Validation & Availability Pipeline (State 43 Task 11)', () =>
       );
 
       assert.equal(response.status, 400);
+    });
+  });
+
+  it('downloads real font face binary via downloadStorageObject, injects @font-face dataUrl, and validates successfully', async () => {
+    const mock = createMockValidationRepository();
+    const editor = createMockEditor();
+
+    const fontBytes = await readFile(new URL('./fixtures/library/sample-font.woff2', import.meta.url));
+    mock.storage.set('library-fonts/sample-font.woff2', new Uint8Array(fontBytes));
+
+    let downloadedBucket = '';
+    let downloadedPath = '';
+    const origDownload = mock.repo.downloadStorageObject.bind(mock.repo);
+    mock.repo.downloadStorageObject = async (bucket: string, path: string) => {
+      downloadedBucket = bucket;
+      downloadedPath = path;
+      return origDownload(bucket, path);
+    };
+
+    const fontFaceUuid = '11111111-1111-1111-1111-111111111111';
+    const fontChecksum = 'sample-check-1234';
+
+    const docWithRealFont: DesignState = {
+      ...createInitialState('card'),
+      variantId: 'horizontal',
+      elements: [
+        makeTextElementWithFontFace({
+          id: 'text-custom',
+          preset: 'heading',
+          text: 'Tiếng Việt Có Dấu Đẹp',
+          fontFaceId: fontFaceUuid,
+          fontChecksum,
+          fontFamily: 'Be Vietnam Pro',
+        }),
+      ],
+    };
+
+    await mock.repo.createTemplate(editor.userId, {
+      requestId: 'req-font-1',
+      id: 'tmpl-real-font',
+      name: 'Mẫu Font Tự Lưu Trữ',
+      productId: 'card',
+      variantId: 'horizontal',
+      productMode: null,
+      fixedStickerShape: null,
+      targetSnapshot: {},
+      initialDocument: docWithRealFont,
+    });
+
+    mock.dependencies.set(fontFaceUuid, {
+      id: fontFaceUuid,
+      kind: 'font-face',
+      status: 'published',
+      checksum: fontChecksum,
+      familyName: 'Be Vietnam Pro',
+      storageBucket: 'library-fonts',
+      storagePath: 'sample-font.woff2',
+      format: 'woff2',
+      postscriptName: 'BeVietnamPro-Regular',
+      cssFamily: 'Be Vietnam Pro',
+    });
+
+    const guard: TemplateDraftGuard = {
+      templateId: 'tmpl-real-font',
+      draftId: 'draft-tmpl-real-font',
+      expectedRevision: 1,
+      sessionId: 'session-1',
+      leaseEpoch: 1,
+    };
+    const receipt = await validateTemplateDraft(editor, guard, { repository: mock.repo });
+
+    assert.equal(downloadedBucket, 'library-fonts');
+    assert.equal(downloadedPath, 'sample-font.woff2');
+    assert.equal(receipt.customerPreviewPassed, true);
+    assert.match(receipt.engineFingerprint, /^chromium-/);
+    assert.match(receipt.thumbnail.sha256, /^[a-f0-9]{64}$/);
+
+    // Verify @font-face is injected into render HTML when dataUrl is provided
+    const expectedDataUrl = `data:font/woff2;base64,${Buffer.from(fontBytes).toString('base64')}`;
+    const renderHtml = await generateDocumentRenderHtml(docWithRealFont, {
+      fonts: [
+        {
+          family: 'Be Vietnam Pro',
+          dataUrl: expectedDataUrl,
+          format: 'woff2',
+          postscriptName: 'BeVietnamPro-Regular',
+        },
+      ],
+    });
+    assert.ok(renderHtml.includes('@font-face'), 'HTML contains @font-face rule');
+    assert.ok(renderHtml.includes("font-family: 'Be Vietnam Pro'"), 'HTML includes font-family declaration');
+    assert.ok(renderHtml.includes('src: url("data:font/woff2;base64,'), 'HTML includes dataUrl font source');
+    assert.ok(renderHtml.includes('format("woff2")'), 'HTML includes format specification');
+  });
+
+  describe('TemplateRepository.getBatchDependencies contract', () => {
+    it('returns font families even when fontFaces is empty', async () => {
+      let queriedFontsTable = false;
+      let queriedFamilyIds: string[] = [];
+
+      const mockSupabase = {
+        from(table: string) {
+          if (table === 'fonts') {
+            queriedFontsTable = true;
+            return {
+              select: (columns: string) => {
+                assert.ok(columns.includes('id'));
+                return {
+                  in: async (col: string, ids: string[]) => {
+                    assert.equal(col, 'id');
+                    queriedFamilyIds = ids;
+                    return {
+                      data: [
+                        {
+                          id: 'playfair',
+                          name: 'Playfair Display',
+                          display_name: 'Playfair Display Serif',
+                          status: 'published',
+                        },
+                      ],
+                    };
+                  },
+                };
+              },
+            };
+          }
+          if (table === 'font_faces') {
+            return {
+              select: () => ({
+                in: async () => ({ data: [] }),
+              }),
+            };
+          }
+          if (table === 'sticker_assets') {
+            return {
+              select: () => ({
+                in: async () => ({ data: [] }),
+              }),
+            };
+          }
+          return {
+            select: () => ({
+              in: async () => ({ data: [] }),
+            }),
+          };
+        },
+      } as unknown as SupabaseClient;
+
+      const repo = new TemplateRepository(mockSupabase);
+      const result = await repo.getBatchDependencies({
+        fontFaces: [],
+        fontFamilies: ['playfair'],
+      });
+
+      assert.equal(queriedFontsTable, true, 'Queries fonts table even when fontFaces is empty');
+      assert.deepEqual(queriedFamilyIds, ['playfair']);
+
+      assert.ok(result.has('playfair'), 'Contains font family by id');
+      assert.ok(result.has('font-family:playfair'), 'Contains font family with font-family: prefix');
+      const famItem = result.get('playfair');
+      assert.equal(famItem?.id, 'playfair');
+      assert.equal(famItem?.kind, 'font-family');
+      assert.equal(famItem?.familyName, 'Playfair Display Serif');
+      assert.equal(famItem?.status, 'published');
+    });
+
+    it('filters out non-UUID strings before querying font_faces to avoid Postgres 22P02 errors', async () => {
+      let queriedFaceIds: string[] = [];
+
+      const mockSupabase = {
+        from(table: string) {
+          if (table === 'font_faces') {
+            return {
+              select: () => ({
+                in: async (col: string, ids: string[]) => {
+                  assert.equal(col, 'id');
+                  queriedFaceIds = ids;
+                  return {
+                    data: [
+                      {
+                        id: '22222222-2222-2222-2222-222222222222',
+                        family_id: 'fam-1',
+                        status: 'published',
+                        checksum: 'chk-222',
+                        storage_bucket: 'fonts',
+                        storage_path: 'face2.woff2',
+                        format: 'woff2',
+                        postscript_name: 'Face2-Regular',
+                        css_family: 'Face Two',
+                      },
+                    ],
+                  };
+                },
+              }),
+            };
+          }
+          if (table === 'fonts') {
+            return {
+              select: () => ({
+                in: async () => ({ data: [] }),
+              }),
+            };
+          }
+          return {
+            select: () => ({
+              in: async () => ({ data: [] }),
+            }),
+          };
+        },
+      } as unknown as SupabaseClient;
+
+      const repo = new TemplateRepository(mockSupabase);
+      const result = await repo.getBatchDependencies({
+        fontFaces: ['invalid-non-uuid-string', '22222222-2222-2222-2222-222222222222', 'malicious-string;drop'],
+      });
+
+      assert.deepEqual(queriedFaceIds, ['22222222-2222-2222-2222-222222222222']);
+      assert.ok(result.has('22222222-2222-2222-2222-222222222222'));
+      const item = result.get('22222222-2222-2222-2222-222222222222');
+      assert.equal(item?.kind, 'font-face');
+      assert.equal(item?.storageBucket, 'fonts');
+      assert.equal(item?.storagePath, 'face2.woff2');
+      assert.equal(item?.format, 'woff2');
+      assert.equal(item?.postscriptName, 'Face2-Regular');
+      assert.equal(item?.cssFamily, 'Face Two');
     });
   });
 });
