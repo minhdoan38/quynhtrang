@@ -1,0 +1,2373 @@
+{
+  "manifestVersion": "1.0.0",
+  "state": "state-43-template-management",
+  "createdAt": "2026-10-03",
+  "description": "Deterministic inventory of legacy static and database template definitions, callsites, targets, and migration mappings for State 43.",
+  "summary": {
+    "totalSqlTemplates": 17,
+    "totalSqlVersions": 17,
+    "totalStaticTemplates": 18,
+    "totalUnionLegacyTemplates": 18,
+    "sharedTemplatesCount": 17,
+    "staticOnlyTemplatesCount": 1,
+    "sqlOnlyTemplatesCount": 0,
+    "runtimeAliases": [
+      {
+        "alias": "sticker-coffee-cozy",
+        "canonicalId": "sticker-cozy-coffee"
+      }
+    ]
+  },
+  "variantPairings": [
+    {
+      "productId": "wrapping",
+      "editorVariantId": "a1",
+      "seededDbVariantId": "a1",
+      "name": "Khổ A1",
+      "price": 69000,
+      "dimensions": "90 × 60 cm",
+      "bestFor": "Hộp quà vừa & lớn"
+    },
+    {
+      "productId": "wrapping",
+      "editorVariantId": "a2",
+      "seededDbVariantId": "a2",
+      "name": "Khổ A2",
+      "price": 49000,
+      "dimensions": "60 × 45 cm",
+      "bestFor": "Hộp quà nhỏ & tập sách"
+    },
+    {
+      "productId": "card",
+      "editorVariantId": "horizontal",
+      "seededDbVariantId": "horizontal",
+      "name": "Thiệp ngang",
+      "price": 29000,
+      "dimensions": "15 × 10 cm (gập)",
+      "bestFor": "Ảnh phong cảnh & lời chúc dài"
+    },
+    {
+      "productId": "card",
+      "editorVariantId": "vertical",
+      "seededDbVariantId": "vertical",
+      "name": "Thiệp đứng",
+      "price": 29000,
+      "dimensions": "10 × 15 cm (gập)",
+      "bestFor": "Ảnh chân dung & hoa văn trang nhã"
+    },
+    {
+      "productId": "sticker",
+      "editorVariantId": "die-cut",
+      "seededDbVariantId": "die-cut",
+      "name": "Cắt theo hình (Die-cut)",
+      "price": 19000,
+      "dimensions": "5 - 7 cm theo đường nét",
+      "bestFor": "Logo, linh vật & doodle"
+    },
+    {
+      "productId": "sticker",
+      "editorVariantId": "fixed-shape",
+      "seededDbVariantId": "fixed-shape",
+      "name": "Hình cố định (Tròn/Vuông)",
+      "price": 19000,
+      "dimensions": "5 × 5 cm chuẩn form",
+      "bestFor": "Nhãn hộp quà, tem niêm phong"
+    },
+    {
+      "productId": "sticker",
+      "editorVariantId": "phone",
+      "seededDbVariantId": "phone",
+      "name": "Sticker dán ốp điện thoại",
+      "price": 25000,
+      "dimensions": "Vừa mặt lưng điện thoại",
+      "bestFor": "Trang trí ốp lưng smartphone"
+    },
+    {
+      "productId": "notebook",
+      "editorVariantId": "standard",
+      "seededDbVariantId": "standard",
+      "name": "Khổ A5 tiêu chuẩn",
+      "price": 49000,
+      "dimensions": "14.8 × 21 cm",
+      "bestFor": "Sổ tay, bullet journal & sketch"
+    }
+  ],
+  "consumerCallsites": {
+    "exportedSymbols": {
+      "TEMPLATES": {
+        "definition": "src/lib/product-state.ts:515",
+        "callsites": [
+          "src/lib/product-state.ts:928 (getCompatibleTemplates)",
+          "src/lib/product-state.ts:1236 (transitionState: SET_TEMPLATE)",
+          "src/lib/repositories/catalog-repository.ts:213 (CatalogRepository.getStaticTemplates)",
+          "src/components/customizer/customizer-shell.tsx:20, 374, 1593 (query param template hydration, designTitle fallback)",
+          "src/components/customizer/template-chooser.tsx:3, 16, 39 (currentTemplate lookup, quick pick buttons)",
+          "src/components/customizer/editor-sheets.tsx:28, 324 (quick picks in layer sheet)",
+          "src/test/fixed-sticker-e2e.test.ts:8, 232, 235",
+          "src/test/fixed-sticker-setup.test.ts:5, 14, 19, 24",
+          "src/test/wrapping-paper-routing.test.ts:7, 36, 45",
+          "src/test/wrapping-paper-state.test.ts:6, 48"
+        ]
+      },
+      "getCompatibleTemplates": {
+        "definition": "src/lib/product-state.ts:920",
+        "callsites": [
+          "src/components/customizer/template-browser.tsx:12, 67 (browser grid compatible template filter)",
+          "src/components/products/product-detail-catalog-view.tsx:12, 94 (product catalog page template grid)",
+          "src/test/fixed-sticker-e2e.test.ts:10, 214",
+          "src/test/fixed-sticker-setup.test.ts:6, 30",
+          "src/test/product-catalog.test.ts:13, 68, 80, 91, 100",
+          "src/test/product-state.test.ts:9, 94, 108, 116",
+          "src/test/wrapping-paper-routing.test.ts:8, 55, 56"
+        ]
+      },
+      "TemplateConfig": {
+        "definition": "src/lib/product-state.ts:501",
+        "callsites": [
+          "src/lib/product-state.ts:515 (TEMPLATES annotation)",
+          "src/lib/product-state.ts:925 (getCompatibleTemplates return type)",
+          "src/components/customizer/template-browser.tsx:10, 43 (previewItem type)",
+          "src/components/products/product-detail-catalog-view.tsx:11, 89 (previewItem type)",
+          "src/components/products/responsive-template-preview.tsx:6, 29 (templateItem prop type)"
+        ]
+      },
+      "PublishedTemplate": {
+        "definition": "src/lib/domain/catalog.ts:25",
+        "callsites": [
+          "src/lib/product-catalog.ts:2, 5, 355 (getPublishedTemplates return type)",
+          "src/lib/repositories/catalog-repository.ts:26, 94, 212 (listTemplates, getStaticTemplates)"
+        ]
+      }
+    },
+    "entryPoints": {
+      "urlQueryTemplateParam": {
+        "reader": "src/components/customizer/customizer-shell.tsx:360-376",
+        "description": "Parses ?template=<id> from URL search params on mount. If present in TEMPLATES, transitions state via SET_TEMPLATE.",
+        "writers": [
+          "src/components/products/product-detail-catalog-view.tsx:123 (?template=blank&view=editor)",
+          "src/components/products/product-detail-catalog-view.tsx:130 (?template=${templateId}&view=editor)",
+          "src/components/products/responsive-template-preview.tsx:327 (onApply calls parent router.push)"
+        ]
+      },
+      "urlQueryViewParam": {
+        "reader": "src/components/customizer/customizer-shell.tsx:380-381",
+        "description": "Parses ?view=template-browser to open full-screen template browser."
+      },
+      "navigationBack": {
+        "resolver": "src/lib/navigation.ts:138-160 (resolveTemplateBrowserBackAction)",
+        "shellHandler": "src/components/customizer/customizer-shell.tsx:770-772 (restores templateReturnView setup or editor)"
+      },
+      "reducerActionSetTemplate": {
+        "definition": "src/lib/product-state.ts:1143, 1235-1261",
+        "dispatches": [
+          "src/components/customizer/customizer-shell.tsx:375 (initial URL query template hydration)",
+          "src/components/customizer/customizer-shell.tsx:1662 (start blank from ProductSetup)",
+          "src/components/customizer/customizer-shell.tsx:1687 (apply selected template from TemplateBrowser)",
+          "src/components/customizer/customizer-shell.tsx:2213 (quick pick from bottom bar)",
+          "src/components/customizer/template-chooser.tsx:50 (template chooser button click)"
+        ]
+      },
+      "blankStart": {
+        "callers": [
+          "src/components/customizer/customizer-shell.tsx:1661-1663 (ProductSetup onStartBlank)",
+          "src/components/products/product-detail-catalog-view.tsx:120-124 (startWithBlank)",
+          "src/components/customizer/customizer-shell.tsx:2097 (empty editor blank check)"
+        ],
+        "state43Contract": "Blank design is local editor initialization action, not a dependency on a published blank database record."
+      },
+      "inEditorReplacement": {
+        "callers": [
+          "src/components/customizer/customizer-shell.tsx:1685-1691 (TemplateBrowser onApplyTemplate with apply-template history entry)",
+          "src/components/customizer/customizer-shell.tsx:2212-2216 (EditorBottomBar quick select with apply-template history entry)",
+          "src/components/customizer/customizer-shell.tsx:913, 933 (structural undo/redo notifications for apply-template)",
+          "src/components/customizer/empty-editor-state.tsx:49, 78 (open template browser)"
+        ]
+      },
+      "exclusions": {
+        "generatedCutlines": "cutLineMode: die-cut in sticker templates is generated dynamically by cutline engine and must be excluded from persisted artwork canvas elements."
+      }
+    }
+  },
+  "entries": [
+    {
+      "legacyId": "blank",
+      "slug": "blank",
+      "name": "Trống",
+      "category": "minimal",
+      "source": "sql_and_static",
+      "aliases": [],
+      "previewHint": "Bắt đầu từ trang trắng",
+      "canonicalTarget": {
+        "productId": "wrapping",
+        "variantId": "a1",
+        "mode": null,
+        "shape": null
+      },
+      "targets": [
+        {
+          "targetKey": "wrapping:a1:none:none",
+          "productId": "wrapping",
+          "variantId": "a1",
+          "mode": null,
+          "shape": null,
+          "isCanonical": true,
+          "deterministicSuccessorId": "blank"
+        },
+        {
+          "targetKey": "wrapping:a2:none:none",
+          "productId": "wrapping",
+          "variantId": "a2",
+          "mode": null,
+          "shape": null,
+          "isCanonical": false,
+          "deterministicSuccessorId": "blank--wrapping--a2--none--none"
+        },
+        {
+          "targetKey": "card:horizontal:none:none",
+          "productId": "card",
+          "variantId": "horizontal",
+          "mode": null,
+          "shape": null,
+          "isCanonical": false,
+          "deterministicSuccessorId": "blank--card--horizontal--none--none"
+        },
+        {
+          "targetKey": "card:vertical:none:none",
+          "productId": "card",
+          "variantId": "vertical",
+          "mode": null,
+          "shape": null,
+          "isCanonical": false,
+          "deterministicSuccessorId": "blank--card--vertical--none--none"
+        },
+        {
+          "targetKey": "sticker:die-cut:none:none",
+          "productId": "sticker",
+          "variantId": "die-cut",
+          "mode": null,
+          "shape": null,
+          "isCanonical": false,
+          "deterministicSuccessorId": "blank--sticker--die-cut--none--none"
+        },
+        {
+          "targetKey": "sticker:fixed-shape:none:none",
+          "productId": "sticker",
+          "variantId": "fixed-shape",
+          "mode": null,
+          "shape": null,
+          "isCanonical": false,
+          "deterministicSuccessorId": "blank--sticker--fixed-shape--none--none"
+        },
+        {
+          "targetKey": "sticker:phone:none:none",
+          "productId": "sticker",
+          "variantId": "phone",
+          "mode": null,
+          "shape": null,
+          "isCanonical": false,
+          "deterministicSuccessorId": "blank--sticker--phone--none--none"
+        },
+        {
+          "targetKey": "notebook:standard:none:none",
+          "productId": "notebook",
+          "variantId": "standard",
+          "mode": null,
+          "shape": null,
+          "isCanonical": false,
+          "deterministicSuccessorId": "blank--notebook--standard--none--none"
+        }
+      ],
+      "sql": {
+        "id": "blank",
+        "productId": null,
+        "slug": "blank",
+        "name": "Trống",
+        "published": true,
+        "thumbnailPath": null,
+        "metadata": {
+          "category": "minimal",
+          "previewHint": "Bắt đầu từ trang trắng"
+        },
+        "seededVersion": 1,
+        "designDocument": {
+          "text": "",
+          "color": "#111827",
+          "backgroundColor": "#ffffff",
+          "elements": [],
+          "productOptions": {}
+        }
+      },
+      "staticConfig": {
+        "name": "Trống",
+        "category": "minimal",
+        "productIds": null,
+        "variantIds": null,
+        "text": "",
+        "color": "#111827",
+        "backgroundColor": "#ffffff",
+        "previewHint": "Bắt đầu từ trang trắng",
+        "productOptions": {},
+        "elements": null
+      }
+    },
+    {
+      "legacyId": "card-h-birthday",
+      "slug": "card-h-birthday",
+      "name": "Sinh nhật ấm áp",
+      "category": "birthday",
+      "source": "sql_and_static",
+      "aliases": [],
+      "previewHint": "Thiết kế thiệp ngang nhẹ nhàng",
+      "canonicalTarget": {
+        "productId": "card",
+        "variantId": "horizontal",
+        "mode": null,
+        "shape": null
+      },
+      "targets": [
+        {
+          "targetKey": "card:horizontal:none:none",
+          "productId": "card",
+          "variantId": "horizontal",
+          "mode": null,
+          "shape": null,
+          "isCanonical": true,
+          "deterministicSuccessorId": "card-h-birthday"
+        }
+      ],
+      "sql": {
+        "id": "card-h-birthday",
+        "productId": "card",
+        "slug": "card-h-birthday",
+        "name": "Sinh nhật ấm áp",
+        "published": true,
+        "thumbnailPath": null,
+        "metadata": {
+          "category": "birthday",
+          "variantIds": [
+            "horizontal"
+          ]
+        },
+        "seededVersion": 1,
+        "designDocument": {
+          "text": "Happy Birthday to You",
+          "color": "#B86C84",
+          "backgroundColor": "#FFFDF8",
+          "productOptions": {
+            "card": {
+              "surface": "front",
+              "fold": "half"
+            }
+          },
+          "elements": [
+            {
+              "id": "card-h-birthday-front-text",
+              "type": "text",
+              "name": "Happy Birthday to You",
+              "x": 50,
+              "y": 50,
+              "width": 70,
+              "height": 16,
+              "rotation": 0,
+              "locked": false,
+              "zIndex": 1,
+              "surface": "front",
+              "data": {
+                "text": "Happy Birthday to You",
+                "color": "#B86C84",
+                "fontFamily": "Be Vietnam Pro",
+                "fontSize": 28,
+                "fontWeight": "bold",
+                "fontStyle": "normal",
+                "align": "center",
+                "lineHeight": 1.2,
+                "letterSpacing": 0,
+                "placeholder": false
+              }
+            },
+            {
+              "id": "card-h-birthday-inside-text",
+              "type": "text",
+              "name": "Chúc bạn một tuổi mới ngập tràn",
+              "x": 50,
+              "y": 50,
+              "width": 70,
+              "height": 14,
+              "rotation": 0,
+              "locked": false,
+              "zIndex": 1,
+              "surface": "inside",
+              "data": {
+                "text": "Chúc bạn một tuổi mới ngập tràn niềm vui và hạnh phúc!",
+                "color": "#2E3338",
+                "fontFamily": "Be Vietnam Pro",
+                "fontSize": 20,
+                "fontWeight": "regular",
+                "fontStyle": "normal",
+                "align": "center",
+                "lineHeight": 1.4,
+                "letterSpacing": 0,
+                "placeholder": false
+              }
+            }
+          ]
+        }
+      },
+      "staticConfig": {
+        "name": "Sinh nhật ấm áp",
+        "category": "birthday",
+        "productIds": [
+          "card"
+        ],
+        "variantIds": [
+          "horizontal"
+        ],
+        "text": "Happy Birthday to You",
+        "color": "#B86C84",
+        "backgroundColor": "#FFFDF8",
+        "previewHint": "Thiết kế thiệp ngang nhẹ nhàng",
+        "productOptions": {
+          "card": {
+            "surface": "front",
+            "fold": "half"
+          }
+        },
+        "elements": [
+          {
+            "id": "card-h-birthday-front-text",
+            "type": "text",
+            "name": "Happy Birthday to You",
+            "x": 50,
+            "y": 50,
+            "width": 70,
+            "height": 16,
+            "rotation": 0,
+            "locked": false,
+            "zIndex": 1,
+            "surface": "front",
+            "data": {
+              "text": "Happy Birthday to You",
+              "color": "#B86C84",
+              "fontFamily": "Be Vietnam Pro",
+              "fontSize": 28,
+              "fontWeight": "bold",
+              "fontStyle": "normal",
+              "align": "center",
+              "lineHeight": 1.2,
+              "letterSpacing": 0,
+              "placeholder": false
+            }
+          },
+          {
+            "id": "card-h-birthday-inside-text",
+            "type": "text",
+            "name": "Chúc bạn một tuổi mới ngập tràn…",
+            "x": 50,
+            "y": 50,
+            "width": 70,
+            "height": 14,
+            "rotation": 0,
+            "locked": false,
+            "zIndex": 1,
+            "surface": "inside",
+            "data": {
+              "text": "Chúc bạn một tuổi mới ngập tràn niềm vui và hạnh phúc!",
+              "color": "#2E3338",
+              "fontFamily": "Be Vietnam Pro",
+              "fontSize": 20,
+              "fontWeight": "regular",
+              "fontStyle": "normal",
+              "align": "center",
+              "lineHeight": 1.4,
+              "letterSpacing": 0,
+              "placeholder": false
+            }
+          }
+        ]
+      }
+    },
+    {
+      "legacyId": "card-h-cute",
+      "slug": "card-h-cute",
+      "name": "Gấu con đáng yêu",
+      "category": "cute",
+      "source": "sql_and_static",
+      "aliases": [],
+      "previewHint": "Hình vẽ ngọt ngào cho người thương",
+      "canonicalTarget": {
+        "productId": "card",
+        "variantId": "horizontal",
+        "mode": null,
+        "shape": null
+      },
+      "targets": [
+        {
+          "targetKey": "card:horizontal:none:none",
+          "productId": "card",
+          "variantId": "horizontal",
+          "mode": null,
+          "shape": null,
+          "isCanonical": true,
+          "deterministicSuccessorId": "card-h-cute"
+        }
+      ],
+      "sql": {
+        "id": "card-h-cute",
+        "productId": "card",
+        "slug": "card-h-cute",
+        "name": "Gấu con đáng yêu",
+        "published": true,
+        "thumbnailPath": null,
+        "metadata": {
+          "category": "cute",
+          "variantIds": [
+            "horizontal"
+          ]
+        },
+        "seededVersion": 1,
+        "designDocument": {
+          "text": "You are so special!",
+          "color": "#315F86",
+          "backgroundColor": "#F8F3E8",
+          "productOptions": {
+            "card": {
+              "surface": "front",
+              "fold": "half"
+            }
+          },
+          "elements": [
+            {
+              "id": "card-h-cute-front-text",
+              "type": "text",
+              "name": "You are so special!",
+              "x": 50,
+              "y": 45,
+              "width": 70,
+              "height": 16,
+              "rotation": 0,
+              "locked": false,
+              "zIndex": 1,
+              "surface": "front",
+              "data": {
+                "text": "You are so special!",
+                "color": "#315F86",
+                "fontFamily": "Be Vietnam Pro",
+                "fontSize": 28,
+                "fontWeight": "bold",
+                "fontStyle": "normal",
+                "align": "center",
+                "lineHeight": 1.2,
+                "letterSpacing": 0,
+                "placeholder": false
+              }
+            },
+            {
+              "id": "card-h-cute-inside-text",
+              "type": "text",
+              "name": "Gửi đến bạn những cái ôm ấm áp",
+              "x": 50,
+              "y": 50,
+              "width": 70,
+              "height": 14,
+              "rotation": 0,
+              "locked": false,
+              "zIndex": 1,
+              "surface": "inside",
+              "data": {
+                "text": "Gửi đến bạn những cái ôm ấm áp nhất hôm nay.",
+                "color": "#2E3338",
+                "fontFamily": "Be Vietnam Pro",
+                "fontSize": 20,
+                "fontWeight": "regular",
+                "fontStyle": "normal",
+                "align": "center",
+                "lineHeight": 1.4,
+                "letterSpacing": 0,
+                "placeholder": false
+              }
+            }
+          ]
+        }
+      },
+      "staticConfig": {
+        "name": "Gấu con đáng yêu",
+        "category": "cute",
+        "productIds": [
+          "card"
+        ],
+        "variantIds": [
+          "horizontal"
+        ],
+        "text": "You are so special!",
+        "color": "#315F86",
+        "backgroundColor": "#F8F3E8",
+        "previewHint": "Hình vẽ ngọt ngào cho người thương",
+        "productOptions": {
+          "card": {
+            "surface": "front",
+            "fold": "half"
+          }
+        },
+        "elements": [
+          {
+            "id": "card-h-cute-front-text",
+            "type": "text",
+            "name": "You are so special!",
+            "x": 50,
+            "y": 45,
+            "width": 70,
+            "height": 16,
+            "rotation": 0,
+            "locked": false,
+            "zIndex": 1,
+            "surface": "front",
+            "data": {
+              "text": "You are so special!",
+              "color": "#315F86",
+              "fontFamily": "Be Vietnam Pro",
+              "fontSize": 28,
+              "fontWeight": "bold",
+              "fontStyle": "normal",
+              "align": "center",
+              "lineHeight": 1.2,
+              "letterSpacing": 0,
+              "placeholder": false
+            }
+          },
+          {
+            "id": "card-h-cute-inside-text",
+            "type": "text",
+            "name": "Gửi đến bạn những cái ôm ấm áp …",
+            "x": 50,
+            "y": 50,
+            "width": 70,
+            "height": 14,
+            "rotation": 0,
+            "locked": false,
+            "zIndex": 1,
+            "surface": "inside",
+            "data": {
+              "text": "Gửi đến bạn những cái ôm ấm áp nhất hôm nay.",
+              "color": "#2E3338",
+              "fontFamily": "Be Vietnam Pro",
+              "fontSize": 20,
+              "fontWeight": "regular",
+              "fontStyle": "normal",
+              "align": "center",
+              "lineHeight": 1.4,
+              "letterSpacing": 0,
+              "placeholder": false
+            }
+          }
+        ]
+      }
+    },
+    {
+      "legacyId": "card-h-love",
+      "slug": "card-h-love",
+      "name": "Tình yêu dịu êm",
+      "category": "love",
+      "source": "sql_and_static",
+      "aliases": [],
+      "previewHint": "Tông hoa hồng lãng mạn",
+      "canonicalTarget": {
+        "productId": "card",
+        "variantId": "horizontal",
+        "mode": null,
+        "shape": null
+      },
+      "targets": [
+        {
+          "targetKey": "card:horizontal:none:none",
+          "productId": "card",
+          "variantId": "horizontal",
+          "mode": null,
+          "shape": null,
+          "isCanonical": true,
+          "deterministicSuccessorId": "card-h-love"
+        }
+      ],
+      "sql": {
+        "id": "card-h-love",
+        "productId": "card",
+        "slug": "card-h-love",
+        "name": "Tình yêu dịu êm",
+        "published": true,
+        "thumbnailPath": null,
+        "metadata": {
+          "category": "love",
+          "variantIds": [
+            "horizontal"
+          ]
+        },
+        "seededVersion": 1,
+        "designDocument": {
+          "text": "Forever & Always",
+          "color": "#B3535D",
+          "backgroundColor": "#FFF8F8",
+          "productOptions": {
+            "card": {
+              "surface": "front",
+              "fold": "half"
+            }
+          },
+          "elements": [
+            {
+              "id": "card-h-love-front-text",
+              "type": "text",
+              "name": "Forever & Always",
+              "x": 50,
+              "y": 48,
+              "width": 70,
+              "height": 16,
+              "rotation": 0,
+              "locked": false,
+              "zIndex": 1,
+              "surface": "front",
+              "data": {
+                "text": "Forever & Always",
+                "color": "#B3535D",
+                "fontFamily": "Be Vietnam Pro",
+                "fontSize": 28,
+                "fontWeight": "bold",
+                "fontStyle": "normal",
+                "align": "center",
+                "lineHeight": 1.2,
+                "letterSpacing": 0,
+                "placeholder": false
+              }
+            },
+            {
+              "id": "card-h-love-inside-text",
+              "type": "text",
+              "name": "Cảm ơn vì đã luôn đồng hành và",
+              "x": 50,
+              "y": 50,
+              "width": 70,
+              "height": 14,
+              "rotation": 0,
+              "locked": false,
+              "zIndex": 1,
+              "surface": "inside",
+              "data": {
+                "text": "Cảm ơn vì đã luôn đồng hành và yêu thương.",
+                "color": "#2E3338",
+                "fontFamily": "Be Vietnam Pro",
+                "fontSize": 20,
+                "fontWeight": "regular",
+                "fontStyle": "normal",
+                "align": "center",
+                "lineHeight": 1.4,
+                "letterSpacing": 0,
+                "placeholder": false
+              }
+            }
+          ]
+        }
+      },
+      "staticConfig": {
+        "name": "Tình yêu dịu êm",
+        "category": "love",
+        "productIds": [
+          "card"
+        ],
+        "variantIds": [
+          "horizontal"
+        ],
+        "text": "Forever & Always",
+        "color": "#B3535D",
+        "backgroundColor": "#FFF8F8",
+        "previewHint": "Tông hoa hồng lãng mạn",
+        "productOptions": {
+          "card": {
+            "surface": "front",
+            "fold": "half"
+          }
+        },
+        "elements": [
+          {
+            "id": "card-h-love-front-text",
+            "type": "text",
+            "name": "Forever & Always",
+            "x": 50,
+            "y": 48,
+            "width": 70,
+            "height": 16,
+            "rotation": 0,
+            "locked": false,
+            "zIndex": 1,
+            "surface": "front",
+            "data": {
+              "text": "Forever & Always",
+              "color": "#B3535D",
+              "fontFamily": "Be Vietnam Pro",
+              "fontSize": 28,
+              "fontWeight": "bold",
+              "fontStyle": "normal",
+              "align": "center",
+              "lineHeight": 1.2,
+              "letterSpacing": 0,
+              "placeholder": false
+            }
+          },
+          {
+            "id": "card-h-love-inside-text",
+            "type": "text",
+            "name": "Cảm ơn vì đã luôn đồng hành và …",
+            "x": 50,
+            "y": 50,
+            "width": 70,
+            "height": 14,
+            "rotation": 0,
+            "locked": false,
+            "zIndex": 1,
+            "surface": "inside",
+            "data": {
+              "text": "Cảm ơn vì đã luôn đồng hành và yêu thương.",
+              "color": "#2E3338",
+              "fontFamily": "Be Vietnam Pro",
+              "fontSize": 20,
+              "fontWeight": "regular",
+              "fontStyle": "normal",
+              "align": "center",
+              "lineHeight": 1.4,
+              "letterSpacing": 0,
+              "placeholder": false
+            }
+          }
+        ]
+      }
+    },
+    {
+      "legacyId": "card-thanks",
+      "slug": "card-thanks",
+      "name": "Lời cảm ơn",
+      "category": "thanks",
+      "source": "sql_and_static",
+      "aliases": [],
+      "previewHint": "Gam xanh xô thơm trang nhã",
+      "canonicalTarget": {
+        "productId": "card",
+        "variantId": "horizontal",
+        "mode": null,
+        "shape": null
+      },
+      "targets": [
+        {
+          "targetKey": "card:horizontal:none:none",
+          "productId": "card",
+          "variantId": "horizontal",
+          "mode": null,
+          "shape": null,
+          "isCanonical": true,
+          "deterministicSuccessorId": "card-thanks"
+        },
+        {
+          "targetKey": "card:vertical:none:none",
+          "productId": "card",
+          "variantId": "vertical",
+          "mode": null,
+          "shape": null,
+          "isCanonical": false,
+          "deterministicSuccessorId": "card-thanks--card--vertical--none--none"
+        }
+      ],
+      "sql": {
+        "id": "card-thanks",
+        "productId": "card",
+        "slug": "card-thanks",
+        "name": "Lời cảm ơn",
+        "published": true,
+        "thumbnailPath": null,
+        "metadata": {
+          "category": "thanks"
+        },
+        "seededVersion": 1,
+        "designDocument": {
+          "text": "Thank you so much",
+          "color": "#5F7E67",
+          "backgroundColor": "#F3F6F3",
+          "productOptions": {
+            "card": {
+              "surface": "front",
+              "fold": "half"
+            }
+          },
+          "elements": [
+            {
+              "id": "card-thanks-front-text",
+              "type": "text",
+              "name": "Thank you so much",
+              "x": 50,
+              "y": 45,
+              "width": 70,
+              "height": 16,
+              "rotation": 0,
+              "locked": false,
+              "zIndex": 1,
+              "surface": "front",
+              "data": {
+                "text": "Thank you so much",
+                "color": "#5F7E67",
+                "fontFamily": "Be Vietnam Pro",
+                "fontSize": 28,
+                "fontWeight": "bold",
+                "fontStyle": "normal",
+                "align": "center",
+                "lineHeight": 1.2,
+                "letterSpacing": 0,
+                "placeholder": false
+              }
+            },
+            {
+              "id": "card-thanks-inside-text",
+              "type": "text",
+              "name": "Biết ơn tất cả sự giúp đỡ và qu",
+              "x": 50,
+              "y": 50,
+              "width": 70,
+              "height": 14,
+              "rotation": 0,
+              "locked": false,
+              "zIndex": 1,
+              "surface": "inside",
+              "data": {
+                "text": "Biết ơn tất cả sự giúp đỡ và quan tâm từ bạn.",
+                "color": "#2E3338",
+                "fontFamily": "Be Vietnam Pro",
+                "fontSize": 20,
+                "fontWeight": "regular",
+                "fontStyle": "normal",
+                "align": "center",
+                "lineHeight": 1.4,
+                "letterSpacing": 0,
+                "placeholder": false
+              }
+            }
+          ]
+        }
+      },
+      "staticConfig": {
+        "name": "Lời cảm ơn",
+        "category": "thanks",
+        "productIds": [
+          "card"
+        ],
+        "variantIds": null,
+        "text": "Thank you so much",
+        "color": "#5F7E67",
+        "backgroundColor": "#F3F6F3",
+        "previewHint": "Gam xanh xô thơm trang nhã",
+        "productOptions": {
+          "card": {
+            "surface": "front",
+            "fold": "half"
+          }
+        },
+        "elements": [
+          {
+            "id": "card-thanks-front-text",
+            "type": "text",
+            "name": "Thank you so much",
+            "x": 50,
+            "y": 45,
+            "width": 70,
+            "height": 16,
+            "rotation": 0,
+            "locked": false,
+            "zIndex": 1,
+            "surface": "front",
+            "data": {
+              "text": "Thank you so much",
+              "color": "#5F7E67",
+              "fontFamily": "Be Vietnam Pro",
+              "fontSize": 28,
+              "fontWeight": "bold",
+              "fontStyle": "normal",
+              "align": "center",
+              "lineHeight": 1.2,
+              "letterSpacing": 0,
+              "placeholder": false
+            }
+          },
+          {
+            "id": "card-thanks-inside-text",
+            "type": "text",
+            "name": "Biết ơn tất cả sự giúp đỡ và qu…",
+            "x": 50,
+            "y": 50,
+            "width": 70,
+            "height": 14,
+            "rotation": 0,
+            "locked": false,
+            "zIndex": 1,
+            "surface": "inside",
+            "data": {
+              "text": "Biết ơn tất cả sự giúp đỡ và quan tâm từ bạn.",
+              "color": "#2E3338",
+              "fontFamily": "Be Vietnam Pro",
+              "fontSize": 20,
+              "fontWeight": "regular",
+              "fontStyle": "normal",
+              "align": "center",
+              "lineHeight": 1.4,
+              "letterSpacing": 0,
+              "placeholder": false
+            }
+          }
+        ]
+      }
+    },
+    {
+      "legacyId": "card-v-floral",
+      "slug": "card-v-floral",
+      "name": "Nhành hoa nhỏ",
+      "category": "floral",
+      "source": "sql_and_static",
+      "aliases": [],
+      "previewHint": "Thiệp đứng họa tiết thực vật tinh tế",
+      "canonicalTarget": {
+        "productId": "card",
+        "variantId": "vertical",
+        "mode": null,
+        "shape": null
+      },
+      "targets": [
+        {
+          "targetKey": "card:vertical:none:none",
+          "productId": "card",
+          "variantId": "vertical",
+          "mode": null,
+          "shape": null,
+          "isCanonical": true,
+          "deterministicSuccessorId": "card-v-floral"
+        }
+      ],
+      "sql": {
+        "id": "card-v-floral",
+        "productId": "card",
+        "slug": "card-v-floral",
+        "name": "Nhành hoa nhỏ",
+        "published": true,
+        "thumbnailPath": null,
+        "metadata": {
+          "category": "floral",
+          "variantIds": [
+            "vertical"
+          ]
+        },
+        "seededVersion": 1,
+        "designDocument": {
+          "text": "Lời chúc yêu thương",
+          "color": "#2E3338",
+          "backgroundColor": "#FAF7F0",
+          "productOptions": {
+            "card": {
+              "surface": "front",
+              "fold": "half"
+            }
+          },
+          "elements": [
+            {
+              "id": "card-v-floral-front-text",
+              "type": "text",
+              "name": "Lời chúc yêu thương",
+              "x": 50,
+              "y": 42,
+              "width": 70,
+              "height": 16,
+              "rotation": 0,
+              "locked": false,
+              "zIndex": 1,
+              "surface": "front",
+              "data": {
+                "text": "Lời chúc yêu thương",
+                "color": "#2E3338",
+                "fontFamily": "Be Vietnam Pro",
+                "fontSize": 28,
+                "fontWeight": "bold",
+                "fontStyle": "normal",
+                "align": "center",
+                "lineHeight": 1.2,
+                "letterSpacing": 0,
+                "placeholder": false
+              }
+            },
+            {
+              "id": "card-v-floral-inside-text",
+              "type": "text",
+              "name": "Mong mỗi ngày của bạn đều dịu d",
+              "x": 50,
+              "y": 50,
+              "width": 70,
+              "height": 14,
+              "rotation": 0,
+              "locked": false,
+              "zIndex": 1,
+              "surface": "inside",
+              "data": {
+                "text": "Mong mỗi ngày của bạn đều dịu dàng như hoa nở.",
+                "color": "#2E3338",
+                "fontFamily": "Be Vietnam Pro",
+                "fontSize": 20,
+                "fontWeight": "regular",
+                "fontStyle": "normal",
+                "align": "center",
+                "lineHeight": 1.4,
+                "letterSpacing": 0,
+                "placeholder": false
+              }
+            }
+          ]
+        }
+      },
+      "staticConfig": {
+        "name": "Nhành hoa nhỏ",
+        "category": "floral",
+        "productIds": [
+          "card"
+        ],
+        "variantIds": [
+          "vertical"
+        ],
+        "text": "Lời chúc yêu thương",
+        "color": "#2E3338",
+        "backgroundColor": "#FAF7F0",
+        "previewHint": "Thiệp đứng họa tiết thực vật tinh tế",
+        "productOptions": {
+          "card": {
+            "surface": "front",
+            "fold": "half"
+          }
+        },
+        "elements": [
+          {
+            "id": "card-v-floral-front-text",
+            "type": "text",
+            "name": "Lời chúc yêu thương",
+            "x": 50,
+            "y": 42,
+            "width": 70,
+            "height": 16,
+            "rotation": 0,
+            "locked": false,
+            "zIndex": 1,
+            "surface": "front",
+            "data": {
+              "text": "Lời chúc yêu thương",
+              "color": "#2E3338",
+              "fontFamily": "Be Vietnam Pro",
+              "fontSize": 28,
+              "fontWeight": "bold",
+              "fontStyle": "normal",
+              "align": "center",
+              "lineHeight": 1.2,
+              "letterSpacing": 0,
+              "placeholder": false
+            }
+          },
+          {
+            "id": "card-v-floral-inside-text",
+            "type": "text",
+            "name": "Mong mỗi ngày của bạn đều dịu d…",
+            "x": 50,
+            "y": 50,
+            "width": 70,
+            "height": 14,
+            "rotation": 0,
+            "locked": false,
+            "zIndex": 1,
+            "surface": "inside",
+            "data": {
+              "text": "Mong mỗi ngày của bạn đều dịu dàng như hoa nở.",
+              "color": "#2E3338",
+              "fontFamily": "Be Vietnam Pro",
+              "fontSize": 20,
+              "fontWeight": "regular",
+              "fontStyle": "normal",
+              "align": "center",
+              "lineHeight": 1.4,
+              "letterSpacing": 0,
+              "placeholder": false
+            }
+          }
+        ]
+      }
+    },
+    {
+      "legacyId": "celebrate",
+      "slug": "celebrate",
+      "name": "Tiệc tùng",
+      "category": "birthday",
+      "source": "sql_and_static",
+      "aliases": [],
+      "previewHint": "Rực rỡ cho các dịp sinh nhật và kỷ niệm",
+      "canonicalTarget": {
+        "productId": "wrapping",
+        "variantId": "a1",
+        "mode": "pattern",
+        "shape": null
+      },
+      "targets": [
+        {
+          "targetKey": "wrapping:a1:pattern:none",
+          "productId": "wrapping",
+          "variantId": "a1",
+          "mode": "pattern",
+          "shape": null,
+          "isCanonical": true,
+          "deterministicSuccessorId": "celebrate"
+        },
+        {
+          "targetKey": "wrapping:a2:pattern:none",
+          "productId": "wrapping",
+          "variantId": "a2",
+          "mode": "pattern",
+          "shape": null,
+          "isCanonical": false,
+          "deterministicSuccessorId": "celebrate--wrapping--a2--pattern--none"
+        },
+        {
+          "targetKey": "card:horizontal:none:none",
+          "productId": "card",
+          "variantId": "horizontal",
+          "mode": null,
+          "shape": null,
+          "isCanonical": false,
+          "deterministicSuccessorId": "celebrate--card--horizontal--none--none"
+        },
+        {
+          "targetKey": "card:vertical:none:none",
+          "productId": "card",
+          "variantId": "vertical",
+          "mode": null,
+          "shape": null,
+          "isCanonical": false,
+          "deterministicSuccessorId": "celebrate--card--vertical--none--none"
+        },
+        {
+          "targetKey": "sticker:die-cut:none:none",
+          "productId": "sticker",
+          "variantId": "die-cut",
+          "mode": null,
+          "shape": null,
+          "isCanonical": false,
+          "deterministicSuccessorId": "celebrate--sticker--die-cut--none--none"
+        },
+        {
+          "targetKey": "sticker:fixed-shape:none:none",
+          "productId": "sticker",
+          "variantId": "fixed-shape",
+          "mode": null,
+          "shape": null,
+          "isCanonical": false,
+          "deterministicSuccessorId": "celebrate--sticker--fixed-shape--none--none"
+        },
+        {
+          "targetKey": "sticker:phone:none:none",
+          "productId": "sticker",
+          "variantId": "phone",
+          "mode": null,
+          "shape": null,
+          "isCanonical": false,
+          "deterministicSuccessorId": "celebrate--sticker--phone--none--none"
+        },
+        {
+          "targetKey": "notebook:standard:none:none",
+          "productId": "notebook",
+          "variantId": "standard",
+          "mode": null,
+          "shape": null,
+          "isCanonical": false,
+          "deterministicSuccessorId": "celebrate--notebook--standard--none--none"
+        }
+      ],
+      "sql": {
+        "id": "celebrate",
+        "productId": null,
+        "slug": "celebrate",
+        "name": "Tiệc tùng",
+        "published": true,
+        "thumbnailPath": null,
+        "metadata": {
+          "category": "birthday",
+          "previewHint": "Rực rỡ cho các dịp sinh nhật và kỷ niệm"
+        },
+        "seededVersion": 1,
+        "designDocument": {
+          "text": "Chúc mừng!",
+          "color": "#7c2d12",
+          "backgroundColor": "#fef3c7",
+          "elements": [],
+          "productOptions": {
+            "wrapping": {
+              "mode": "pattern",
+              "patternConfig": {
+                "enabled": true,
+                "repeatMode": "half-brick",
+                "scale": 125,
+                "spacingX": 0,
+                "spacingY": 0,
+                "rotation": 0,
+                "backgroundColor": "#ffffff"
+              },
+              "repeatStyle": "brick",
+              "patternScale": 125
+            },
+            "card": {
+              "surface": "inside",
+              "fold": "half"
+            },
+            "sticker": {
+              "hasWhiteBorder": true,
+              "borderWidth": 10
+            },
+            "notebook": {
+              "finish": "glossy"
+            }
+          }
+        }
+      },
+      "staticConfig": {
+        "name": "Tiệc tùng",
+        "category": "birthday",
+        "productIds": null,
+        "variantIds": null,
+        "text": "Chúc mừng!",
+        "color": "#7c2d12",
+        "backgroundColor": "#fef3c7",
+        "previewHint": "Rực rỡ cho các dịp sinh nhật và kỷ niệm",
+        "productOptions": {
+          "wrapping": {
+            "mode": "pattern",
+            "patternConfig": {
+              "enabled": true,
+              "repeatMode": "half-brick",
+              "scale": 125,
+              "spacingX": 0,
+              "spacingY": 0,
+              "rotation": 0,
+              "backgroundColor": "#ffffff"
+            },
+            "repeatStyle": "brick",
+            "patternScale": 125
+          },
+          "card": {
+            "surface": "inside",
+            "fold": "half"
+          },
+          "sticker": {
+            "hasWhiteBorder": true,
+            "borderWidth": 10
+          },
+          "notebook": {
+            "finish": "glossy"
+          }
+        },
+        "elements": null
+      }
+    },
+    {
+      "legacyId": "minimal",
+      "slug": "minimal",
+      "name": "Tối giản",
+      "category": "minimal",
+      "source": "sql_and_static",
+      "aliases": [],
+      "previewHint": "Đường nét thanh lịch, gam màu trung tính",
+      "canonicalTarget": {
+        "productId": "wrapping",
+        "variantId": "a1",
+        "mode": "full-sheet",
+        "shape": null
+      },
+      "targets": [
+        {
+          "targetKey": "wrapping:a1:full-sheet:none",
+          "productId": "wrapping",
+          "variantId": "a1",
+          "mode": "full-sheet",
+          "shape": null,
+          "isCanonical": true,
+          "deterministicSuccessorId": "minimal"
+        },
+        {
+          "targetKey": "wrapping:a2:full-sheet:none",
+          "productId": "wrapping",
+          "variantId": "a2",
+          "mode": "full-sheet",
+          "shape": null,
+          "isCanonical": false,
+          "deterministicSuccessorId": "minimal--wrapping--a2--full-sheet--none"
+        },
+        {
+          "targetKey": "card:horizontal:none:none",
+          "productId": "card",
+          "variantId": "horizontal",
+          "mode": null,
+          "shape": null,
+          "isCanonical": false,
+          "deterministicSuccessorId": "minimal--card--horizontal--none--none"
+        },
+        {
+          "targetKey": "card:vertical:none:none",
+          "productId": "card",
+          "variantId": "vertical",
+          "mode": null,
+          "shape": null,
+          "isCanonical": false,
+          "deterministicSuccessorId": "minimal--card--vertical--none--none"
+        },
+        {
+          "targetKey": "sticker:die-cut:none:none",
+          "productId": "sticker",
+          "variantId": "die-cut",
+          "mode": null,
+          "shape": null,
+          "isCanonical": false,
+          "deterministicSuccessorId": "minimal--sticker--die-cut--none--none"
+        },
+        {
+          "targetKey": "sticker:fixed-shape:none:none",
+          "productId": "sticker",
+          "variantId": "fixed-shape",
+          "mode": null,
+          "shape": null,
+          "isCanonical": false,
+          "deterministicSuccessorId": "minimal--sticker--fixed-shape--none--none"
+        },
+        {
+          "targetKey": "sticker:phone:none:none",
+          "productId": "sticker",
+          "variantId": "phone",
+          "mode": null,
+          "shape": null,
+          "isCanonical": false,
+          "deterministicSuccessorId": "minimal--sticker--phone--none--none"
+        },
+        {
+          "targetKey": "notebook:standard:none:none",
+          "productId": "notebook",
+          "variantId": "standard",
+          "mode": null,
+          "shape": null,
+          "isCanonical": false,
+          "deterministicSuccessorId": "minimal--notebook--standard--none--none"
+        }
+      ],
+      "sql": {
+        "id": "minimal",
+        "productId": null,
+        "slug": "minimal",
+        "name": "Tối giản",
+        "published": true,
+        "thumbnailPath": null,
+        "metadata": {
+          "category": "minimal",
+          "previewHint": "Đường nét thanh lịch, gam màu trung tính"
+        },
+        "seededVersion": 1,
+        "designDocument": {
+          "text": "Dành riêng cho bạn",
+          "color": "#243447",
+          "backgroundColor": "#f5f1e8",
+          "elements": [],
+          "productOptions": {
+            "wrapping": {
+              "mode": "full-sheet",
+              "patternConfig": {
+                "enabled": false,
+                "repeatMode": "basic",
+                "scale": 90,
+                "spacingX": 0,
+                "spacingY": 0,
+                "rotation": 0,
+                "backgroundColor": "#f5f1e8"
+              },
+              "repeatStyle": "regular",
+              "patternScale": 90
+            },
+            "card": {
+              "surface": "front",
+              "fold": "half"
+            },
+            "sticker": {
+              "hasWhiteBorder": true,
+              "borderWidth": 6
+            },
+            "notebook": {
+              "finish": "matte"
+            }
+          }
+        }
+      },
+      "staticConfig": {
+        "name": "Tối giản",
+        "category": "minimal",
+        "productIds": null,
+        "variantIds": null,
+        "text": "Dành riêng cho bạn",
+        "color": "#243447",
+        "backgroundColor": "#f5f1e8",
+        "previewHint": "Đường nét thanh lịch, gam màu trung tính",
+        "productOptions": {
+          "wrapping": {
+            "mode": "full-sheet",
+            "patternConfig": {
+              "enabled": false,
+              "repeatMode": "basic",
+              "scale": 90,
+              "spacingX": 0,
+              "spacingY": 0,
+              "rotation": 0,
+              "backgroundColor": "#f5f1e8"
+            },
+            "repeatStyle": "regular",
+            "patternScale": 90
+          },
+          "card": {
+            "surface": "front",
+            "fold": "half"
+          },
+          "sticker": {
+            "hasWhiteBorder": true,
+            "borderWidth": 6
+          },
+          "notebook": {
+            "finish": "matte"
+          }
+        },
+        "elements": null
+      }
+    },
+    {
+      "legacyId": "notebook-floral",
+      "slug": "notebook-floral",
+      "name": "Khu vườn bí mật",
+      "category": "floral",
+      "source": "sql_and_static",
+      "aliases": [],
+      "previewHint": "Bìa sổ tay họa tiết thực vật nhã nhặn",
+      "canonicalTarget": {
+        "productId": "notebook",
+        "variantId": "standard",
+        "mode": null,
+        "shape": null
+      },
+      "targets": [
+        {
+          "targetKey": "notebook:standard:none:none",
+          "productId": "notebook",
+          "variantId": "standard",
+          "mode": null,
+          "shape": null,
+          "isCanonical": true,
+          "deterministicSuccessorId": "notebook-floral"
+        }
+      ],
+      "sql": {
+        "id": "notebook-floral",
+        "productId": "notebook",
+        "slug": "notebook-floral",
+        "name": "Khu vườn bí mật",
+        "published": true,
+        "thumbnailPath": null,
+        "metadata": {
+          "category": "floral"
+        },
+        "seededVersion": 1,
+        "designDocument": {
+          "text": "My Daily Journal",
+          "color": "#2E3338",
+          "backgroundColor": "#EDE8DF",
+          "elements": [],
+          "productOptions": {
+            "notebook": {
+              "finish": "matte"
+            }
+          }
+        }
+      },
+      "staticConfig": {
+        "name": "Khu vườn bí mật",
+        "category": "floral",
+        "productIds": [
+          "notebook"
+        ],
+        "variantIds": null,
+        "text": "My Daily Journal",
+        "color": "#2E3338",
+        "backgroundColor": "#EDE8DF",
+        "previewHint": "Bìa sổ tay họa tiết thực vật nhã nhặn",
+        "productOptions": {
+          "notebook": {
+            "finish": "matte"
+          }
+        },
+        "elements": null
+      }
+    },
+    {
+      "legacyId": "notebook-minimal",
+      "slug": "notebook-minimal",
+      "name": "Ghi chú Tối giản",
+      "category": "minimal",
+      "source": "sql_and_static",
+      "aliases": [],
+      "previewHint": "Bìa sổ phong cách typography hiện đại",
+      "canonicalTarget": {
+        "productId": "notebook",
+        "variantId": "standard",
+        "mode": null,
+        "shape": null
+      },
+      "targets": [
+        {
+          "targetKey": "notebook:standard:none:none",
+          "productId": "notebook",
+          "variantId": "standard",
+          "mode": null,
+          "shape": null,
+          "isCanonical": true,
+          "deterministicSuccessorId": "notebook-minimal"
+        }
+      ],
+      "sql": {
+        "id": "notebook-minimal",
+        "productId": "notebook",
+        "slug": "notebook-minimal",
+        "name": "Ghi chú Tối giản",
+        "published": true,
+        "thumbnailPath": null,
+        "metadata": {
+          "category": "minimal"
+        },
+        "seededVersion": 1,
+        "designDocument": {
+          "text": "Thoughts & Ideas",
+          "color": "#344E66",
+          "backgroundColor": "#F3F5F7",
+          "elements": [],
+          "productOptions": {
+            "notebook": {
+              "finish": "matte"
+            }
+          }
+        }
+      },
+      "staticConfig": {
+        "name": "Ghi chú Tối giản",
+        "category": "minimal",
+        "productIds": [
+          "notebook"
+        ],
+        "variantIds": null,
+        "text": "Thoughts & Ideas",
+        "color": "#344E66",
+        "backgroundColor": "#F3F5F7",
+        "previewHint": "Bìa sổ phong cách typography hiện đại",
+        "productOptions": {
+          "notebook": {
+            "finish": "matte"
+          }
+        },
+        "elements": null
+      }
+    },
+    {
+      "legacyId": "sticker-coffee-cozy",
+      "slug": "sticker-coffee-cozy",
+      "name": "Tách cà phê Ấm",
+      "category": "minimal",
+      "source": "static_alias",
+      "aliases": [
+        "sticker-cozy-coffee"
+      ],
+      "previewHint": "Sticker góc chill cà phê cho sổ và laptop",
+      "canonicalTarget": {
+        "productId": "sticker",
+        "variantId": "fixed-shape",
+        "mode": null,
+        "shape": "rounded-rectangle"
+      },
+      "targets": [
+        {
+          "targetKey": "sticker:fixed-shape:none:rounded-rectangle",
+          "productId": "sticker",
+          "variantId": "fixed-shape",
+          "mode": null,
+          "shape": "rounded-rectangle",
+          "isCanonical": true,
+          "deterministicSuccessorId": "sticker-coffee-cozy"
+        },
+        {
+          "targetKey": "sticker:die-cut:none:none",
+          "productId": "sticker",
+          "variantId": "die-cut",
+          "mode": null,
+          "shape": null,
+          "isCanonical": false,
+          "deterministicSuccessorId": "sticker-coffee-cozy--sticker--die-cut--none--none"
+        }
+      ],
+      "sql": null,
+      "staticConfig": {
+        "name": "Tách cà phê Ấm",
+        "category": "minimal",
+        "productIds": [
+          "sticker"
+        ],
+        "variantIds": [
+          "fixed-shape",
+          "die-cut"
+        ],
+        "text": "Warm Coffee & Book",
+        "color": "#5C381E",
+        "backgroundColor": "#FDF7EE",
+        "previewHint": "Sticker góc chill cà phê cho sổ và laptop",
+        "productOptions": {
+          "sticker": {
+            "shape": "rounded-rectangle",
+            "hasWhiteBorder": true,
+            "borderWidth": 5
+          }
+        },
+        "elements": null
+      }
+    },
+    {
+      "legacyId": "sticker-cozy-coffee",
+      "slug": "sticker-cozy-coffee",
+      "name": "Tách cà phê Ấm",
+      "category": "minimal",
+      "source": "sql_and_static",
+      "aliases": [
+        "sticker-coffee-cozy"
+      ],
+      "previewHint": "Sticker góc chill cà phê cho sổ và laptop",
+      "canonicalTarget": {
+        "productId": "sticker",
+        "variantId": "fixed-shape",
+        "mode": null,
+        "shape": "rounded-rectangle"
+      },
+      "targets": [
+        {
+          "targetKey": "sticker:fixed-shape:none:rounded-rectangle",
+          "productId": "sticker",
+          "variantId": "fixed-shape",
+          "mode": null,
+          "shape": "rounded-rectangle",
+          "isCanonical": true,
+          "deterministicSuccessorId": "sticker-cozy-coffee"
+        },
+        {
+          "targetKey": "sticker:die-cut:none:none",
+          "productId": "sticker",
+          "variantId": "die-cut",
+          "mode": null,
+          "shape": null,
+          "isCanonical": false,
+          "deterministicSuccessorId": "sticker-cozy-coffee--sticker--die-cut--none--none"
+        }
+      ],
+      "sql": {
+        "id": "sticker-cozy-coffee",
+        "productId": "sticker",
+        "slug": "sticker-cozy-coffee",
+        "name": "Tách cà phê Ấm",
+        "published": true,
+        "thumbnailPath": null,
+        "metadata": {
+          "category": "minimal",
+          "variantIds": [
+            "fixed-shape",
+            "die-cut"
+          ]
+        },
+        "seededVersion": 1,
+        "designDocument": {
+          "text": "Warm Coffee & Book",
+          "color": "#5C381E",
+          "backgroundColor": "#FDF7EE",
+          "elements": [],
+          "productOptions": {
+            "sticker": {
+              "shape": "rounded-rectangle",
+              "hasWhiteBorder": true,
+              "borderWidth": 5
+            }
+          }
+        }
+      },
+      "staticConfig": {
+        "name": "Tách cà phê Ấm",
+        "category": "minimal",
+        "productIds": [
+          "sticker"
+        ],
+        "variantIds": [
+          "fixed-shape",
+          "die-cut"
+        ],
+        "text": "Warm Coffee & Book",
+        "color": "#5C381E",
+        "backgroundColor": "#FDF7EE",
+        "previewHint": "Sticker góc chill cà phê cho sổ và laptop",
+        "productOptions": {
+          "sticker": {
+            "shape": "rounded-rectangle",
+            "hasWhiteBorder": true,
+            "borderWidth": 5
+          }
+        },
+        "elements": null
+      }
+    },
+    {
+      "legacyId": "sticker-cute-pack",
+      "slug": "sticker-cute-pack",
+      "name": "Sticker Mèo con",
+      "category": "cute",
+      "source": "sql_and_static",
+      "aliases": [],
+      "previewHint": "Họa tiết nhí nhảnh dán điện thoại & vở",
+      "canonicalTarget": {
+        "productId": "sticker",
+        "variantId": "fixed-shape",
+        "mode": null,
+        "shape": "circle"
+      },
+      "targets": [
+        {
+          "targetKey": "sticker:fixed-shape:none:circle",
+          "productId": "sticker",
+          "variantId": "fixed-shape",
+          "mode": null,
+          "shape": "circle",
+          "isCanonical": true,
+          "deterministicSuccessorId": "sticker-cute-pack"
+        },
+        {
+          "targetKey": "sticker:die-cut:none:none",
+          "productId": "sticker",
+          "variantId": "die-cut",
+          "mode": null,
+          "shape": null,
+          "isCanonical": false,
+          "deterministicSuccessorId": "sticker-cute-pack--sticker--die-cut--none--none"
+        },
+        {
+          "targetKey": "sticker:phone:none:none",
+          "productId": "sticker",
+          "variantId": "phone",
+          "mode": null,
+          "shape": null,
+          "isCanonical": false,
+          "deterministicSuccessorId": "sticker-cute-pack--sticker--phone--none--none"
+        }
+      ],
+      "sql": {
+        "id": "sticker-cute-pack",
+        "productId": "sticker",
+        "slug": "sticker-cute-pack",
+        "name": "Sticker Mèo con",
+        "published": true,
+        "thumbnailPath": null,
+        "metadata": {
+          "category": "cute"
+        },
+        "seededVersion": 1,
+        "designDocument": {
+          "text": "Meow",
+          "color": "#2E3338",
+          "backgroundColor": "#FFFFFF",
+          "elements": [],
+          "productOptions": {
+            "sticker": {
+              "shape": "circle",
+              "hasWhiteBorder": true,
+              "borderWidth": 6
+            }
+          }
+        }
+      },
+      "staticConfig": {
+        "name": "Sticker Mèo con",
+        "category": "cute",
+        "productIds": [
+          "sticker"
+        ],
+        "variantIds": null,
+        "text": "Meow",
+        "color": "#2E3338",
+        "backgroundColor": "#FFFFFF",
+        "previewHint": "Họa tiết nhí nhảnh dán điện thoại & vở",
+        "productOptions": {
+          "sticker": {
+            "shape": "circle",
+            "hasWhiteBorder": true,
+            "borderWidth": 6
+          }
+        },
+        "elements": null
+      }
+    },
+    {
+      "legacyId": "sticker-diecut-love",
+      "slug": "sticker-diecut-love",
+      "name": "Trái tim viền trắng",
+      "category": "love",
+      "source": "sql_and_static",
+      "aliases": [],
+      "previewHint": "Tạo đường cắt die-cut ôm sát hình",
+      "canonicalTarget": {
+        "productId": "sticker",
+        "variantId": "die-cut",
+        "mode": null,
+        "shape": null
+      },
+      "targets": [
+        {
+          "targetKey": "sticker:die-cut:none:none",
+          "productId": "sticker",
+          "variantId": "die-cut",
+          "mode": null,
+          "shape": null,
+          "isCanonical": true,
+          "deterministicSuccessorId": "sticker-diecut-love"
+        }
+      ],
+      "sql": {
+        "id": "sticker-diecut-love",
+        "productId": "sticker",
+        "slug": "sticker-diecut-love",
+        "name": "Trái tim viền trắng",
+        "published": true,
+        "thumbnailPath": null,
+        "metadata": {
+          "category": "love",
+          "variantIds": [
+            "die-cut"
+          ]
+        },
+        "seededVersion": 1,
+        "designDocument": {
+          "text": "Love",
+          "color": "#B3535D",
+          "backgroundColor": "#FFFFFF",
+          "elements": [],
+          "productOptions": {
+            "sticker": {
+              "hasWhiteBorder": true,
+              "borderWidth": 8,
+              "cutLineMode": "die-cut"
+            }
+          }
+        }
+      },
+      "staticConfig": {
+        "name": "Trái tim viền trắng",
+        "category": "love",
+        "productIds": [
+          "sticker"
+        ],
+        "variantIds": [
+          "die-cut"
+        ],
+        "text": "Love",
+        "color": "#B3535D",
+        "backgroundColor": "#FFFFFF",
+        "previewHint": "Tạo đường cắt die-cut ôm sát hình",
+        "productOptions": {
+          "sticker": {
+            "hasWhiteBorder": true,
+            "borderWidth": 8,
+            "cutLineMode": "die-cut"
+          }
+        },
+        "elements": null
+      }
+    },
+    {
+      "legacyId": "wrapping-a1-cute",
+      "slug": "wrapping-a1-cute",
+      "name": "Họa tiết Cute A1",
+      "category": "cute",
+      "source": "sql_and_static",
+      "aliases": [],
+      "previewHint": "Lưới hoa văn nhỏ xinh vừa khổ A1",
+      "canonicalTarget": {
+        "productId": "wrapping",
+        "variantId": "a1",
+        "mode": "pattern",
+        "shape": null
+      },
+      "targets": [
+        {
+          "targetKey": "wrapping:a1:pattern:none",
+          "productId": "wrapping",
+          "variantId": "a1",
+          "mode": "pattern",
+          "shape": null,
+          "isCanonical": true,
+          "deterministicSuccessorId": "wrapping-a1-cute"
+        }
+      ],
+      "sql": {
+        "id": "wrapping-a1-cute",
+        "productId": "wrapping",
+        "slug": "wrapping-a1-cute",
+        "name": "Họa tiết Cute A1",
+        "published": true,
+        "thumbnailPath": null,
+        "metadata": {
+          "category": "cute",
+          "variantIds": [
+            "a1"
+          ]
+        },
+        "seededVersion": 1,
+        "designDocument": {
+          "text": "Sweet Gift",
+          "color": "#315F86",
+          "backgroundColor": "#F4EAE1",
+          "elements": [],
+          "productOptions": {
+            "wrapping": {
+              "mode": "pattern",
+              "patternConfig": {
+                "enabled": true,
+                "repeatMode": "half-drop",
+                "scale": 110,
+                "spacingX": 0,
+                "spacingY": 0,
+                "rotation": 0,
+                "backgroundColor": "#ffffff"
+              },
+              "repeatStyle": "half-drop",
+              "patternScale": 110
+            }
+          }
+        }
+      },
+      "staticConfig": {
+        "name": "Họa tiết Cute A1",
+        "category": "cute",
+        "productIds": [
+          "wrapping"
+        ],
+        "variantIds": [
+          "a1"
+        ],
+        "text": "Sweet Gift",
+        "color": "#315F86",
+        "backgroundColor": "#F4EAE1",
+        "previewHint": "Lưới hoa văn nhỏ xinh vừa khổ A1",
+        "productOptions": {
+          "wrapping": {
+            "mode": "pattern",
+            "patternConfig": {
+              "enabled": true,
+              "repeatMode": "half-drop",
+              "scale": 110,
+              "spacingX": 0,
+              "spacingY": 0,
+              "rotation": 0,
+              "backgroundColor": "#ffffff"
+            },
+            "repeatStyle": "half-drop",
+            "patternScale": 110
+          }
+        },
+        "elements": null
+      }
+    },
+    {
+      "legacyId": "wrapping-a1-floral",
+      "slug": "wrapping-a1-floral",
+      "name": "Vườn hoa Pastel A1",
+      "category": "floral",
+      "source": "sql_and_static",
+      "aliases": [],
+      "previewHint": "Họa tiết hoa rải đều khổ A1",
+      "canonicalTarget": {
+        "productId": "wrapping",
+        "variantId": "a1",
+        "mode": "pattern",
+        "shape": null
+      },
+      "targets": [
+        {
+          "targetKey": "wrapping:a1:pattern:none",
+          "productId": "wrapping",
+          "variantId": "a1",
+          "mode": "pattern",
+          "shape": null,
+          "isCanonical": true,
+          "deterministicSuccessorId": "wrapping-a1-floral"
+        }
+      ],
+      "sql": {
+        "id": "wrapping-a1-floral",
+        "productId": "wrapping",
+        "slug": "wrapping-a1-floral",
+        "name": "Vườn hoa Pastel A1",
+        "published": true,
+        "thumbnailPath": null,
+        "metadata": {
+          "category": "floral",
+          "variantIds": [
+            "a1"
+          ]
+        },
+        "seededVersion": 1,
+        "designDocument": {
+          "text": "For You",
+          "color": "#7c2d12",
+          "backgroundColor": "#F9F4EE",
+          "elements": [],
+          "productOptions": {
+            "wrapping": {
+              "mode": "pattern",
+              "patternConfig": {
+                "enabled": true,
+                "repeatMode": "half-brick",
+                "scale": 130,
+                "spacingX": 0,
+                "spacingY": 0,
+                "rotation": 0,
+                "backgroundColor": "#ffffff"
+              },
+              "repeatStyle": "brick",
+              "patternScale": 130
+            }
+          }
+        }
+      },
+      "staticConfig": {
+        "name": "Vườn hoa Pastel A1",
+        "category": "floral",
+        "productIds": [
+          "wrapping"
+        ],
+        "variantIds": [
+          "a1"
+        ],
+        "text": "For You",
+        "color": "#7c2d12",
+        "backgroundColor": "#F9F4EE",
+        "previewHint": "Họa tiết hoa rải đều khổ A1",
+        "productOptions": {
+          "wrapping": {
+            "mode": "pattern",
+            "patternConfig": {
+              "enabled": true,
+              "repeatMode": "half-brick",
+              "scale": 130,
+              "spacingX": 0,
+              "spacingY": 0,
+              "rotation": 0,
+              "backgroundColor": "#ffffff"
+            },
+            "repeatStyle": "brick",
+            "patternScale": 130
+          }
+        },
+        "elements": null
+      }
+    },
+    {
+      "legacyId": "wrapping-a2-minimal",
+      "slug": "wrapping-a2-minimal",
+      "name": "Kẻ sọc Minimal A2",
+      "category": "minimal",
+      "source": "sql_and_static",
+      "aliases": [],
+      "previewHint": "Họa tiết kẻ sọc tối giản vừa vặn khổ A2",
+      "canonicalTarget": {
+        "productId": "wrapping",
+        "variantId": "a2",
+        "mode": "pattern",
+        "shape": null
+      },
+      "targets": [
+        {
+          "targetKey": "wrapping:a2:pattern:none",
+          "productId": "wrapping",
+          "variantId": "a2",
+          "mode": "pattern",
+          "shape": null,
+          "isCanonical": true,
+          "deterministicSuccessorId": "wrapping-a2-minimal"
+        }
+      ],
+      "sql": {
+        "id": "wrapping-a2-minimal",
+        "productId": "wrapping",
+        "slug": "wrapping-a2-minimal",
+        "name": "Kẻ sọc Minimal A2",
+        "published": true,
+        "thumbnailPath": null,
+        "metadata": {
+          "category": "minimal",
+          "variantIds": [
+            "a2"
+          ]
+        },
+        "seededVersion": 1,
+        "designDocument": {
+          "text": "Simple Joy",
+          "color": "#2E3338",
+          "backgroundColor": "#EFECE6",
+          "elements": [],
+          "productOptions": {
+            "wrapping": {
+              "mode": "pattern",
+              "patternConfig": {
+                "enabled": true,
+                "repeatMode": "basic",
+                "scale": 85,
+                "spacingX": 0,
+                "spacingY": 0,
+                "rotation": 0,
+                "backgroundColor": "#ffffff"
+              },
+              "repeatStyle": "regular",
+              "patternScale": 85
+            }
+          }
+        }
+      },
+      "staticConfig": {
+        "name": "Kẻ sọc Minimal A2",
+        "category": "minimal",
+        "productIds": [
+          "wrapping"
+        ],
+        "variantIds": [
+          "a2"
+        ],
+        "text": "Simple Joy",
+        "color": "#2E3338",
+        "backgroundColor": "#EFECE6",
+        "previewHint": "Họa tiết kẻ sọc tối giản vừa vặn khổ A2",
+        "productOptions": {
+          "wrapping": {
+            "mode": "pattern",
+            "patternConfig": {
+              "enabled": true,
+              "repeatMode": "basic",
+              "scale": 85,
+              "spacingX": 0,
+              "spacingY": 0,
+              "rotation": 0,
+              "backgroundColor": "#ffffff"
+            },
+            "repeatStyle": "regular",
+            "patternScale": 85
+          }
+        },
+        "elements": null
+      }
+    },
+    {
+      "legacyId": "wrapping-birthday-balloons",
+      "slug": "wrapping-birthday-balloons",
+      "name": "Bóng bay Sinh nhật",
+      "category": "birthday",
+      "source": "sql_and_static",
+      "aliases": [],
+      "previewHint": "Họa tiết bóng bay rực rỡ vui tươi",
+      "canonicalTarget": {
+        "productId": "wrapping",
+        "variantId": "a1",
+        "mode": "pattern",
+        "shape": null
+      },
+      "targets": [
+        {
+          "targetKey": "wrapping:a1:pattern:none",
+          "productId": "wrapping",
+          "variantId": "a1",
+          "mode": "pattern",
+          "shape": null,
+          "isCanonical": true,
+          "deterministicSuccessorId": "wrapping-birthday-balloons"
+        },
+        {
+          "targetKey": "wrapping:a2:pattern:none",
+          "productId": "wrapping",
+          "variantId": "a2",
+          "mode": "pattern",
+          "shape": null,
+          "isCanonical": false,
+          "deterministicSuccessorId": "wrapping-birthday-balloons--wrapping--a2--pattern--none"
+        }
+      ],
+      "sql": {
+        "id": "wrapping-birthday-balloons",
+        "productId": "wrapping",
+        "slug": "wrapping-birthday-balloons",
+        "name": "Bóng bay Sinh nhật",
+        "published": true,
+        "thumbnailPath": null,
+        "metadata": {
+          "category": "birthday"
+        },
+        "seededVersion": 1,
+        "designDocument": {
+          "text": "Happy Birthday",
+          "color": "#8C3B2F",
+          "backgroundColor": "#FFF2EB",
+          "elements": [],
+          "productOptions": {
+            "wrapping": {
+              "mode": "pattern",
+              "patternConfig": {
+                "enabled": true,
+                "repeatMode": "half-brick",
+                "scale": 110,
+                "spacingX": 0,
+                "spacingY": 0,
+                "rotation": 0,
+                "backgroundColor": "#ffffff"
+              },
+              "repeatStyle": "brick",
+              "patternScale": 110
+            }
+          }
+        }
+      },
+      "staticConfig": {
+        "name": "Bóng bay Sinh nhật",
+        "category": "birthday",
+        "productIds": [
+          "wrapping"
+        ],
+        "variantIds": null,
+        "text": "Happy Birthday",
+        "color": "#8C3B2F",
+        "backgroundColor": "#FFF2EB",
+        "previewHint": "Họa tiết bóng bay rực rỡ vui tươi",
+        "productOptions": {
+          "wrapping": {
+            "mode": "pattern",
+            "patternConfig": {
+              "enabled": true,
+              "repeatMode": "half-brick",
+              "scale": 110,
+              "spacingX": 0,
+              "spacingY": 0,
+              "rotation": 0,
+              "backgroundColor": "#ffffff"
+            },
+            "repeatStyle": "brick",
+            "patternScale": 110
+          }
+        },
+        "elements": null
+      }
+    }
+  ]
+}
