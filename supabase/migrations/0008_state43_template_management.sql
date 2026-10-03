@@ -2018,3 +2018,431 @@ grant execute on function public.template_list_eligible_source_projects(uuid, te
 
 revoke all on function public.template_cleanup_draft_asset(uuid, text, uuid, integer) from public, anon, authenticated;
 grant execute on function public.template_cleanup_draft_asset(uuid, text, uuid, integer) to service_role;
+
+-- 23. template_publish_draft RPC (State 43 Task 12)
+create or replace function public.template_publish_draft(
+  p_actor uuid,
+  p_request text,
+  p_template_id text,
+  p_draft_id uuid,
+  p_expected_draft_revision bigint,
+  p_expected_catalog_revision bigint,
+  p_session_id uuid,
+  p_lease_epoch bigint,
+  p_validation_id uuid,
+  p_acknowledged_warning_ids text[],
+  p_revision_note text default null
+)
+returns jsonb
+language plpgsql
+security invoker
+set search_path = public, extensions, pg_temp
+as $$
+declare
+  v_payload_hash text;
+  v_op record;
+  v_template record;
+  v_draft record;
+  v_val record;
+  v_dep_record record;
+  v_face record;
+  v_family record;
+  v_sticker record;
+  v_target_snapshot jsonb;
+  v_dependency_snapshot jsonb;
+  v_asset_manifest jsonb;
+  v_thumb_path text;
+  v_next_version integer;
+  v_version_id uuid;
+  v_version record;
+  v_asset_row record;
+  v_fam_id text;
+  v_result jsonb;
+begin
+  perform public.template_authorize_actor(p_actor, 'editor');
+
+  if p_request is null or btrim(p_request) = '' then
+    raise exception 'INVALID_REQUEST_ID' using errcode = 'P0001';
+  end if;
+  if p_template_id is null or btrim(p_template_id) = '' then
+    raise exception 'INVALID_INPUT: templateId required' using errcode = 'P0001';
+  end if;
+  if p_draft_id is null then
+    raise exception 'INVALID_INPUT: draftId required' using errcode = 'P0001';
+  end if;
+  if p_validation_id is null then
+    raise exception 'INVALID_INPUT: validationId required' using errcode = 'P0001';
+  end if;
+  if p_revision_note is not null and length(p_revision_note) > 500 then
+    raise exception 'INVALID_INPUT: revisionNote max 500 characters' using errcode = 'P0001';
+  end if;
+
+  v_payload_hash := md5(jsonb_build_object(
+    'templateId', p_template_id,
+    'draftId', p_draft_id,
+    'expectedDraftRevision', p_expected_draft_revision,
+    'expectedCatalogRevision', p_expected_catalog_revision,
+    'sessionId', p_session_id,
+    'leaseEpoch', p_lease_epoch,
+    'validationId', p_validation_id,
+    'acknowledgedWarningIds', coalesce(p_acknowledged_warning_ids, '{}'::text[]),
+    'revisionNote', p_revision_note
+  )::text);
+
+  -- 1. Idempotency check via template_operations
+  select * into v_op from public.template_operations where request_id = p_request;
+  if found then
+    if v_op.actor_user_id is distinct from p_actor or v_op.payload_hash <> v_payload_hash then
+      raise exception 'OPERATION_CONFLICT' using errcode = 'P0001';
+    end if;
+    return v_op.result;
+  end if;
+
+  -- 2. Lock Template FOR UPDATE
+  select * into v_template from public.templates where id = p_template_id for update;
+  if not found then
+    raise exception 'NOT_FOUND: template not found' using errcode = 'P0001';
+  end if;
+
+  if v_template.status = 'archived' or v_template.archived_at is not null then
+    raise exception 'TEMPLATE_ARCHIVED' using errcode = 'P0001';
+  end if;
+
+  if p_expected_catalog_revision is not null and v_template.revision <> p_expected_catalog_revision then
+    raise exception 'REVISION_CONFLICT' using errcode = 'P0001';
+  end if;
+
+  -- 3. Lock Draft FOR UPDATE
+  select * into v_draft from public.template_drafts where id = p_draft_id and template_id = p_template_id for update;
+  if not found then
+    raise exception 'NOT_FOUND: draft not found' using errcode = 'P0001';
+  end if;
+
+  if p_expected_draft_revision is not null and v_draft.draft_revision <> p_expected_draft_revision then
+    raise exception 'REVISION_CONFLICT' using errcode = 'P0001';
+  end if;
+
+  if v_draft.lease_session_id is null or v_draft.lease_session_id <> p_session_id then
+    raise exception 'LEASE_CONFLICT: invalid session' using errcode = 'P0001';
+  end if;
+
+  if v_draft.lease_epoch <> p_lease_epoch then
+    raise exception 'LEASE_CONFLICT: epoch mismatch' using errcode = 'P0001';
+  end if;
+
+  if v_draft.lease_expires_at is not null and v_draft.lease_expires_at < now() then
+    raise exception 'LEASE_EXPIRED' using errcode = 'P0001';
+  end if;
+
+  if v_draft.editor_user_id is not null and v_draft.editor_user_id <> p_actor then
+    raise exception 'LEASE_CONFLICT: held by another editor' using errcode = 'P0001';
+  end if;
+
+  -- 4. Validate Validation Receipt
+  select * into v_val from public.template_validation_runs
+  where id = p_validation_id and template_id = p_template_id and draft_id = p_draft_id;
+  if not found then
+    raise exception 'VALIDATION_FAILED: validation run not found' using errcode = 'P0001';
+  end if;
+
+  if v_val.expires_at <= now() then
+    raise exception 'VALIDATION_FAILED: validation receipt expired' using errcode = 'P0001';
+  end if;
+
+  if not v_val.customer_preview_passed then
+    raise exception 'VALIDATION_FAILED: customer preview did not pass' using errcode = 'P0001';
+  end if;
+
+  if v_val.source_revision <> v_draft.draft_revision then
+    raise exception 'REVISION_CONFLICT: validation source revision mismatch' using errcode = 'P0001';
+  end if;
+
+  if v_val.lease_epoch <> v_draft.lease_epoch or v_val.lease_session_id <> v_draft.lease_session_id then
+    raise exception 'LEASE_CONFLICT: validation lease mismatch' using errcode = 'P0001';
+  end if;
+
+  if v_draft.source_document_hash is not null and v_val.source_document_hash <> v_draft.source_document_hash then
+    raise exception 'VALIDATION_FAILED: source document hash mismatch' using errcode = 'P0001';
+  end if;
+
+  -- 5. Validates all warnings are acknowledged
+  if coalesce(array_length(v_val.warning_ids, 1), 0) > 0 then
+    if p_acknowledged_warning_ids is null or not (v_val.warning_ids <@ p_acknowledged_warning_ids) then
+      raise exception 'UNACKNOWLEDGED_WARNINGS: all validation warnings must be acknowledged' using errcode = 'P0001';
+    end if;
+  end if;
+
+  -- 6. Lock and verify dependencies under row lock
+  for v_dep_record in (
+    select distinct elem->'data'->>'fontFaceId' as font_face_id
+    from jsonb_array_elements(coalesce(v_draft.design_document->'elements', '[]'::jsonb)) as elem
+    where elem->'data'->>'fontFaceId' is not null
+      and btrim(elem->'data'->>'fontFaceId') <> ''
+    order by 1
+  ) loop
+    if v_dep_record.font_face_id ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' then
+      select * into v_face from public.font_faces where id = v_dep_record.font_face_id::uuid for update;
+      if not found then
+        raise exception 'MISSING_DEPENDENCY: font-face % not found', v_dep_record.font_face_id using errcode = 'P0001';
+      end if;
+      if v_face.status = 'archived' then
+        raise exception 'ARCHIVED_DEPENDENCY: font-face % is archived', v_dep_record.font_face_id using errcode = 'P0001';
+      elsif v_face.status <> 'published' then
+        raise exception 'UNPUBLISHED_DEPENDENCY: font-face % is not published', v_dep_record.font_face_id using errcode = 'P0001';
+      end if;
+
+      select * into v_family from public.fonts where id = v_face.family_id for update;
+      if not found then
+        raise exception 'MISSING_DEPENDENCY: font family % not found', v_face.family_id using errcode = 'P0001';
+      end if;
+      if v_family.status = 'archived' then
+        raise exception 'ARCHIVED_DEPENDENCY: font family % is archived', v_face.family_id using errcode = 'P0001';
+      elsif v_family.status <> 'published' then
+        raise exception 'UNPUBLISHED_DEPENDENCY: font family % is not published', v_face.family_id using errcode = 'P0001';
+      end if;
+    end if;
+  end loop;
+
+  for v_dep_record in (
+    select distinct elem->'data'->>'libraryAssetId' as sticker_id
+    from jsonb_array_elements(coalesce(v_draft.design_document->'elements', '[]'::jsonb)) as elem
+    where elem->'data'->>'libraryAssetId' is not null
+      and btrim(elem->'data'->>'libraryAssetId') <> ''
+    order by 1
+  ) loop
+    select * into v_sticker from public.sticker_assets where id = v_dep_record.sticker_id for update;
+    if not found then
+      raise exception 'MISSING_DEPENDENCY: sticker % not found', v_dep_record.sticker_id using errcode = 'P0001';
+    end if;
+    if v_sticker.status = 'archived' then
+      raise exception 'ARCHIVED_DEPENDENCY: sticker % is archived', v_dep_record.sticker_id using errcode = 'P0001';
+    elsif v_sticker.status <> 'published' then
+      raise exception 'UNPUBLISHED_DEPENDENCY: sticker % is not published', v_dep_record.sticker_id using errcode = 'P0001';
+    end if;
+  end loop;
+
+  -- 7. Prepare target snapshot, dependency snapshot and thumbnail
+  v_target_snapshot := coalesce(
+    v_template.target_snapshot,
+    jsonb_build_object(
+      'productId', v_template.product_id,
+      'variantId', v_template.variant_id,
+      'mode', v_template.product_mode,
+      'shape', v_template.fixed_sticker_shape,
+      'geometryKey', v_template.product_id || coalesce(':' || v_template.variant_id, ''),
+      'surfaces', '[]'::jsonb
+    )
+  );
+
+  v_dependency_snapshot := '[]'::jsonb;
+  for v_dep_record in (
+    select distinct
+      'font-face' as kind,
+      elem->'data'->>'fontFaceId' as asset_id,
+      elem->'data'->>'fontChecksum' as checksum
+    from jsonb_array_elements(coalesce(v_draft.design_document->'elements', '[]'::jsonb)) as elem
+    where elem->'data'->>'fontFaceId' is not null and btrim(elem->'data'->>'fontFaceId') <> ''
+    union
+    select distinct
+      'sticker' as kind,
+      elem->'data'->>'libraryAssetId' as asset_id,
+      elem->'data'->>'assetChecksum' as checksum
+    from jsonb_array_elements(coalesce(v_draft.design_document->'elements', '[]'::jsonb)) as elem
+    where elem->'data'->>'libraryAssetId' is not null and btrim(elem->'data'->>'libraryAssetId') <> ''
+    order by 1, 2
+  ) loop
+    v_dependency_snapshot := v_dependency_snapshot || jsonb_build_array(
+      jsonb_build_object(
+        'kind', v_dep_record.kind,
+        'id', v_dep_record.asset_id,
+        'checksum', coalesce(v_dep_record.checksum, '')
+      )
+    );
+  end loop;
+
+  v_thumb_path := null;
+  if v_val.thumbnail_asset_id is not null then
+    select storage_path into v_thumb_path from public.template_assets where id = v_val.thumbnail_asset_id;
+  end if;
+
+  select coalesce(
+    jsonb_agg(
+      jsonb_build_object(
+        'id', id,
+        'checksum', checksum,
+        'storage_path', storage_path,
+        'mime_type', mime_type,
+        'byte_size', byte_size
+      )
+    ),
+    '[]'::jsonb
+  ) into v_asset_manifest
+  from public.template_assets
+  where template_id = p_template_id
+    and (draft_id = p_draft_id or id = v_val.thumbnail_asset_id);
+
+  -- 8. Compute next version number under Template lock
+  select coalesce(max(version), 0) + 1 into v_next_version
+  from public.template_versions
+  where template_id = p_template_id;
+
+  v_version_id := gen_random_uuid();
+
+  -- 9. Insert immutable template_versions record
+  insert into public.template_versions (
+    id,
+    template_id,
+    version,
+    design_document,
+    document_schema_version,
+    target_snapshot,
+    dependency_snapshot,
+    preflight_snapshot,
+    validation_id,
+    asset_manifest,
+    thumbnail_path,
+    thumbnail_checksum,
+    preview_metadata,
+    published_by,
+    published_at,
+    revision_note
+  ) values (
+    v_version_id,
+    p_template_id,
+    v_next_version,
+    v_draft.design_document,
+    v_draft.document_schema_version,
+    v_target_snapshot,
+    v_dependency_snapshot,
+    jsonb_build_object('findings', v_val.findings, 'warningIds', v_val.warning_ids),
+    v_val.id,
+    v_asset_manifest,
+    v_thumb_path,
+    v_val.thumbnail_checksum,
+    v_val.preview_metadata,
+    p_actor,
+    now(),
+    p_revision_note
+  ) returning * into v_version;
+
+  -- 10. Insert normalized template_version_dependencies
+  for v_dep_record in (
+    select distinct
+      elem->'data'->>'fontFaceId' as font_face_id,
+      elem->'data'->>'fontChecksum' as font_checksum
+    from jsonb_array_elements(coalesce(v_draft.design_document->'elements', '[]'::jsonb)) as elem
+    where elem->'data'->>'fontFaceId' is not null and btrim(elem->'data'->>'fontFaceId') <> ''
+  ) loop
+    if v_dep_record.font_face_id ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' then
+      select family_id into v_fam_id from public.font_faces where id = v_dep_record.font_face_id::uuid;
+      insert into public.template_version_dependencies (version_id, kind, asset_id, checksum, family_id)
+      values (v_version_id, 'font-face', v_dep_record.font_face_id, v_dep_record.font_checksum, v_fam_id)
+      on conflict do nothing;
+    end if;
+  end loop;
+
+  for v_dep_record in (
+    select distinct
+      elem->'data'->>'libraryAssetId' as sticker_id,
+      elem->'data'->>'assetChecksum' as sticker_checksum
+    from jsonb_array_elements(coalesce(v_draft.design_document->'elements', '[]'::jsonb)) as elem
+    where elem->'data'->>'libraryAssetId' is not null and btrim(elem->'data'->>'libraryAssetId') <> ''
+  ) loop
+    insert into public.template_version_dependencies (version_id, kind, asset_id, checksum)
+    values (v_version_id, 'sticker', v_dep_record.sticker_id, v_dep_record.sticker_checksum)
+    on conflict do nothing;
+  end loop;
+
+  -- 11. Link template_version_assets and mark assets published
+  for v_asset_row in
+    select * from public.template_assets
+    where template_id = p_template_id
+      and (draft_id = p_draft_id or id = v_val.thumbnail_asset_id)
+  loop
+    insert into public.template_version_assets (version_id, asset_id)
+    values (v_version_id, v_asset_row.id)
+    on conflict do nothing;
+
+    update public.template_assets
+    set is_published = true,
+        status = 'published',
+        ever_published_at = coalesce(ever_published_at, now()),
+        upload_status = 'verified',
+        draft_id = null
+    where id = v_asset_row.id;
+  end loop;
+
+  -- 12. Update public.templates
+  update public.templates
+  set current_published_version_id = v_version_id,
+      status = 'published',
+      ever_published_at = coalesce(ever_published_at, now()),
+      revision = revision + 1,
+      updated_at = now()
+  where id = p_template_id;
+
+  -- 13. Delete active draft
+  delete from public.template_drafts
+  where id = p_draft_id and template_id = p_template_id;
+
+  -- 14. Record template_published in public.asset_events
+  insert into public.asset_events (
+    actor_user_id,
+    request_id,
+    kind,
+    target_id,
+    before_revision,
+    after_revision,
+    event,
+    metadata_diff
+  ) values (
+    p_actor,
+    case when p_request ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' then p_request::uuid else null end,
+    'template',
+    p_template_id,
+    v_template.revision,
+    v_template.revision + 1,
+    'template_published',
+    jsonb_build_object(
+      'event', 'template_published',
+      'draftId', p_draft_id::text,
+      'draft_id', p_draft_id::text,
+      'versionId', v_version_id::text,
+      'version_id', v_version_id::text,
+      'version', v_next_version,
+      'validationId', p_validation_id::text
+    )
+  );
+
+  -- 15. Record template_operations and return
+  v_result := jsonb_build_object(
+    'ok', true,
+    'version', to_jsonb(v_version)
+  );
+
+  insert into public.template_operations (
+    request_id,
+    actor_user_id,
+    operation,
+    template_id,
+    payload_hash,
+    reserved_version_id,
+    status,
+    result
+  ) values (
+    p_request,
+    p_actor,
+    'publish',
+    p_template_id,
+    v_payload_hash,
+    v_version_id,
+    'completed',
+    v_result
+  );
+
+  return v_result;
+end;
+$$;
+
+revoke all on function public.template_publish_draft(uuid, text, text, uuid, bigint, bigint, uuid, bigint, uuid, text[], text) from public, anon, authenticated;
+grant execute on function public.template_publish_draft(uuid, text, text, uuid, bigint, bigint, uuid, bigint, uuid, text[], text) to service_role;

@@ -9,6 +9,7 @@ import type {
   CreateTemplateRepoInput,
   DependencyMetadataItem,
   EligibleSourceProject,
+  PublishTemplateInput,
   SourceProjectDetail,
   TemplateAssetRecord,
   TemplateAvailability,
@@ -19,6 +20,7 @@ import type {
   TemplateRecord,
   TemplateRepoResult,
   TemplateStatus,
+  TemplateTarget,
   TemplateValidationReceipt,
   TemplateVersionPayload,
   TemplateVersionSummary,
@@ -261,8 +263,14 @@ export function mapDraftRow(row: DatabaseDraftRow): TemplateDraftRecord {
 }
 
 export function mapVersionRow(row: DatabaseVersionRow): TemplateVersionPayload {
-  const productId = 'wrapping' as ProductId;
-  const variantId = 'default';
+  const target = (row.target_snapshot as unknown as TemplateTarget) ?? {
+    productId: 'wrapping' as ProductId,
+    variantId: 'default',
+    mode: null,
+    shape: null,
+    geometryKey: 'wrapping:default',
+    surfaces: [],
+  };
 
   return {
     versionId: String(row.id),
@@ -270,18 +278,10 @@ export function mapVersionRow(row: DatabaseVersionRow): TemplateVersionPayload {
     version: Number(row.version),
     documentSchemaVersion: Number(row.document_schema_version ?? 0),
     document: (row.design_document ?? {}) as unknown as DesignState,
-    target: {
-      productId,
-      variantId,
-      mode: null,
-      shape: null,
-      geometryKey: `${productId}:${variantId}`,
-      surfaces: [],
-    },
+    target,
     dependencies: Array.isArray(row.dependency_snapshot) ? (row.dependency_snapshot as unknown as LibraryRef[]) : [],
   };
 }
-
 export function mapVersionSummary(row: DatabaseVersionRow): TemplateVersionSummary {
   return {
     id: String(row.id),
@@ -319,6 +319,18 @@ function parseRpcError(error: unknown): { code: TemplateErrorCode | string; mess
   }
   if (msg.includes('NOT_FOUND')) {
     return { code: 'NOT_FOUND', message: msg };
+  }
+  if (msg.includes('VALIDATION_FAILED') || msg.includes('UNACKNOWLEDGED_WARNINGS')) {
+    return { code: 'VALIDATION_FAILED', message: msg };
+  }
+  if (msg.includes('ARCHIVED_DEPENDENCY') || msg.includes('UNPUBLISHED_DEPENDENCY') || msg.includes('MISSING_DEPENDENCY') || msg.includes('DEPENDENCY_UNRESOLVED')) {
+    return { code: 'DEPENDENCY_UNRESOLVED', message: msg };
+  }
+  if (msg.includes('TEMPLATE_ARCHIVED')) {
+    return { code: 'TEMPLATE_ARCHIVED', message: msg };
+  }
+  if (msg.includes('IMMUTABLE_VERSION')) {
+    return { code: 'IMMUTABLE_VERSION', message: msg };
   }
   if (msg.includes('INVALID_INPUT') || msg.includes('INVALID_CATEGORY') || msg.includes('INVALID_REQUEST_ID')) {
     return { code: 'INVALID_INPUT', message: msg };
@@ -739,6 +751,52 @@ export class TemplateRepository {
           draftId: String(resp.draftId ?? input.draftId),
           discarded: Boolean(resp.discarded ?? true),
         },
+      };
+    } catch (err: unknown) {
+      const parsed = parseRpcError(err);
+      return { ok: false, code: parsed.code, message: parsed.message };
+    }
+  }
+
+  async publishDraft(
+    actor: string,
+    input: PublishTemplateInput,
+  ): Promise<TemplateRepoResult<TemplateVersionPayload>> {
+    try {
+      const { data, error } = await this.client.rpc('template_publish_draft', {
+        p_actor: actor,
+        p_request: input.requestId,
+        p_template_id: input.templateId,
+        p_draft_id: input.draftId,
+        p_expected_draft_revision: input.expectedRevision,
+        p_expected_catalog_revision: input.expectedCatalogRevision,
+        p_session_id: input.sessionId,
+        p_lease_epoch: input.leaseEpoch,
+        p_validation_id: input.validationId,
+        p_acknowledged_warning_ids: input.acknowledgedWarningIds ?? [],
+        p_revision_note: input.revisionNote ?? null,
+      });
+
+      if (error) {
+        const parsed = parseRpcError(error);
+        return { ok: false, code: parsed.code, message: parsed.message };
+      }
+
+      const resp = data && typeof data === 'object' ? (data as Record<string, unknown>) : null;
+      if (!resp || !resp.ok) {
+        const errCode = typeof resp?.code === 'string' ? (resp.code as TemplateErrorCode) : 'INTERNAL_ERROR';
+        const errMsg = typeof resp?.message === 'string' ? resp.message : 'Publish failed';
+        return { ok: false, code: errCode, message: errMsg };
+      }
+
+      const versionRow = resp.version as DatabaseVersionRow;
+      if (!versionRow) {
+        return { ok: false, code: 'INTERNAL_ERROR', message: 'Publish returned no version' };
+      }
+
+      return {
+        ok: true,
+        value: mapVersionRow(versionRow),
       };
     } catch (err: unknown) {
       const parsed = parseRpcError(err);

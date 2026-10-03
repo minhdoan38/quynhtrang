@@ -9,6 +9,7 @@ import {
   type AdminTemplateListQuery,
   type CreateTemplateRepoInput,
   type EligibleSourceProject,
+  type PublishTemplateInput,
   type SaveTemplateDraftInput,
   type TemplateDraftRecord,
   type TemplateMetadataPatch,
@@ -16,9 +17,11 @@ import {
   type TemplateRecord,
   type TemplateTarget,
   type TemplateTargetInput,
+  type TemplateVersionPayload,
   type TemplateVersionSummary,
 } from '../domain/template.ts';
-import type { TemplateRepository } from '../repositories/template-repository.ts';
+import { TemplateRepository } from '../repositories/template-repository.ts';
+import { createPrivilegedSupabaseClient } from '../supabase/admin.ts';
 import {
   createTemplateFromProject,
   resolveTemplateAsset,
@@ -602,6 +605,62 @@ export class TemplateManagementService {
     return result.value;
   }
 
+  async publishTemplate(
+    actor: StaffIdentity,
+    input: PublishTemplateInput,
+  ): Promise<TemplateVersionPayload> {
+    if (!actor || !actor.userId) {
+      throw new TemplateServiceError('UNAUTHENTICATED', 'Staff identity required', 401);
+    }
+    if (!['admin', 'editor'].includes(actor.role)) {
+      throw new TemplateServiceError('FORBIDDEN', 'Actor does not have permission to publish templates', 403);
+    }
+
+    if (!input.templateId?.trim()) {
+      throw new TemplateServiceError('INVALID_INPUT', 'templateId is required', 400);
+    }
+    if (!input.draftId?.trim()) {
+      throw new TemplateServiceError('INVALID_INPUT', 'draftId is required', 400);
+    }
+    if (!input.requestId?.trim()) {
+      throw new TemplateServiceError('INVALID_INPUT', 'requestId is required', 400);
+    }
+    if (!input.sessionId?.trim()) {
+      throw new TemplateServiceError('INVALID_INPUT', 'sessionId is required', 400);
+    }
+    if (!input.validationId?.trim()) {
+      throw new TemplateServiceError('INVALID_INPUT', 'validationId is required', 400);
+    }
+    if (!Number.isInteger(input.expectedRevision) || input.expectedRevision < 1) {
+      throw new TemplateServiceError('INVALID_INPUT', 'expectedRevision must be a positive integer', 400);
+    }
+    if (input.expectedCatalogRevision !== undefined && (!Number.isInteger(input.expectedCatalogRevision) || input.expectedCatalogRevision < 1)) {
+      throw new TemplateServiceError('INVALID_INPUT', 'expectedCatalogRevision must be a positive integer', 400);
+    }
+    if (input.leaseEpoch !== undefined && (!Number.isInteger(input.leaseEpoch) || input.leaseEpoch < 0)) {
+      throw new TemplateServiceError('INVALID_INPUT', 'leaseEpoch must be a non-negative integer', 400);
+    }
+    if (input.revisionNote && input.revisionNote.length > 500) {
+      throw new TemplateServiceError('INVALID_INPUT', 'revisionNote cannot exceed 500 characters', 400);
+    }
+
+    const result = await this.repo.publishDraft(actor.userId, {
+      ...input,
+      templateId: input.templateId.trim(),
+      draftId: input.draftId.trim(),
+      requestId: input.requestId.trim(),
+      sessionId: input.sessionId.trim(),
+      validationId: input.validationId.trim(),
+      acknowledgedWarningIds: Array.isArray(input.acknowledgedWarningIds) ? input.acknowledgedWarningIds : [],
+    });
+
+    if (!result.ok) {
+      throw new TemplateServiceError(result.code, result.message);
+    }
+
+    return result.value;
+  }
+
   async listEligibleSourceProjects(
     actor: StaffIdentity,
     productId?: string | null,
@@ -633,4 +692,14 @@ export class TemplateManagementService {
   ) {
     return resolveTemplateAsset(assetId, access, { repo: this.repo });
   }
+}
+
+export async function publishTemplate(
+  actor: StaffIdentity,
+  input: PublishTemplateInput,
+  options?: { repo?: TemplateRepository },
+): Promise<TemplateVersionPayload> {
+  const repo = options?.repo ?? new TemplateRepository(createPrivilegedSupabaseClient());
+  const service = new TemplateManagementService(repo);
+  return service.publishTemplate(actor, input);
 }

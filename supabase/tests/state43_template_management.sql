@@ -1152,6 +1152,410 @@ begin
           raise exception 'Expected NO_PUBLISHED_VERSION blocker, got %', v_avail_res;
         end if;
       end;
+
+      -- 12. Section 12: State 43 Task 12 RPCs (template_publish_draft atomic transaction)
+      declare
+        v_p_tmpl_id text := 't12-pub-test-tmpl';
+        v_p_draft_id uuid;
+        v_p_val_id uuid;
+        v_p_session_id uuid := '43000000-0000-0000-0000-0000000000b1'::uuid;
+        v_p_pub_res jsonb;
+        v_p_pub_replay jsonb;
+        v_p_v1_id uuid;
+        v_p_v2_id uuid;
+        v_p_v1_before record;
+        v_p_v1_after record;
+        v_p_denied boolean;
+        v_p_op_count integer;
+        v_p_event_count integer;
+        v_p_draft_count integer;
+        v_p_tmpl record;
+        v_p_new_draft_res jsonb;
+        v_p_draft2_id uuid;
+        v_p_val2_id uuid;
+        v_p_val_exp_id uuid;
+        v_p_val_warn_id uuid;
+        v_p_face_id uuid := '43000000-0000-0000-0000-0000000000f1'::uuid;
+        v_p_family_id text := 't12-test-font-family';
+      begin
+        -- Create fixture font family and published font face
+        insert into public.fonts (id, family_name, published, status)
+        values (v_p_family_id, 'T12 Test Family', true, 'published')
+        on conflict (id) do nothing;
+
+        insert into public.font_faces (id, family_id, postscript_name, style, weight, status)
+        values (v_p_face_id, v_p_family_id, 'T12TestRegular', 'normal', 400, 'published')
+        on conflict (id) do nothing;
+
+        -- Create fixture template
+        insert into public.templates (
+          id, name, product_id, variant_id, status, revision, target_snapshot, created_by
+        ) values (
+          v_p_tmpl_id, 'Publish Test Template', 'card', 'horizontal', 'draft', 1,
+          jsonb_build_object('productId', 'card', 'variantId', 'horizontal'), v_ed_id
+        );
+
+        -- Create fixture draft referencing published font face
+        insert into public.template_drafts (
+          template_id, based_on_version_id, design_document, document_schema_version,
+          draft_revision, source_document_hash, editor_user_id, lease_session_id,
+          lease_epoch, lease_expires_at, created_by, updated_by
+        ) values (
+          v_p_tmpl_id, null,
+          jsonb_build_object(
+            'productId', 'card',
+            'variantId', 'horizontal',
+            'elements', jsonb_build_array(
+              jsonb_build_object('id', 'txt1', 'data', jsonb_build_object('fontFaceId', v_p_face_id::text, 'fontChecksum', 'chk-t12-face'))
+            )
+          ),
+          1, 1, 'hash-pub-doc-1', v_ed_id, v_p_session_id, 1, now() + interval '10 minutes',
+          v_ed_id, v_ed_id
+        ) returning id into v_p_draft_id;
+
+        -- Create valid validation run
+        insert into public.template_validation_runs (
+          template_id, draft_id, source_revision, lease_session_id, lease_epoch,
+          source_document_hash, candidate_document_hash, target_hash,
+          findings, warning_ids, validator_version, engine_fingerprint,
+          customer_preview_passed, expires_at
+        ) values (
+          v_p_tmpl_id, v_p_draft_id, 1, v_p_session_id, 1,
+          'hash-pub-doc-1', 'hash-pub-doc-1', 'hash-target-1',
+          '[]'::jsonb, '{}'::text[], '1.0.0', 'test-engine',
+          true, now() + interval '10 minutes'
+        ) returning id into v_p_val_id;
+
+        -- 12.1 Atomic publish of draft to version 1
+        v_p_pub_res := public.template_publish_draft(
+          v_ed_id,
+          't12-req-pub-1',
+          v_p_tmpl_id,
+          v_p_draft_id,
+          1::bigint,
+          1::bigint,
+          v_p_session_id,
+          1::bigint,
+          v_p_val_id,
+          '{}'::text[],
+          'First release'
+        );
+
+        if (v_p_pub_res->>'ok')::boolean is not true then
+          raise exception 'template_publish_draft failed: %', v_p_pub_res;
+        end if;
+
+        v_p_v1_id := (v_p_pub_res->'version'->>'id')::uuid;
+        if v_p_v1_id is null then
+          raise exception 'Published version id is null';
+        end if;
+
+        if (v_p_pub_res->'version'->>'version')::integer <> 1 then
+          raise exception 'Expected version 1, got %', v_p_pub_res->'version'->>'version';
+        end if;
+
+        -- 12.2 Verify template state updated
+        select * into v_p_tmpl from public.templates where id = v_p_tmpl_id;
+        if v_p_tmpl.status <> 'published' then
+          raise exception 'Template status is not published';
+        end if;
+        if v_p_tmpl.current_published_version_id <> v_p_v1_id then
+          raise exception 'Template current_published_version_id mismatch';
+        end if;
+        if v_p_tmpl.ever_published_at is null then
+          raise exception 'Template ever_published_at was not set';
+        end if;
+        if v_p_tmpl.revision <> 2 then
+          raise exception 'Template revision did not advance to 2';
+        end if;
+
+        -- 12.3 Verify active draft deleted
+        select count(*) into v_p_draft_count from public.template_drafts where id = v_p_draft_id;
+        if v_p_draft_count <> 0 then
+          raise exception 'Active draft was not deleted after publish';
+        end if;
+
+        -- 12.4 Verify asset_event recorded
+        select count(*) into v_p_event_count
+        from public.asset_events
+        where target_id = v_p_tmpl_id
+          and event = 'template_published'
+          and metadata_diff->>'draftId' = v_p_draft_id::text;
+        if v_p_event_count <> 1 then
+          raise exception 'Expected 1 template_published asset_event, got %', v_p_event_count;
+        end if;
+
+        -- 12.5 Idempotent retry: same request ID returns identical version result
+        v_p_pub_replay := public.template_publish_draft(
+          v_ed_id,
+          't12-req-pub-1',
+          v_p_tmpl_id,
+          v_p_draft_id,
+          1::bigint,
+          1::bigint,
+          v_p_session_id,
+          1::bigint,
+          v_p_val_id,
+          '{}'::text[],
+          'First release'
+        );
+
+        if v_p_pub_replay <> v_p_pub_res then
+          raise exception 'Idempotent replay did not return identical result';
+        end if;
+
+        -- Verify no second event inserted on replay
+        select count(*) into v_p_event_count
+        from public.asset_events
+        where target_id = v_p_tmpl_id
+          and event = 'template_published'
+          and metadata_diff->>'draftId' = v_p_draft_id::text;
+        if v_p_event_count <> 1 then
+          raise exception 'Replay unexpectedly duplicated asset_events';
+        end if;
+
+        -- 12.6 Replay with changed payload raises OPERATION_CONFLICT
+        v_p_denied := false;
+        begin
+          perform public.template_publish_draft(
+            v_ed_id,
+            't12-req-pub-1',
+            v_p_tmpl_id,
+            v_p_draft_id,
+            1::bigint,
+            1::bigint,
+            v_p_session_id,
+            1::bigint,
+            v_p_val_id,
+            '{}'::text[],
+            'Changed note'
+          );
+        exception when sqlstate 'P0001' then
+          if sqlerrm = 'OPERATION_CONFLICT' then
+            v_p_denied := true;
+          end if;
+        end;
+        if not v_p_denied then
+          raise exception 'Expected OPERATION_CONFLICT on altered payload replay';
+        end if;
+
+        -- 12.7 Stale racing publish on deleted draft fails with NOT_FOUND
+        v_p_denied := false;
+        begin
+          perform public.template_publish_draft(
+            v_ed_id,
+            't12-req-pub-racing-diff-req',
+            v_p_tmpl_id,
+            v_p_draft_id,
+            1::bigint,
+            1::bigint,
+            v_p_session_id,
+            1::bigint,
+            v_p_val_id,
+            '{}'::text[],
+            'First release'
+          );
+        exception when sqlstate 'P0001' then
+          if sqlerrm like '%NOT_FOUND%' or sqlerrm like '%REVISION_CONFLICT%' then
+            v_p_denied := true;
+          end if;
+        end;
+        if not v_p_denied then
+          raise exception 'Expected NOT_FOUND or REVISION_CONFLICT for racing publish on deleted draft';
+        end if;
+
+        -- 12.8 Snapshot v1 state to assert immutability
+        select * into v_p_v1_before from public.template_versions where id = v_p_v1_id;
+
+        -- Create second draft and publish v2
+        v_p_new_draft_res := public.template_create_draft(
+          v_ed_id,
+          't12-req-create-draft-2',
+          v_p_tmpl_id,
+          2::bigint,
+          v_p_v1_id
+        );
+        v_p_draft2_id := (v_p_new_draft_res->'draft'->>'id')::uuid;
+
+        insert into public.template_validation_runs (
+          template_id, draft_id, source_revision, lease_session_id, lease_epoch,
+          source_document_hash, candidate_document_hash, target_hash,
+          findings, warning_ids, validator_version, engine_fingerprint,
+          customer_preview_passed, expires_at
+        ) values (
+          v_p_tmpl_id, v_p_draft2_id, 1, '00000000-0000-0000-0000-000000000000'::uuid, 0,
+          'hash-doc-2', 'hash-doc-2', 'hash-target-1',
+          '[]'::jsonb, '{}'::text[], '1.0.0', 'test-engine',
+          true, now() + interval '10 minutes'
+        ) returning id into v_p_val2_id;
+
+        -- Acquire lease on draft 2
+        perform public.template_acquire_draft_lease(
+          v_ed_id,
+          't12-req-lease-2',
+          v_p_draft2_id,
+          v_p_session_id
+        );
+
+        -- Update validation run lease to match
+        update public.template_validation_runs
+        set lease_session_id = v_p_session_id, lease_epoch = 1, source_document_hash = (select source_document_hash from public.template_drafts where id = v_p_draft2_id)
+        where id = v_p_val2_id;
+
+        -- Publish version 2
+        v_p_pub_res := public.template_publish_draft(
+          v_ed_id,
+          't12-req-pub-2',
+          v_p_tmpl_id,
+          v_p_draft2_id,
+          1::bigint,
+          2::bigint,
+          v_p_session_id,
+          1::bigint,
+          v_p_val2_id,
+          '{}'::text[],
+          'Second release'
+        );
+
+        if (v_p_pub_res->'version'->>'version')::integer <> 2 then
+          raise exception 'Expected version 2, got %', v_p_pub_res->'version'->>'version';
+        end if;
+
+        -- 12.9 Assert Version 1 remained completely immutable
+        select * into v_p_v1_after from public.template_versions where id = v_p_v1_id;
+        if v_p_v1_before.design_document <> v_p_v1_after.design_document
+          or v_p_v1_before.version <> v_p_v1_after.version
+          or v_p_v1_before.target_snapshot <> v_p_v1_after.target_snapshot then
+          raise exception 'Version 1 mutated after Version 2 publish';
+        end if;
+
+        -- 12.10 Expired receipt rejection
+        v_p_new_draft_res := public.template_create_draft(
+          v_ed_id,
+          't12-req-create-draft-3',
+          v_p_tmpl_id,
+          3::bigint,
+          v_p_v1_id
+        );
+        v_p_draft2_id := (v_p_new_draft_res->'draft'->>'id')::uuid;
+        perform public.template_acquire_draft_lease(v_ed_id, 't12-req-lease-3', v_p_draft2_id, v_p_session_id);
+
+        insert into public.template_validation_runs (
+          template_id, draft_id, source_revision, lease_session_id, lease_epoch,
+          source_document_hash, candidate_document_hash, target_hash,
+          findings, warning_ids, validator_version, engine_fingerprint,
+          customer_preview_passed, expires_at
+        ) values (
+          v_p_tmpl_id, v_p_draft2_id, 1, v_p_session_id, 1,
+          (select source_document_hash from public.template_drafts where id = v_p_draft2_id),
+          'hash-doc-exp', 'hash-target-1',
+          '[]'::jsonb, '{}'::text[], '1.0.0', 'test-engine',
+          true, now() - interval '1 second'
+        ) returning id into v_p_val_exp_id;
+
+        v_p_denied := false;
+        begin
+          perform public.template_publish_draft(
+            v_ed_id,
+            't12-req-pub-exp',
+            v_p_tmpl_id,
+            v_p_draft2_id,
+            1::bigint,
+            3::bigint,
+            v_p_session_id,
+            1::bigint,
+            v_p_val_exp_id,
+            '{}'::text[]
+          );
+        exception when sqlstate 'P0001' then
+          if sqlerrm like '%expired%' then v_p_denied := true; end if;
+        end;
+        if not v_p_denied then raise exception 'Expected rejection for expired validation receipt'; end if;
+
+        -- 12.11 Unacknowledged warnings rejection
+        insert into public.template_validation_runs (
+          template_id, draft_id, source_revision, lease_session_id, lease_epoch,
+          source_document_hash, candidate_document_hash, target_hash,
+          findings, warning_ids, validator_version, engine_fingerprint,
+          customer_preview_passed, expires_at
+        ) values (
+          v_p_tmpl_id, v_p_draft2_id, 1, v_p_session_id, 1,
+          (select source_document_hash from public.template_drafts where id = v_p_draft2_id),
+          'hash-doc-warn', 'hash-target-1',
+          '[]'::jsonb, array['WARN_CUSTOM_1'], '1.0.0', 'test-engine',
+          true, now() + interval '10 minutes'
+        ) returning id into v_p_val_warn_id;
+
+        v_p_denied := false;
+        begin
+          perform public.template_publish_draft(
+            v_ed_id,
+            't12-req-pub-warn',
+            v_p_tmpl_id,
+            v_p_draft2_id,
+            1::bigint,
+            3::bigint,
+            v_p_session_id,
+            1::bigint,
+            v_p_val_warn_id,
+            '{}'::text[]
+          );
+        exception when sqlstate 'P0001' then
+          if sqlerrm like '%UNACKNOWLEDGED_WARNINGS%' then v_p_denied := true; end if;
+        end;
+        if not v_p_denied then raise exception 'Expected rejection for unacknowledged warnings'; end if;
+
+        -- 12.12 Archived font face dependency rejection
+        update public.font_faces set status = 'archived' where id = v_p_face_id;
+
+        insert into public.template_validation_runs (
+          template_id, draft_id, source_revision, lease_session_id, lease_epoch,
+          source_document_hash, candidate_document_hash, target_hash,
+          findings, warning_ids, validator_version, engine_fingerprint,
+          customer_preview_passed, expires_at
+        ) values (
+          v_p_tmpl_id, v_p_draft2_id, 1, v_p_session_id, 1,
+          (select source_document_hash from public.template_drafts where id = v_p_draft2_id),
+          'hash-doc-arch', 'hash-target-1',
+          '[]'::jsonb, array['WARN_CUSTOM_1'], '1.0.0', 'test-engine',
+          true, now() + interval '10 minutes'
+        ) returning id into v_p_val_id;
+
+        -- Put the archived font into the draft document
+        update public.template_drafts
+        set design_document = jsonb_build_object(
+          'productId', 'card',
+          'variantId', 'horizontal',
+          'elements', jsonb_build_array(
+            jsonb_build_object('id', 'txt1', 'data', jsonb_build_object('fontFaceId', v_p_face_id::text))
+          )
+        ),
+        source_document_hash = md5('arch-doc')
+        where id = v_p_draft2_id;
+
+        update public.template_validation_runs
+        set source_document_hash = md5('arch-doc')
+        where id = v_p_val_id;
+
+        v_p_denied := false;
+        begin
+          perform public.template_publish_draft(
+            v_ed_id,
+            't12-req-pub-arch',
+            v_p_tmpl_id,
+            v_p_draft2_id,
+            1::bigint,
+            3::bigint,
+            v_p_session_id,
+            1::bigint,
+            v_p_val_id,
+            array['WARN_CUSTOM_1']
+          );
+        exception when sqlstate 'P0001' then
+          if sqlerrm like '%ARCHIVED_DEPENDENCY%' then v_p_denied := true; end if;
+        end;
+        if not v_p_denied then raise exception 'Expected ARCHIVED_DEPENDENCY rejection'; end if;
+      end;
     end;
   end;
 end $$;
