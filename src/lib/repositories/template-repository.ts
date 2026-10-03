@@ -6,6 +6,8 @@ import { createTemplateTarget } from '../template-target.ts';
 import type {
   AdminTemplateListQuery,
   AttachTemplateAssetInput,
+  DeleteDraftTemplateInput,
+  DuplicateTemplateInput,
   CreateTemplateRepoInput,
   DependencyMetadataItem,
   EligibleSourceProject,
@@ -750,6 +752,166 @@ export class TemplateRepository {
         value: {
           draftId: String(resp.draftId ?? input.draftId),
           discarded: Boolean(resp.discarded ?? true),
+        },
+      };
+    } catch (err: unknown) {
+      const parsed = parseRpcError(err);
+      return { ok: false, code: parsed.code, message: parsed.message };
+    }
+  }
+
+  async discardTemplateDraft(
+    actor: string,
+    input: {
+      requestId: string;
+      draftId: string;
+      expectedRevision: number;
+      sessionId: string;
+      epoch: number;
+    },
+  ): Promise<TemplateRepoResult<{ draftId: string; discarded: boolean }>> {
+    return this.discardDraft(actor, input);
+  }
+
+  async archiveTemplate(
+    actor: string,
+    input: TemplateMutation,
+  ): Promise<TemplateRepoResult<TemplateRecord>> {
+    try {
+      const { data, error } = await this.client.rpc('template_archive', {
+        p_actor: actor,
+        p_request: input.requestId,
+        p_template_id: input.templateId,
+        p_expected_revision: input.expectedCatalogRevision,
+      });
+
+      if (error) {
+        const parsed = parseRpcError(error);
+        return { ok: false, code: parsed.code, message: parsed.message };
+      }
+
+      const resp = data && typeof data === 'object' ? (data as Record<string, unknown>) : null;
+      if (!resp || !resp.ok) {
+        const errCode = typeof resp?.code === 'string' ? (resp.code as TemplateErrorCode) : 'INTERNAL_ERROR';
+        const errMsg = typeof resp?.message === 'string' ? resp.message : 'Failed to archive template';
+        return { ok: false, code: errCode, message: errMsg };
+      }
+
+      const tmplRow = resp.template as DatabaseTemplateRow;
+      return {
+        ok: true,
+        value: mapTemplateRow(tmplRow),
+      };
+    } catch (err: unknown) {
+      const parsed = parseRpcError(err);
+      return { ok: false, code: parsed.code, message: parsed.message };
+    }
+  }
+
+  async republishTemplate(
+    actor: string,
+    input: TemplateMutation,
+  ): Promise<TemplateRepoResult<TemplateRecord>> {
+    try {
+      const { data, error } = await this.client.rpc('template_republish', {
+        p_actor: actor,
+        p_request: input.requestId,
+        p_template_id: input.templateId,
+        p_expected_revision: input.expectedCatalogRevision,
+      });
+
+      if (error) {
+        const parsed = parseRpcError(error);
+        return { ok: false, code: parsed.code, message: parsed.message };
+      }
+
+      const resp = data && typeof data === 'object' ? (data as Record<string, unknown>) : null;
+      if (!resp || !resp.ok) {
+        const errCode = typeof resp?.code === 'string' ? (resp.code as TemplateErrorCode) : 'INTERNAL_ERROR';
+        const errMsg = typeof resp?.message === 'string' ? resp.message : 'Failed to republish template';
+        return { ok: false, code: errCode, message: errMsg };
+      }
+
+      const tmplRow = resp.template as DatabaseTemplateRow;
+      return {
+        ok: true,
+        value: mapTemplateRow(tmplRow),
+      };
+    } catch (err: unknown) {
+      const parsed = parseRpcError(err);
+      return { ok: false, code: parsed.code, message: parsed.message };
+    }
+  }
+
+  async duplicateTemplate(
+    actor: string,
+    input: DuplicateTemplateInput,
+  ): Promise<TemplateRepoResult<{ template: TemplateRecord; draft: TemplateDraftRecord }>> {
+    try {
+      const { data, error } = await this.client.rpc('template_duplicate', {
+        p_actor: actor,
+        p_request: input.requestId,
+        p_source_template_id: input.sourceTemplateId,
+        p_new_template_id: input.newTemplateId ?? null,
+        p_source_version_id: input.sourceVersionId ?? null,
+        p_new_name: input.newName ?? null,
+      });
+
+      if (error) {
+        const parsed = parseRpcError(error);
+        return { ok: false, code: parsed.code, message: parsed.message };
+      }
+
+      const resp = data && typeof data === 'object' ? (data as Record<string, unknown>) : null;
+      if (!resp || !resp.ok) {
+        const errCode = typeof resp?.code === 'string' ? (resp.code as TemplateErrorCode) : 'INTERNAL_ERROR';
+        const errMsg = typeof resp?.message === 'string' ? resp.message : 'Failed to duplicate template';
+        return { ok: false, code: errCode, message: errMsg };
+      }
+
+      const tmplRow = resp.template as DatabaseTemplateRow;
+      const draftRow = resp.draft as DatabaseDraftRow;
+      return {
+        ok: true,
+        value: {
+          template: mapTemplateRow(tmplRow),
+          draft: mapDraftRow(draftRow),
+        },
+      };
+    } catch (err: unknown) {
+      const parsed = parseRpcError(err);
+      return { ok: false, code: parsed.code, message: parsed.message };
+    }
+  }
+
+  async deleteDraftTemplate(
+    actor: string,
+    input: DeleteDraftTemplateInput,
+  ): Promise<TemplateRepoResult<{ templateId: string; deleted: boolean }>> {
+    try {
+      const { data, error } = await this.client.rpc('template_delete_draft', {
+        p_actor: actor,
+        p_request: input.requestId,
+        p_template_id: input.templateId,
+      });
+
+      if (error) {
+        const parsed = parseRpcError(error);
+        return { ok: false, code: parsed.code, message: parsed.message };
+      }
+
+      const resp = data && typeof data === 'object' ? (data as Record<string, unknown>) : null;
+      if (!resp || !resp.ok) {
+        const errCode = typeof resp?.code === 'string' ? (resp.code as TemplateErrorCode) : 'INTERNAL_ERROR';
+        const errMsg = typeof resp?.message === 'string' ? resp.message : 'Failed to delete draft template';
+        return { ok: false, code: errCode, message: errMsg };
+      }
+
+      return {
+        ok: true,
+        value: {
+          templateId: String(resp.templateId ?? input.templateId),
+          deleted: Boolean(resp.deleted ?? true),
         },
       };
     } catch (err: unknown) {

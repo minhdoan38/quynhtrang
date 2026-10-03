@@ -8,6 +8,8 @@ import {
   TemplateServiceError,
   type AdminTemplateListQuery,
   type CreateTemplateRepoInput,
+  type DeleteDraftTemplateInput,
+  type DuplicateTemplateInput,
   type EligibleSourceProject,
   type PublishTemplateInput,
   type SaveTemplateDraftInput,
@@ -596,6 +598,153 @@ export class TemplateManagementService {
       expectedRevision: input.expectedRevision,
       sessionId: input.sessionId.trim(),
       epoch: input.epoch,
+    });
+
+    if (!result.ok) {
+      throw new TemplateServiceError(result.code, result.message);
+    }
+
+    return result.value;
+  }
+
+  async discardTemplateDraft(
+    actor: StaffIdentity,
+    input: {
+      requestId: string;
+      draftId: string;
+      expectedRevision: number;
+      sessionId: string;
+      epoch: number;
+    },
+  ): Promise<{ draftId: string; discarded: boolean }> {
+    return this.discardDraft(actor, input);
+  }
+
+  async archiveTemplate(
+    actor: StaffIdentity,
+    mutation: TemplateMutation,
+  ): Promise<TemplateRecord> {
+    if (!actor || !actor.userId) {
+      throw new TemplateServiceError('UNAUTHENTICATED', 'Staff identity required', 401);
+    }
+    if (!['admin', 'editor'].includes(actor.role)) {
+      throw new TemplateServiceError('FORBIDDEN', 'Actor does not have permission to archive templates', 403);
+    }
+
+    if (!mutation.templateId?.trim()) {
+      throw new TemplateServiceError('INVALID_INPUT', 'templateId is required', 400);
+    }
+    if (!mutation.requestId?.trim()) {
+      throw new TemplateServiceError('INVALID_INPUT', 'requestId is required', 400);
+    }
+    if (!Number.isInteger(mutation.expectedCatalogRevision) || mutation.expectedCatalogRevision < 1) {
+      throw new TemplateServiceError('INVALID_INPUT', 'expectedCatalogRevision must be a positive integer', 400);
+    }
+
+    const result = await this.repo.archiveTemplate(actor.userId, {
+      templateId: mutation.templateId.trim(),
+      expectedCatalogRevision: mutation.expectedCatalogRevision,
+      requestId: mutation.requestId.trim(),
+    });
+
+    if (!result.ok) {
+      throw new TemplateServiceError(result.code, result.message);
+    }
+
+    return result.value;
+  }
+
+  async republishTemplate(
+    actor: StaffIdentity,
+    mutation: TemplateMutation,
+  ): Promise<TemplateRecord> {
+    if (!actor || !actor.userId) {
+      throw new TemplateServiceError('UNAUTHENTICATED', 'Staff identity required', 401);
+    }
+    if (!['admin', 'editor'].includes(actor.role)) {
+      throw new TemplateServiceError('FORBIDDEN', 'Actor does not have permission to republish templates', 403);
+    }
+
+    if (!mutation.templateId?.trim()) {
+      throw new TemplateServiceError('INVALID_INPUT', 'templateId is required', 400);
+    }
+    if (!mutation.requestId?.trim()) {
+      throw new TemplateServiceError('INVALID_INPUT', 'requestId is required', 400);
+    }
+    if (!Number.isInteger(mutation.expectedCatalogRevision) || mutation.expectedCatalogRevision < 1) {
+      throw new TemplateServiceError('INVALID_INPUT', 'expectedCatalogRevision must be a positive integer', 400);
+    }
+
+    const result = await this.repo.republishTemplate(actor.userId, {
+      templateId: mutation.templateId.trim(),
+      expectedCatalogRevision: mutation.expectedCatalogRevision,
+      requestId: mutation.requestId.trim(),
+    });
+
+    if (!result.ok) {
+      throw new TemplateServiceError(result.code, result.message);
+    }
+
+    return result.value;
+  }
+
+  async duplicateTemplate(
+    actor: StaffIdentity,
+    input: DuplicateTemplateInput,
+  ): Promise<{ template: TemplateRecord; draft: TemplateDraftRecord }> {
+    if (!actor || !actor.userId) {
+      throw new TemplateServiceError('UNAUTHENTICATED', 'Staff identity required', 401);
+    }
+    if (!['admin', 'editor'].includes(actor.role)) {
+      throw new TemplateServiceError('FORBIDDEN', 'Actor does not have permission to duplicate templates', 403);
+    }
+
+    if (!input.sourceTemplateId?.trim()) {
+      throw new TemplateServiceError('INVALID_INPUT', 'sourceTemplateId is required', 400);
+    }
+    if (!input.requestId?.trim()) {
+      throw new TemplateServiceError('INVALID_INPUT', 'requestId is required', 400);
+    }
+    if (input.newName && input.newName.trim().length > 120) {
+      throw new TemplateServiceError('INVALID_INPUT', 'newName cannot exceed 120 characters', 400);
+    }
+
+    const result = await this.repo.duplicateTemplate(actor.userId, {
+      sourceTemplateId: input.sourceTemplateId.trim(),
+      requestId: input.requestId.trim(),
+      sourceVersionId: input.sourceVersionId?.trim() || undefined,
+      newName: input.newName?.trim() || undefined,
+      newTemplateId: input.newTemplateId?.trim() || undefined,
+    });
+
+    if (!result.ok) {
+      throw new TemplateServiceError(result.code, result.message);
+    }
+
+    return result.value;
+  }
+
+  async deleteDraftTemplate(
+    actor: StaffIdentity,
+    input: DeleteDraftTemplateInput,
+  ): Promise<{ templateId: string; deleted: boolean }> {
+    if (!actor || !actor.userId) {
+      throw new TemplateServiceError('UNAUTHENTICATED', 'Staff identity required', 401);
+    }
+    if (actor.role !== 'admin') {
+      throw new TemplateServiceError('FORBIDDEN', 'Only administrators can delete templates', 403);
+    }
+
+    if (!input.templateId?.trim()) {
+      throw new TemplateServiceError('INVALID_INPUT', 'templateId is required', 400);
+    }
+    if (!input.requestId?.trim()) {
+      throw new TemplateServiceError('INVALID_INPUT', 'requestId is required', 400);
+    }
+
+    const result = await this.repo.deleteDraftTemplate(actor.userId, {
+      templateId: input.templateId.trim(),
+      requestId: input.requestId.trim(),
     });
 
     if (!result.ok) {

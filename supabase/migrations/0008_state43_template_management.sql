@@ -2455,3 +2455,602 @@ $$;
 
 revoke all on function public.template_publish_draft(uuid, text, text, uuid, bigint, bigint, uuid, bigint, uuid, text[], text) from public, anon, authenticated;
 grant execute on function public.template_publish_draft(uuid, text, text, uuid, bigint, bigint, uuid, bigint, uuid, text[], text) to service_role;
+
+-- 24. template_archive RPC (State 43 Task 13)
+create or replace function public.template_archive(
+  p_actor uuid,
+  p_request text,
+  p_template_id text,
+  p_expected_revision bigint
+)
+returns jsonb
+language plpgsql
+security invoker
+set search_path = public, pg_temp
+as $$
+declare
+  v_op record;
+  v_payload_hash text;
+  v_template record;
+  v_updated record;
+  v_result jsonb;
+begin
+  perform public.template_authorize_actor(p_actor, 'editor');
+
+  if p_request is null or btrim(p_request) = '' then
+    raise exception 'INVALID_REQUEST_ID' using errcode = 'P0001';
+  end if;
+  if p_template_id is null or btrim(p_template_id) = '' then
+    raise exception 'INVALID_INPUT: template_id required' using errcode = 'P0001';
+  end if;
+  if p_expected_revision is null or p_expected_revision < 1 then
+    raise exception 'INVALID_INPUT: expected_revision must be positive' using errcode = 'P0001';
+  end if;
+
+  v_payload_hash := md5(jsonb_build_object(
+    'templateId', p_template_id,
+    'expectedRevision', p_expected_revision
+  )::text);
+
+  select * into v_op from public.template_operations where request_id = p_request;
+  if found then
+    if v_op.actor_user_id is distinct from p_actor or v_op.payload_hash <> v_payload_hash then
+      raise exception 'OPERATION_CONFLICT' using errcode = 'P0001';
+    end if;
+    return v_op.result;
+  end if;
+
+  select * into v_template from public.templates where id = p_template_id for update;
+  if not found then
+    raise exception 'NOT_FOUND: template not found' using errcode = 'P0001';
+  end if;
+
+  if v_template.revision <> p_expected_revision then
+    raise exception 'REVISION_CONFLICT' using errcode = 'P0001';
+  end if;
+
+  update public.templates
+  set
+    status = 'archived',
+    archived_at = coalesce(archived_at, now()),
+    archived_by = p_actor,
+    revision = revision + 1,
+    updated_by = p_actor,
+    updated_at = now()
+  where id = p_template_id
+  returning * into v_updated;
+
+  insert into public.asset_events (
+    actor_user_id,
+    request_id,
+    kind,
+    target_id,
+    before_revision,
+    after_revision,
+    event,
+    metadata_diff
+  ) values (
+    p_actor,
+    case when p_request ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' then p_request::uuid else null end,
+    'template',
+    p_template_id,
+    p_expected_revision,
+    p_expected_revision + 1,
+    'template_archived',
+    jsonb_build_object('event', 'template_archived', 'template_id', p_template_id)
+  );
+
+  v_result := jsonb_build_object('ok', true, 'template', to_jsonb(v_updated));
+
+  insert into public.template_operations (
+    request_id,
+    actor_user_id,
+    operation,
+    template_id,
+    payload_hash,
+    status,
+    result
+  ) values (
+    p_request,
+    p_actor,
+    'archive',
+    p_template_id,
+    v_payload_hash,
+    'completed',
+    v_result
+  );
+
+  return v_result;
+end;
+$$;
+
+revoke all on function public.template_archive(uuid, text, text, bigint) from public, anon, authenticated;
+grant execute on function public.template_archive(uuid, text, text, bigint) to service_role;
+
+-- 25. template_republish RPC (State 43 Task 13)
+create or replace function public.template_republish(
+  p_actor uuid,
+  p_request text,
+  p_template_id text,
+  p_expected_revision bigint
+)
+returns jsonb
+language plpgsql
+security invoker
+set search_path = public, pg_temp
+as $$
+declare
+  v_op record;
+  v_payload_hash text;
+  v_template record;
+  v_version record;
+  v_updated record;
+  v_result jsonb;
+  v_dep record;
+  v_face record;
+  v_family record;
+  v_sticker record;
+begin
+  perform public.template_authorize_actor(p_actor, 'editor');
+
+  if p_request is null or btrim(p_request) = '' then
+    raise exception 'INVALID_REQUEST_ID' using errcode = 'P0001';
+  end if;
+  if p_template_id is null or btrim(p_template_id) = '' then
+    raise exception 'INVALID_INPUT: template_id required' using errcode = 'P0001';
+  end if;
+  if p_expected_revision is null or p_expected_revision < 1 then
+    raise exception 'INVALID_INPUT: expected_revision must be positive' using errcode = 'P0001';
+  end if;
+
+  v_payload_hash := md5(jsonb_build_object(
+    'templateId', p_template_id,
+    'expectedRevision', p_expected_revision
+  )::text);
+
+  select * into v_op from public.template_operations where request_id = p_request;
+  if found then
+    if v_op.actor_user_id is distinct from p_actor or v_op.payload_hash <> v_payload_hash then
+      raise exception 'OPERATION_CONFLICT' using errcode = 'P0001';
+    end if;
+    return v_op.result;
+  end if;
+
+  select * into v_template from public.templates where id = p_template_id for update;
+  if not found then
+    raise exception 'NOT_FOUND: template not found' using errcode = 'P0001';
+  end if;
+
+  if v_template.revision <> p_expected_revision then
+    raise exception 'REVISION_CONFLICT' using errcode = 'P0001';
+  end if;
+
+  if v_template.current_published_version_id is null then
+    raise exception 'NO_PUBLISHED_VERSION: cannot republish template without a published version' using errcode = 'P0001';
+  end if;
+
+  select * into v_version from public.template_versions
+  where template_id = p_template_id and id = v_template.current_published_version_id;
+  if not found then
+    raise exception 'NOT_FOUND: published version not found' using errcode = 'P0001';
+  end if;
+
+  -- Verify all dependencies in template_version_dependencies are still published
+  for v_dep in
+    select * from public.template_version_dependencies
+    where version_id = v_version.id
+    order by kind, asset_id
+  loop
+    if v_dep.kind = 'font-face' then
+      select * into v_face from public.font_faces where id::text = v_dep.asset_id for update;
+      if not found or v_face.status = 'archived' or v_face.status <> 'published' or v_face.ever_published_at is null then
+        raise exception 'ARCHIVED_DEPENDENCY: font-face % is archived or missing', v_dep.asset_id using errcode = 'P0001';
+      end if;
+
+      if v_face.family_id is not null then
+        select * into v_family from public.fonts where id = v_face.family_id for update;
+        if not found or v_family.status = 'archived' or v_family.status <> 'published' then
+          raise exception 'ARCHIVED_DEPENDENCY: font family % is archived or missing', v_face.family_id using errcode = 'P0001';
+        end if;
+      end if;
+    end if;
+
+    if v_dep.family_id is not null then
+      select * into v_family from public.fonts where id = v_dep.family_id for update;
+      if not found or v_family.status = 'archived' or v_family.status <> 'published' then
+        raise exception 'ARCHIVED_DEPENDENCY: font family % is archived or missing', v_dep.family_id using errcode = 'P0001';
+      end if;
+    end if;
+
+    if v_dep.kind = 'sticker' then
+      select * into v_sticker from public.sticker_assets where id = v_dep.asset_id for update;
+      if not found or v_sticker.status = 'archived' or v_sticker.status <> 'published' or v_sticker.ever_published_at is null then
+        raise exception 'ARCHIVED_DEPENDENCY: sticker % is archived or missing', v_dep.asset_id using errcode = 'P0001';
+      end if;
+    end if;
+  end loop;
+
+  update public.templates
+  set
+    status = 'published',
+    archived_at = null,
+    archived_by = null,
+    revision = revision + 1,
+    updated_by = p_actor,
+    updated_at = now()
+  where id = p_template_id
+  returning * into v_updated;
+
+  insert into public.asset_events (
+    actor_user_id,
+    request_id,
+    kind,
+    target_id,
+    before_revision,
+    after_revision,
+    event,
+    metadata_diff
+  ) values (
+    p_actor,
+    case when p_request ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' then p_request::uuid else null end,
+    'template',
+    p_template_id,
+    p_expected_revision,
+    p_expected_revision + 1,
+    'template_republished',
+    jsonb_build_object(
+      'event', 'template_republished',
+      'template_id', p_template_id,
+      'version_id', v_template.current_published_version_id
+    )
+  );
+
+  v_result := jsonb_build_object('ok', true, 'template', to_jsonb(v_updated));
+
+  insert into public.template_operations (
+    request_id,
+    actor_user_id,
+    operation,
+    template_id,
+    payload_hash,
+    status,
+    result
+  ) values (
+    p_request,
+    p_actor,
+    'republish',
+    p_template_id,
+    v_payload_hash,
+    'completed',
+    v_result
+  );
+
+  return v_result;
+end;
+$$;
+
+revoke all on function public.template_republish(uuid, text, text, bigint) from public, anon, authenticated;
+grant execute on function public.template_republish(uuid, text, text, bigint) to service_role;
+
+-- 26. template_duplicate RPC (State 43 Task 13)
+create or replace function public.template_duplicate(
+  p_actor uuid,
+  p_request text,
+  p_source_template_id text,
+  p_new_template_id text default null,
+  p_source_version_id uuid default null,
+  p_new_name text default null
+)
+returns jsonb
+language plpgsql
+security invoker
+set search_path = public, pg_temp
+as $$
+declare
+  v_op record;
+  v_payload_hash text;
+  v_source record;
+  v_version record;
+  v_draft record;
+  v_new_template record;
+  v_new_draft record;
+  v_doc jsonb;
+  v_schema_version integer := 1;
+  v_doc_hash text;
+  v_new_id text;
+  v_new_name text;
+  v_result jsonb;
+begin
+  perform public.template_authorize_actor(p_actor, 'editor');
+
+  if p_request is null or btrim(p_request) = '' then
+    raise exception 'INVALID_REQUEST_ID' using errcode = 'P0001';
+  end if;
+  if p_source_template_id is null or btrim(p_source_template_id) = '' then
+    raise exception 'INVALID_INPUT: source_template_id required' using errcode = 'P0001';
+  end if;
+
+  v_payload_hash := md5(jsonb_build_object(
+    'sourceTemplateId', p_source_template_id,
+    'newTemplateId', p_new_template_id,
+    'sourceVersionId', p_source_version_id,
+    'newName', p_new_name
+  )::text);
+
+  select * into v_op from public.template_operations where request_id = p_request;
+  if found then
+    if v_op.actor_user_id is distinct from p_actor or v_op.payload_hash <> v_payload_hash then
+      raise exception 'OPERATION_CONFLICT' using errcode = 'P0001';
+    end if;
+    return v_op.result;
+  end if;
+
+  select * into v_source from public.templates where id = p_source_template_id;
+  if not found then
+    raise exception 'NOT_FOUND: source template not found' using errcode = 'P0001';
+  end if;
+
+  -- Determine which document to duplicate
+  if p_source_version_id is not null then
+    select * into v_version from public.template_versions
+    where template_id = p_source_template_id and id = p_source_version_id;
+    if not found then
+      raise exception 'NOT_FOUND: source version not found' using errcode = 'P0001';
+    end if;
+    v_doc := v_version.design_document;
+    v_schema_version := coalesce(v_version.document_schema_version, 1);
+  elsif v_source.current_published_version_id is not null then
+    select * into v_version from public.template_versions
+    where template_id = p_source_template_id and id = v_source.current_published_version_id;
+    if found then
+      v_doc := v_version.design_document;
+      v_schema_version := coalesce(v_version.document_schema_version, 1);
+    end if;
+  end if;
+
+  if v_doc is null then
+    select * into v_draft from public.template_drafts where template_id = p_source_template_id;
+    if found then
+      v_doc := v_draft.design_document;
+      v_schema_version := coalesce(v_draft.document_schema_version, 1);
+    end if;
+  end if;
+
+  if v_doc is null then
+    raise exception 'NOT_FOUND: no version or draft found to duplicate' using errcode = 'P0001';
+  end if;
+
+  v_new_id := coalesce(nullif(btrim(p_new_template_id), ''), 'tmpl-' || encode(gen_random_bytes(6), 'hex'));
+  v_new_name := coalesce(nullif(btrim(p_new_name), ''), substring((v_source.name || ' — Bản sao') from 1 for 120));
+
+  insert into public.templates (
+    id, name, slug, product_id, variant_id, product_mode, fixed_sticker_shape,
+    category_id, tags, sort_order, target_snapshot, status, revision,
+    current_published_version_id, ever_published_at,
+    created_by, updated_by, created_at, updated_at
+  ) values (
+    v_new_id,
+    v_new_name,
+    v_new_id,
+    v_source.product_id,
+    v_source.variant_id,
+    v_source.product_mode,
+    v_source.fixed_sticker_shape,
+    v_source.category_id,
+    v_source.tags,
+    v_source.sort_order,
+    v_source.target_snapshot,
+    'draft',
+    1,
+    null,
+    null,
+    p_actor,
+    p_actor,
+    now(),
+    now()
+  ) returning * into v_new_template;
+
+  v_doc_hash := encode(digest(v_doc::text, 'sha256'), 'hex');
+
+  insert into public.template_drafts (
+    template_id, based_on_version_id, design_document, document_schema_version,
+    draft_revision, source_document_hash, created_by, updated_by, created_at, updated_at
+  ) values (
+    v_new_id, null, v_doc, v_schema_version,
+    1, v_doc_hash, p_actor, p_actor, now(), now()
+  ) returning * into v_new_draft;
+
+  insert into public.asset_events (
+    actor_user_id, request_id, kind, target_id, before_revision, after_revision, event, metadata_diff
+  ) values (
+    p_actor,
+    case when p_request ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' then p_request::uuid else null end,
+    'template',
+    v_new_id,
+    null,
+    1,
+    'created',
+    jsonb_build_object(
+      'event', 'created',
+      'source_template_id', p_source_template_id,
+      'name', v_new_name
+    )
+  );
+
+  v_result := jsonb_build_object(
+    'ok', true,
+    'template', to_jsonb(v_new_template),
+    'draft', to_jsonb(v_new_draft)
+  );
+
+  insert into public.template_operations (
+    request_id, actor_user_id, operation, template_id, payload_hash, status, result
+  ) values (
+    p_request, p_actor, 'duplicate', v_new_id, v_payload_hash, 'completed', v_result
+  );
+
+  return v_result;
+end;
+$$;
+
+revoke all on function public.template_duplicate(uuid, text, text, text, uuid, text) from public, anon, authenticated;
+grant execute on function public.template_duplicate(uuid, text, text, text, uuid, text) to service_role;
+
+-- 27. template_delete_draft RPC (State 43 Task 13)
+create or replace function public.template_delete_draft(
+  p_actor uuid,
+  p_request text,
+  p_template_id text
+)
+returns jsonb
+language plpgsql
+security invoker
+set search_path = public, pg_temp
+as $$
+declare
+  v_op record;
+  v_payload_hash text;
+  v_template record;
+  v_result jsonb;
+begin
+  perform public.template_authorize_actor(p_actor, 'admin');
+
+  if p_request is null or btrim(p_request) = '' then
+    raise exception 'INVALID_REQUEST_ID' using errcode = 'P0001';
+  end if;
+  if p_template_id is null or btrim(p_template_id) = '' then
+    raise exception 'INVALID_INPUT: template_id required' using errcode = 'P0001';
+  end if;
+
+  v_payload_hash := md5(jsonb_build_object('templateId', p_template_id)::text);
+
+  select * into v_op from public.template_operations where request_id = p_request;
+  if found then
+    if v_op.actor_user_id is distinct from p_actor or v_op.payload_hash <> v_payload_hash then
+      raise exception 'OPERATION_CONFLICT' using errcode = 'P0001';
+    end if;
+    return v_op.result;
+  end if;
+
+  select * into v_template from public.templates where id = p_template_id for update;
+  if not found then
+    raise exception 'NOT_FOUND: template not found' using errcode = 'P0001';
+  end if;
+
+  if v_template.status <> 'draft' or v_template.ever_published_at is not null or v_template.current_published_version_id is not null then
+    raise exception 'CANNOT_DELETE_PUBLISHED_TEMPLATE: template has been published' using errcode = 'P0001';
+  end if;
+
+  if exists (select 1 from public.template_versions where template_id = p_template_id) then
+    raise exception 'CANNOT_DELETE_TEMPLATE_WITH_VERSIONS: template has versions' using errcode = 'P0001';
+  end if;
+
+  if exists (select 1 from public.projects where source_template_id = p_template_id) then
+    raise exception 'CANNOT_DELETE_REFERENCED_TEMPLATE: template is referenced by projects' using errcode = 'P0001';
+  end if;
+
+  -- Delete draft assets belonging to this draft template
+  delete from public.template_assets where template_id = p_template_id;
+
+  -- Delete draft
+  delete from public.template_drafts where template_id = p_template_id;
+
+  -- Delete template
+  delete from public.templates where id = p_template_id;
+
+  insert into public.asset_events (
+    actor_user_id, request_id, kind, target_id, before_revision, after_revision, event, metadata_diff
+  ) values (
+    p_actor,
+    case when p_request ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' then p_request::uuid else null end,
+    'template',
+    p_template_id,
+    v_template.revision,
+    null,
+    'deleted',
+    jsonb_build_object('name', v_template.name, 'template_id', p_template_id)
+  );
+
+  v_result := jsonb_build_object('ok', true, 'templateId', p_template_id, 'deleted', true);
+
+  insert into public.template_operations (
+    request_id, actor_user_id, operation, template_id, payload_hash, status, result
+  ) values (
+    p_request, p_actor, 'delete', null, v_payload_hash, 'completed', v_result
+  );
+
+  return v_result;
+end;
+$$;
+
+revoke all on function public.template_delete_draft(uuid, text, text) from public, anon, authenticated;
+grant execute on function public.template_delete_draft(uuid, text, text) to service_role;
+
+-- 28. Extend library_prepare_delete with template draft and version dependency checks (State 43 Task 13)
+create or replace function public.library_prepare_delete(
+  p_actor uuid,
+  p_request uuid,
+  p_kind text,
+  p_id text,
+  p_revision bigint
+)
+returns jsonb
+language plpgsql
+security invoker
+set search_path = public, pg_temp
+as $$
+declare
+  v_next bigint;
+  v_intent uuid := gen_random_uuid();
+begin
+  perform public.library_authorize(p_actor, true);
+
+  if p_kind = 'sticker' then
+    select revision into v_next
+    from public.sticker_assets
+    where id = p_id and status = 'draft' and ever_published_at is null
+    for update;
+  elsif p_kind = 'font-face' then
+    select revision into v_next
+    from public.font_faces
+    where id::text = p_id and status = 'draft' and ever_published_at is null
+    for update;
+  else
+    raise exception 'INVALID_INPUT';
+  end if;
+
+  if not found then
+    raise exception 'NOT_FOUND';
+  end if;
+
+  if v_next <> p_revision then
+    raise exception 'REVISION_CONFLICT';
+  end if;
+
+  if exists (
+    select 1 from public.design_versions dv
+    where dv.design_document::text like '%"' || p_id || '"%'
+  ) or exists (
+    select 1 from public.projects pr
+    where pr.working_document::text like '%"' || p_id || '"%'
+  ) or exists (
+    select 1 from public.template_drafts td
+    where td.design_document::text like '%"' || p_id || '"%'
+  ) or exists (
+    select 1 from public.template_version_dependencies tvd
+    where tvd.asset_id = p_id or tvd.family_id = p_id
+  ) then
+    raise exception 'REFERENCED_DRAFT';
+  end if;
+
+  insert into public.library_uploads(id, actor_user_id, kind, asset_id, request_id, storage_path, byte_size, state)
+  values (v_intent, p_actor, p_kind, p_id, p_request, v_intent::text, 1, 'cleanup_pending');
+
+  perform public.library_event(p_actor, p_request, p_kind, p_id, p_revision, p_revision, 'delete_prepared', '{}'::jsonb);
+
+  return jsonb_build_object('ok', true, 'intent', v_intent);
+end;
+$$;
+
+revoke all on function public.library_prepare_delete(uuid, uuid, text, text, bigint) from public, anon;
+grant execute on function public.library_prepare_delete(uuid, uuid, text, text, bigint) to authenticated;

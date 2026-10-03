@@ -89,6 +89,19 @@ export interface PublishTemplateInput extends TemplateDraftGuard, TemplateMutati
   revisionNote?: string;
 }
 
+
+export interface DuplicateTemplateInput {
+  requestId: string;
+  sourceTemplateId: string;
+  sourceVersionId?: string | null;
+  newName?: string | null;
+  newTemplateId?: string | null;
+}
+
+export interface DeleteDraftTemplateInput {
+  requestId: string;
+  templateId: string;
+}
 export interface UseTemplateInput {
   templateId: string;
   expectedVersionId: string;
@@ -291,6 +304,11 @@ export type TemplateErrorCode =
   | 'STORAGE_FAILURE'
   | 'RIGHTS_ACKNOWLEDGEMENT_REQUIRED'
   | 'SOURCE_PROJECT_HAS_ORDERS'
+  | 'ARCHIVED_DEPENDENCY'
+  | 'NO_PUBLISHED_VERSION'
+  | 'CANNOT_DELETE_PUBLISHED_TEMPLATE'
+  | 'CANNOT_DELETE_TEMPLATE_WITH_VERSIONS'
+  | 'CANNOT_DELETE_REFERENCED_TEMPLATE'
   | 'INTERNAL_ERROR';
 
 export const templateServiceStatuses: Record<TemplateErrorCode | string, number> = {
@@ -306,6 +324,11 @@ export const templateServiceStatuses: Record<TemplateErrorCode | string, number>
   ALREADY_PUBLISHED: 409,
   CANNOT_DELETE_PUBLISHED: 409,
   CANNOT_DELETE_WITH_HISTORY: 409,
+  ARCHIVED_DEPENDENCY: 409,
+  NO_PUBLISHED_VERSION: 409,
+  CANNOT_DELETE_PUBLISHED_TEMPLATE: 409,
+  CANNOT_DELETE_TEMPLATE_WITH_VERSIONS: 409,
+  CANNOT_DELETE_REFERENCED_TEMPLATE: 409,
   VALIDATION_FAILED: 422,
   TARGET_MISMATCH: 422,
   DEPENDENCY_UNRESOLVED: 422,

@@ -1567,6 +1567,115 @@ begin
         if not v_p_denied then raise exception 'Expected ARCHIVED_DEPENDENCY rejection'; end if;
       end;
     end;
+
+      -- 13. Section 13: State 43 Task 13 RPCs (Lifecycle actions)
+      declare
+        v_l_res jsonb;
+        v_l_denied boolean;
+        v_l_tmpl record;
+        v_l_count integer;
+        v_l_stick_id text := 'stick-life-1';
+        v_l_draft_ref uuid := gen_random_uuid();
+      begin
+        -- 13.1 Archive published template (v_p_tmpl_id is currently at revision 3)
+        v_l_res := public.template_archive(v_ed_id, 't13-req-arch-1', v_p_tmpl_id, 3::bigint);
+        if (v_l_res->>'ok')::boolean is not true then
+          raise exception 'template_archive failed: %', v_l_res;
+        end if;
+        select * into v_l_tmpl from public.templates where id = v_p_tmpl_id;
+        if v_l_tmpl.status <> 'archived' or v_l_tmpl.revision <> 4 or v_l_tmpl.archived_at is null then
+          raise exception 'template_archive did not set status=archived and revision=4, got status=%, rev=%', v_l_tmpl.status, v_l_tmpl.revision;
+        end if;
+
+        -- 13.2 Republish fails because font face v_p_face_id was archived in 12.12
+        v_l_denied := false;
+        begin
+          perform public.template_republish(v_ed_id, 't13-req-repub-fail', v_p_tmpl_id, 4::bigint);
+        exception when sqlstate 'P0001' then
+          if sqlerrm like '%ARCHIVED_DEPENDENCY%' then v_l_denied := true; end if;
+        end;
+        if not v_l_denied then raise exception 'Expected ARCHIVED_DEPENDENCY on republish'; end if;
+
+        -- Un-archive font face and republish succeeds
+        update public.font_faces set status = 'published' where id = v_p_face_id;
+        v_l_res := public.template_republish(v_ed_id, 't13-req-repub-ok', v_p_tmpl_id, 4::bigint);
+        if (v_l_res->>'ok')::boolean is not true then
+          raise exception 'template_republish failed: %', v_l_res;
+        end if;
+        select * into v_l_tmpl from public.templates where id = v_p_tmpl_id;
+        if v_l_tmpl.status <> 'published' or v_l_tmpl.archived_at is not null or v_l_tmpl.revision <> 5 then
+          raise exception 'template_republish did not set status=published and revision=5, got status=%, rev=%', v_l_tmpl.status, v_l_tmpl.revision;
+        end if;
+
+        -- 13.3 Duplicate creates independent template and draft
+        v_l_res := public.template_duplicate(v_ed_id, 't13-req-dup-1', v_p_tmpl_id, 't13-dup-tmpl');
+        if (v_l_res->>'ok')::boolean is not true then
+          raise exception 'template_duplicate failed: %', v_l_res;
+        end if;
+        select * into v_l_tmpl from public.templates where id = 't13-dup-tmpl';
+        if v_l_tmpl.status <> 'draft' or v_l_tmpl.current_published_version_id is not null or v_l_tmpl.ever_published_at is not null then
+          raise exception 'Duplicate did not create clean draft template';
+        end if;
+        select count(*) into v_l_count from public.template_drafts where template_id = 't13-dup-tmpl';
+        if v_l_count <> 1 then
+          raise exception 'Duplicate did not create draft';
+        end if;
+
+        -- 13.4 Delete draft: Editor forbidden
+        v_l_denied := false;
+        begin
+          perform public.template_delete_draft(v_ed_id, 't13-req-del-ed', 't13-dup-tmpl');
+        exception when sqlstate 'P0001' then
+          v_l_denied := true;
+        end;
+        if not v_l_denied then raise exception 'Expected editor to be denied template_delete_draft'; end if;
+
+        -- Delete draft: Published template cannot be deleted
+        v_l_denied := false;
+        begin
+          perform public.template_delete_draft(v_adm_id, 't13-req-del-pub', v_p_tmpl_id);
+        exception when sqlstate 'P0001' then
+          if sqlerrm like '%CANNOT_DELETE_PUBLISHED_TEMPLATE%' or sqlerrm like '%CANNOT_DELETE_TEMPLATE_WITH_VERSIONS%' then
+            v_l_denied := true;
+          end if;
+        end;
+        if not v_l_denied then raise exception 'Expected published template deletion to be rejected'; end if;
+
+        -- Admin can delete never-published duplicate
+        v_l_res := public.template_delete_draft(v_adm_id, 't13-req-del-ok', 't13-dup-tmpl');
+        if (v_l_res->>'deleted')::boolean is not true then
+          raise exception 'template_delete_draft failed for admin on draft: %', v_l_res;
+        end if;
+        select count(*) into v_l_count from public.templates where id = 't13-dup-tmpl';
+        if v_l_count <> 0 then raise exception 'Template row was not deleted'; end if;
+        select count(*) into v_l_count from public.template_drafts where template_id = 't13-dup-tmpl';
+        if v_l_count <> 0 then raise exception 'Template draft was not deleted'; end if;
+
+        -- 13.5 library_prepare_delete checks template_drafts and template_version_dependencies
+        insert into public.sticker_assets (id, status, revision, storage_path, checksum, byte_size, width, height, mime_type, created_by, updated_by)
+        values (v_l_stick_id, 'draft', 1, 'stick/test.png', 'chk-stick', 100, 100, 100, 'image/png', v_ed_id, v_ed_id);
+
+        insert into public.template_drafts (id, template_id, draft_revision, design_document, created_by, updated_by)
+        values (
+          v_l_draft_ref,
+          v_p_tmpl_id,
+          1,
+          jsonb_build_object('elements', jsonb_build_array(jsonb_build_object('data', jsonb_build_object('libraryAssetId', v_l_stick_id)))),
+          v_ed_id,
+          v_ed_id
+        ) on conflict (template_id) do update set design_document = excluded.design_document;
+
+        v_l_denied := false;
+        begin
+          perform public.library_prepare_delete(v_ed_id, '43000000-0000-0000-0000-000000000801'::uuid, 'sticker', v_l_stick_id, 1::bigint);
+        exception when sqlstate 'P0001' then
+          if sqlerrm = 'REFERENCED_DRAFT' then v_l_denied := true; end if;
+        end;
+        if not v_l_denied then raise exception 'Expected REFERENCED_DRAFT when sticker is in template_drafts'; end if;
+
+        -- Clean up test draft
+        delete from public.template_drafts where template_id = v_p_tmpl_id;
+      end;
   end;
 end $$;
 rollback;

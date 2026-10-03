@@ -83,3 +83,35 @@ export async function PATCH(
     return templateRouteError(error);
   }
 }
+export async function DELETE(
+  request: Request,
+  context: { params: Promise<{ id: string }> },
+  dependencies?: TemplateRouteDependencies,
+) {
+  try {
+    const { staff, service } = await getStaffTemplateContext(request, dependencies, 'admin');
+    if (!service) {
+      throw new TemplateServiceError('INTERNAL_ERROR', 'Template service unavailable', 500);
+    }
+
+    const { id } = await context.params;
+    let requestId: string = randomUUID();
+    try {
+      const body = await readJsonObject(request);
+      if (typeof body.requestId === 'string' && body.requestId.trim()) {
+        requestId = body.requestId.trim();
+      }
+    } catch {
+      // Body is optional on DELETE requests
+    }
+
+    const result = await service.deleteDraftTemplate(staff, {
+      requestId,
+      templateId: id,
+    });
+
+    return NextResponse.json(result);
+  } catch (error: unknown) {
+    return templateRouteError(error);
+  }
+}

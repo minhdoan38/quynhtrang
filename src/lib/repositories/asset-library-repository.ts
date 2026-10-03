@@ -661,6 +661,23 @@ export class AssetLibraryRepository {
         .limit(1);
 
       if (p && p.length > 0) return true;
+
+      const { data: td } = await this.client
+        .from('template_drafts')
+        .select('id')
+        .or(`design_document.cs.{"elements":[{"data":{"libraryAssetId":"${ref.id}"}}]},design_document.cs.{"elements":[{"data":{"fontFaceId":"${ref.id}"}}]}`)
+        .limit(1);
+
+      if (td && td.length > 0) return true;
+
+      const { data: tvd } = await this.client
+        .from('template_version_dependencies')
+        .select('id')
+        .or(`asset_id.eq.${ref.id},family_id.eq.${ref.id}`)
+        .limit(1);
+
+      if (tvd && tvd.length > 0) return true;
+
       return false;
     } catch {
       return false;
