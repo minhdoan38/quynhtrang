@@ -4,6 +4,7 @@ import {
   TemplateServiceError,
   type TemplateProvenance,
   type TemplateTarget,
+  type TemplateTargetInput,
   type TemplateVersionPayload,
   type UseTemplateInput,
 } from '../domain/template.ts';
@@ -135,16 +136,29 @@ export async function cloneTemplateIntoProject(
   }
 
   const repo = resolveRepo(options);
-  const template = await repo.getTemplate(input.templateId.trim());
+  let template = await repo.getTemplate(input.templateId.trim());
+  let resolved: { templateId: string; versionId: string } | null = null;
+
+  if (!template) {
+    resolved = await resolveTemplateForUse(input.templateId.trim(), {
+      repo,
+      target: input.target,
+    });
+    if (resolved) {
+      template = await repo.getTemplate(resolved.templateId);
+    }
+  }
 
   if (!template || template.status !== 'published' || template.archivedAt) {
     throw new TemplateServiceError('TEMPLATE_UNAVAILABLE', 'Mẫu này hiện không còn khả dụng.', 409);
   }
 
-  if (template.currentPublishedVersionId !== input.expectedVersionId.trim()) {
+  if (
+    template.currentPublishedVersionId !== input.expectedVersionId.trim() &&
+    (!resolved || resolved.versionId !== input.expectedVersionId.trim())
+  ) {
     throw new TemplateServiceError('TEMPLATE_CHANGED', 'Phiên bản mẫu đã thay đổi, vui lòng tải lại.', 409);
   }
-
   const availability = await repo.getTemplateAvailability(template.id);
   if (!availability.available) {
     throw new TemplateServiceError('TEMPLATE_UNAVAILABLE', 'Mẫu này hiện không còn khả dụng.', 409, {
@@ -183,9 +197,15 @@ export async function cloneTemplateIntoProject(
   throw new TemplateServiceError('NOT_FOUND', 'Cloud clone is handled in Task 17', 501);
 }
 
+export interface ResolveTemplateForUseOptions {
+  repo?: TemplateRepository;
+  targetKey?: string;
+  target?: Partial<TemplateTargetInput> | TemplateTarget | null;
+}
+
 export async function resolveTemplateForUse(
   idOrLegacyId: string,
-  options?: { repo?: TemplateRepository; targetKey?: string },
+  options?: ResolveTemplateForUseOptions,
 ): Promise<{ templateId: string; versionId: string } | null> {
   const repo = resolveRepo(options);
 
@@ -200,7 +220,28 @@ export async function resolveTemplateForUse(
     }
   }
 
-  const legacy = await repo.resolveLegacyTarget(idOrLegacyId, options?.targetKey);
+  let legacy = options?.targetKey
+    ? await repo.resolveLegacyTarget(idOrLegacyId, options.targetKey)
+    : null;
+
+  if (!legacy && options?.target) {
+    const target = options.target as { geometryKey?: string; productId?: string; variantId?: string };
+    const candidateKeys = [
+      target.geometryKey,
+      target.productId && target.variantId ? `${target.productId}:${target.variantId}` : null,
+      target.productId,
+    ].filter(Boolean) as string[];
+
+    for (const key of candidateKeys) {
+      legacy = await repo.resolveLegacyTarget(idOrLegacyId, key);
+      if (legacy) break;
+    }
+  }
+
+  if (!legacy) {
+    legacy = await repo.resolveLegacyTarget(idOrLegacyId);
+  }
+
   if (legacy) {
     const targetTemplate = await repo.getTemplate(legacy.templateId);
     if (

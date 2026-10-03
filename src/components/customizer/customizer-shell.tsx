@@ -427,19 +427,50 @@ export function CustomizerShell({ context, initialSearchParams }: CustomizerShel
               return;
             }
             const data = await res.json();
-            const version = data.currentVersion;
-            if (!version) {
+            const expectedVersionId =
+              data.template?.currentPublishedVersionId || data.currentVersion?.versionId;
+            if (!expectedVersionId) {
               setView('template-browser');
               showToast('Mẫu này hiện không còn khả dụng.');
               return;
             }
+
+            const target = {
+              productId: data.currentVersion?.target?.productId ?? (requestedProduct && requestedProduct in PRODUCTS ? requestedProduct : (saved?.productId ?? 'wrapping')),
+              variantId: data.currentVersion?.target?.variantId ?? requestedVariant ?? (saved?.variantId ?? 'default'),
+              mode: data.currentVersion?.target?.mode ?? (requestedMode === 'pattern' || requestedMode === 'full-sheet' ? requestedMode : (saved?.productOptions?.mode ?? null)),
+              shape: data.currentVersion?.target?.shape ?? (saved?.productOptions?.shape ?? null),
+            };
             const reqId = crypto.randomUUID();
-            const project = createGuestProjectFromTemplate(version, reqId);
-            saveRecentProject(project.document, project.id);
-            setRecentProjects(getRecentProjects());
-            setCurrentProjectId(project.id);
-            resetHistory(migrateLegacyText(project.document));
-            setView('editor');
+
+            const useRes = await fetch(`/api/templates/${encodeURIComponent(requestedTemplate)}/use`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                expectedVersionId,
+                target,
+                requestId: reqId,
+              }),
+            });
+
+            if (!useRes.ok) {
+              setView('template-browser');
+              showToast('Mẫu này hiện không còn khả dụng.');
+              return;
+            }
+
+            const useData = await useRes.json();
+            if (useData.kind === 'guest' && useData.payload) {
+              const project = createGuestProjectFromTemplate(useData.payload, reqId);
+              saveRecentProject(project.document, project.id);
+              setRecentProjects(getRecentProjects());
+              setCurrentProjectId(project.id);
+              resetHistory(migrateLegacyText(project.document));
+              setView('editor');
+            } else {
+              setView('template-browser');
+              showToast('Mẫu này hiện không còn khả dụng.');
+            }
           })
           .catch(() => {
             setView('template-browser');

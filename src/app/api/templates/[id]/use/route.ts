@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server.js';
 import { TemplateRepository } from '../../../../../lib/repositories/template-repository.ts';
 import { TemplateServiceError } from '../../../../../lib/domain/template.ts';
-import { cloneTemplateIntoProject } from '../../../../../lib/services/template-clone.ts';
+import { cloneTemplateIntoProject, resolveTemplateForUse } from '../../../../../lib/services/template-clone.ts';
 import { createPrivilegedSupabaseClient } from '../../../../../lib/supabase/admin.ts';
 import { getSupabaseConfig } from '../../../../../lib/supabase/config.ts';
 import { createClient } from '@supabase/supabase-js';
@@ -56,11 +56,20 @@ export async function POST(
     }
 
     const actor = null;
+    const trimmedId = id.trim();
+    let templateIdToUse = trimmedId;
+    const existing = await repo.getTemplate(trimmedId);
+    if (!existing) {
+      const resolved = await resolveTemplateForUse(trimmedId, { repo, target });
+      if (resolved) {
+        templateIdToUse = resolved.templateId;
+      }
+    }
 
     const result = await cloneTemplateIntoProject(
       actor,
       {
-        templateId: id.trim(),
+        templateId: templateIdToUse,
         expectedVersionId: expectedVersionId.trim(),
         target: target ?? { productId: 'wrapping', variantId: 'default', mode: null, shape: null },
         requestId: requestId || crypto.randomUUID(),

@@ -1,5 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import type { DesignState } from '../lib/product-state.ts';
 import type {
@@ -15,7 +17,9 @@ import {
   createUseReceipt,
   verifyUseReceipt,
   cloneTemplateIntoProject,
+  resolveTemplateForUse,
 } from '../lib/services/template-clone.ts';
+import { GET as getTemplateRoute } from '../app/api/templates/[id]/route.ts';
 import { POST as useTemplateRoute } from '../app/api/templates/[id]/use/route.ts';
 import {
   getRecentProjects,
@@ -119,6 +123,7 @@ function createMockRepo(overrides: {
   template?: Partial<TemplateRecord> | null;
   version?: TemplateVersionPayload | null;
   availability?: TemplateAvailability;
+  legacyMapping?: Record<string, { templateId: string; versionId: string }>;
 } = {}) {
   const template: TemplateRecord | null =
     overrides.template === null
@@ -171,7 +176,10 @@ function createMockRepo(overrides: {
     async getTemplateAvailability(id: string) {
       return availability;
     },
-    async resolveLegacyTarget(legacyId: string) {
+    async resolveLegacyTarget(legacyId: string, targetKey?: string) {
+      if (overrides.legacyMapping && overrides.legacyMapping[legacyId]) {
+        return overrides.legacyMapping[legacyId];
+      }
       return null;
     },
   };
@@ -514,4 +522,205 @@ test('saving new clone with explicitId does not overwrite preexisting project an
   assert.equal(cappedList[2].id, 'proj-guest-clone-new');
   // Oldest project 'proj-user-original' pushed out by max-3 quota
   assert.ok(!cappedList.map((p) => p.id).includes('proj-user-original'));
+});
+
+// 11. Legacy template ID resolution via GET, POST /use, and cloneTemplateIntoProject
+test('legacy template ID resolves to successor template across GET, POST /use, and cloneTemplateIntoProject', async () => {
+  const legacyId = 'legacy-wrapping-classic';
+  const successorId = 'tpl-sample-01';
+  const successorVersionId = 'ver-uuid-1111';
+
+  const mockRepo = createMockRepo({
+    legacyMapping: {
+      [legacyId]: {
+        templateId: successorId,
+        versionId: successorVersionId,
+      },
+    },
+  });
+
+  // 1. GET /api/templates/[id] with legacy ID
+  const getReq = new Request(`http://localhost:3000/api/templates/${legacyId}`);
+  const getRes = await getTemplateRoute(
+    getReq,
+    { params: Promise.resolve({ id: legacyId }) },
+    { repo: mockRepo as unknown as TemplateRepository },
+  );
+  assert.equal(getRes.status, 200);
+  const getData = (await getRes.json()) as { template: TemplateRecord; currentVersion: TemplateVersionPayload };
+  assert.equal(getData.template.id, successorId);
+  assert.equal(getData.currentVersion.versionId, successorVersionId);
+
+  // 2. POST /api/templates/[id]/use with legacy ID
+  const useReq = new Request(`http://localhost:3000/api/templates/${legacyId}/use`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      expectedVersionId: successorVersionId,
+      target: { productId: 'wrapping', variantId: 'default', mode: 'pattern', shape: null },
+      requestId: 'req-legacy-clone-1',
+    }),
+  });
+  const useRes = await useTemplateRoute(
+    useReq,
+    { params: Promise.resolve({ id: legacyId }) },
+    { repo: mockRepo as unknown as TemplateRepository },
+  );
+  assert.equal(useRes.status, 200);
+  const useData = (await useRes.json()) as { kind: string; payload: TemplateVersionPayload; useReceipt: string };
+  assert.equal(useData.kind, 'guest');
+  assert.equal(useData.payload.templateId, successorId);
+  assert.equal(useData.payload.versionId, successorVersionId);
+  assert.ok(useData.useReceipt);
+
+  const verified = verifyUseReceipt(useData.useReceipt);
+  assert.ok(verified);
+  assert.equal(verified?.versionId, successorVersionId);
+  assert.equal(verified?.requestId, 'req-legacy-clone-1');
+
+  // 3. cloneTemplateIntoProject direct call with legacy ID
+  const cloneResult = await cloneTemplateIntoProject(
+    null,
+    {
+      templateId: legacyId,
+      expectedVersionId: successorVersionId,
+      target: { productId: 'wrapping', variantId: 'default', mode: 'pattern', shape: null },
+      requestId: 'req-legacy-clone-direct',
+    },
+    { repo: mockRepo as unknown as TemplateRepository },
+  );
+  assert.equal(cloneResult.kind, 'guest');
+  if (cloneResult.kind === 'guest') {
+    assert.equal(cloneResult.payload.templateId, successorId);
+    assert.equal(cloneResult.payload.versionId, successorVersionId);
+    assert.ok(cloneResult.useReceipt);
+  }
+});
+
+// 12. CustomizerShell URL template entry source contract and hydration flow
+test('CustomizerShell source wires URL template entry to call /use endpoint and process use receipt', () => {
+  const shellPath = resolve(process.cwd(), 'src/components/customizer/customizer-shell.tsx');
+  const source = readFileSync(shellPath, 'utf8');
+
+  // Verify fetch to /api/templates/${encodeURIComponent(requestedTemplate)}
+  assert.match(
+    source,
+    /fetch\(`\/api\/templates\/\$\{encodeURIComponent\(requestedTemplate\)\}`\)/,
+    'CustomizerShell must fetch template metadata for requestedTemplate',
+  );
+
+  // Verify fetch to /api/templates/${encodeURIComponent(requestedTemplate)}/use
+  assert.match(
+    source,
+    /fetch\(`\/api\/templates\/\$\{encodeURIComponent\(requestedTemplate\)\}\/use`,\s*\{\s*method:\s*['"]POST['"]/,
+    'CustomizerShell must call POST /api/templates/.../use endpoint',
+  );
+
+  // Verify passing expectedVersionId, target, requestId
+  assert.match(
+    source,
+    /expectedVersionId,\s*target,\s*requestId:/,
+    'CustomizerShell must send expectedVersionId, target, and requestId to /use endpoint',
+  );
+
+  // Verify creating guest project with payload from /use response
+  assert.match(
+    source,
+    /createGuestProjectFromTemplate\(useData\.payload,\s*reqId\)/,
+    'CustomizerShell must construct guest project using /use payload and request ID',
+  );
+
+  // Verify failure path sets view to template-browser and displays toast
+  assert.match(
+    source,
+    /setView\('template-browser'\);\s*showToast\('Mẫu này hiện không còn khả dụng\.'\);/,
+    'CustomizerShell must show toast and fall back to template-browser on failure',
+  );
+});
+
+test('URL template entry hydration end-to-end workflow invokes /use and retains guest project', async () => {
+  setupDummyLocalStorage();
+  const samplePayload = makeSamplePayload();
+
+  const originalFetch = globalThis.fetch;
+  const calls: { url: string; method?: string; body?: { expectedVersionId?: string } }[] = [];
+  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    const urlStr = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
+    calls.push({ url: urlStr, method: init?.method, body: init?.body ? JSON.parse(init.body as string) : undefined });
+
+    if (urlStr === '/api/templates/tpl-sample-01') {
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({
+          template: { id: 'tpl-sample-01', currentPublishedVersionId: 'ver-uuid-1111' },
+          currentVersion: samplePayload,
+        }),
+      } as unknown as Response;
+    }
+
+    if (urlStr === '/api/templates/tpl-sample-01/use' && init?.method === 'POST') {
+      const receipt = createUseReceipt({
+        versionId: 'ver-uuid-1111',
+        requestId: 'req-sim-123',
+        exp: Date.now() + 60000,
+      });
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({
+          kind: 'guest',
+          payload: samplePayload,
+          useReceipt: receipt,
+        }),
+      } as unknown as Response;
+    }
+
+    return {
+      ok: false,
+      status: 404,
+      json: async () => ({ code: 'NOT_FOUND' }),
+    } as unknown as Response;
+  }) as typeof globalThis.fetch;
+
+  try {
+    const requestedTemplate = 'tpl-sample-01';
+    const detailRes = await fetch(`/api/templates/${encodeURIComponent(requestedTemplate)}`);
+    assert.ok(detailRes.ok);
+    const detailData = await detailRes.json();
+    const expectedVersionId = detailData.template?.currentPublishedVersionId || detailData.currentVersion?.versionId;
+    assert.equal(expectedVersionId, 'ver-uuid-1111');
+
+    const reqId = 'req-sim-123';
+    const useRes = await fetch(`/api/templates/${encodeURIComponent(requestedTemplate)}/use`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        expectedVersionId,
+        target: { productId: 'wrapping', variantId: 'default', mode: 'pattern', shape: null },
+        requestId: reqId,
+      }),
+    });
+    assert.ok(useRes.ok);
+    const useData = await useRes.json();
+    assert.equal(useData.kind, 'guest');
+    assert.ok(useData.useReceipt);
+
+    const project = createGuestProjectFromTemplate(useData.payload, reqId);
+    saveRecentProject(project.document, project.id);
+
+    const recents = getRecentProjects();
+    assert.equal(recents.length, 1);
+    assert.equal(recents[0].id, reqId);
+    assert.equal(recents[0].sourceTemplate?.templateId, 'tpl-sample-01');
+    assert.equal(recents[0].sourceTemplate?.templateVersionId, 'ver-uuid-1111');
+
+    assert.equal(calls.length, 2);
+    assert.equal(calls[0].url, '/api/templates/tpl-sample-01');
+    assert.equal(calls[1].url, '/api/templates/tpl-sample-01/use');
+    assert.equal(calls[1].method, 'POST');
+    assert.equal(calls[1].body?.expectedVersionId, 'ver-uuid-1111');
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
 });

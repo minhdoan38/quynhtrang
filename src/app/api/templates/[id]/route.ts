@@ -3,6 +3,8 @@ import { createClient } from '@supabase/supabase-js';
 
 import { TemplateRepository } from '../../../../lib/repositories/template-repository.ts';
 import { TemplateServiceError } from '../../../../lib/domain/template.ts';
+import { resolveTemplateForUse } from '../../../../lib/services/template-clone.ts';
+import type { ProductId, FixedStickerShape } from '../../../../lib/product-state.ts';
 import { createPrivilegedSupabaseClient } from '../../../../lib/supabase/admin.ts';
 import { getSupabaseConfig } from '../../../../lib/supabase/config.ts';
 
@@ -45,7 +47,30 @@ export async function GET(
       );
     }
 
-    const template = await repo.getTemplate(id);
+    const trimmedId = id.trim();
+    let template = await repo.getTemplate(trimmedId);
+
+    if (!template) {
+      const url = new URL(request.url);
+      const productId = url.searchParams.get('productId') as ProductId | null;
+      const variantId = url.searchParams.get('variantId');
+      const mode = url.searchParams.get('mode') as 'pattern' | 'full-sheet' | null;
+      const shape = url.searchParams.get('shape') as FixedStickerShape | null;
+      const reqTarget = productId
+        ? {
+          productId,
+          variantId: variantId ?? 'default',
+          mode: mode ?? null,
+          shape: shape ?? null,
+        }
+        : null;
+
+      const resolved = await resolveTemplateForUse(trimmedId, { repo, target: reqTarget });
+      if (resolved) {
+        template = await repo.getTemplate(resolved.templateId);
+      }
+    }
+
     if (!template || template.status !== 'published' || template.archivedAt) {
       return NextResponse.json(
         { code: 'NOT_FOUND', message: 'Không tìm thấy mẫu thiết kế' },
