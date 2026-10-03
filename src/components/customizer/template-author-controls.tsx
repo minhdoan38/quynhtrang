@@ -24,8 +24,53 @@ export function TemplateAuthorControls({
   onRetrySave,
   className = '',
 }: TemplateAuthorControlsProps) {
+  const isSaveBlocked =
+    saveStatus === 'saving' || saveStatus === 'dirty' || saveStatus === 'conflict';
+
   return (
     <div className={`flex items-center gap-2 ${className}`}>
+      {/* Save Status Badge */}
+      {saveStatus && (
+        <span
+          className="inline-flex items-center gap-1.5 rounded text-[11px] font-medium"
+          aria-live="polite"
+        >
+          {(saveStatus === 'saving' || saveStatus === 'dirty') && (
+            <span className="inline-flex items-center gap-1 text-[#A86E22] bg-[#A86E22]/10 px-2 py-0.5 rounded">
+              <span className="w-1.5 h-1.5 rounded-full bg-[#A86E22] animate-pulse" />
+              <span>Đang lưu...</span>
+            </span>
+          )}
+          {(saveStatus === 'saved' || saveStatus === 'idle') && (
+            <span className="inline-flex items-center gap-1 text-[#5F7E67] bg-[#5F7E67]/10 px-2 py-0.5 rounded">
+              <span className="w-1.5 h-1.5 rounded-full bg-[#5F7E67]" />
+              <span>Đã lưu</span>
+            </span>
+          )}
+          {saveStatus === 'error' && (
+            <span className="inline-flex items-center gap-1 text-[#B3535D] bg-[#B3535D]/10 px-2 py-0.5 rounded">
+              <span className="w-1.5 h-1.5 rounded-full bg-[#B3535D]" />
+              <span>Lỗi lưu</span>
+              {onRetrySave && (
+                <button
+                  type="button"
+                  onClick={onRetrySave}
+                  className="underline hover:text-[#B3535D] ml-0.5 cursor-pointer"
+                >
+                  Thử lại
+                </button>
+              )}
+            </span>
+          )}
+          {saveStatus === 'conflict' && !conflictDetails && (
+            <span className="inline-flex items-center gap-1 text-[#B3535D] bg-[#B3535D]/10 px-2 py-0.5 rounded border border-[#B3535D]/30">
+              <AlertCircle className="w-3 h-3 text-[#B3535D]" />
+              <span>Xung đột</span>
+            </span>
+          )}
+        </span>
+      )}
+
       {/* Read-only indicator */}
       {isReadOnly && (
         <span
@@ -64,9 +109,13 @@ export function TemplateAuthorControls({
         <button
           type="button"
           onClick={onPublish}
-          disabled={isPublishing || saveStatus === 'saving'}
+          disabled={isPublishing || isSaveBlocked}
           aria-label="Đăng mẫu"
-          title="Kiểm duyệt và xuất bản mẫu thiết kế"
+          title={
+            isSaveBlocked
+              ? 'Đang chờ lưu thay đổi trước khi đăng'
+              : 'Kiểm duyệt và xuất bản mẫu thiết kế'
+          }
           className="inline-flex items-center gap-1.5 h-8 px-2.5 sm:px-3 rounded-lg text-xs font-semibold bg-[#315F86] text-white hover:bg-[#244A69] active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-2xs"
         >
           <UploadCloud className="w-3.5 h-3.5" aria-hidden="true" />

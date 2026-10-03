@@ -1,5 +1,6 @@
 import type { DesignState } from './product-state.ts';
 import type { DesignReviewMode, EditorMutationMode } from './domain/design-revision.ts';
+import type { SaveStatus } from './draft-autosave.ts';
 
 export type EditorContextType =
   | 'guest'
@@ -46,6 +47,7 @@ export interface TemplateAuthorEditorContext {
   versionId?: string;
   initialDocument: DesignState;
   readOnly?: boolean;
+  saveStatus?: SaveStatus;
   draftRevision?: number;
   leaseEpoch?: number;
   sessionId?: string;

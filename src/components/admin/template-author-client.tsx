@@ -86,6 +86,7 @@ export function TemplateAuthorClient({
     draftId: initialDraft.id,
     initialDocument: initialDraft.designDocument,
     readOnly: isReadOnly,
+    saveStatus: draftSession.saveStatus,
     leaseEpoch,
     sessionId,
     draftRevision: draftSession.currentRevision,

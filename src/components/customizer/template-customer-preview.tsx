@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useEffect } from 'react';
+import { useMemo } from 'react';
 import { X, Sparkles } from 'lucide-react';
 import type { DesignState } from '@/lib/product-state';
 import { CustomizerShell } from './customizer-shell';
@@ -26,17 +26,6 @@ export function TemplateCustomerPreview({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Trap escape key inside customer preview
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        e.stopPropagation();
-        onExit();
-      }
-    };
-    window.addEventListener('keydown', handleKeyDown, { capture: true });
-    return () => window.removeEventListener('keydown', handleKeyDown, { capture: true });
-  }, [onExit]);
 
   return (
     <div

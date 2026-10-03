@@ -214,6 +214,10 @@ export function CustomizerShell({ context }: CustomizerShellProps = {}) {
   // Overlay Mode: Preview and Preflight full-screen within Editor
   // Autosave and unsaved warning states
   const [saveStatus, setSaveStatus] = useState<SaveStatus>('saved');
+  const activeSaveStatus =
+    context?.type === 'template-author' && context.saveStatus
+      ? context.saveStatus
+      : saveStatus;
   const [hasUnsavedWarning, setHasUnsavedWarning] = useState(false);
   const saveTimerRef = useRef<NodeJS.Timeout | null>(null);
   const [projectRecents, setProjectRecents] = useState<string[]>([]);
@@ -825,7 +829,11 @@ export function CustomizerShell({ context }: CustomizerShellProps = {}) {
       selectionMode,
       activeGroupId,
       selectedTarget,
-      saveStatus,
+      saveStatus: (activeSaveStatus === 'error' || activeSaveStatus === 'conflict')
+        ? 'error'
+        : (activeSaveStatus === 'saving' || activeSaveStatus === 'dirty')
+          ? 'saving'
+          : 'saved',
       returnView: 'setup',
     });
 
@@ -886,7 +894,8 @@ export function CustomizerShell({ context }: CustomizerShellProps = {}) {
     activeGroupId,
     handleExitGroupEdit,
     handleExitMultiSelect,
-    saveStatus,
+    activeSaveStatus,
+    context,
     viewport.isFit,
     handleCloseSheet,
     handleBackToLauncher,
@@ -1912,29 +1921,35 @@ export function CustomizerShell({ context }: CustomizerShellProps = {}) {
             {designTitle}
           </span>
           <span className="text-xs text-[#666A6D] flex items-center gap-1 font-medium leading-none mt-0.5">
-            {saveStatus === 'saving' && (
+            {(activeSaveStatus === 'saving' || activeSaveStatus === 'dirty') && (
               <>
                 <span className="w-1.5 h-1.5 rounded-full bg-[#A86E22] animate-pulse" />
                 Đang lưu...
               </>
             )}
-            {saveStatus === 'saved' && (
+            {(activeSaveStatus === 'saved' || activeSaveStatus === 'idle') && (
               <>
                 <span className="w-1.5 h-1.5 rounded-full bg-[#5F7E67]" />
                 Đã lưu
               </>
             )}
-            {saveStatus === 'error' && (
+            {activeSaveStatus === 'error' && (
               <>
                 <span className="w-1.5 h-1.5 rounded-full bg-[#B3535D]" />
                 <span className="text-[#B3535D]">Lưu lỗi</span>
                 <button
                   type="button"
                   onClick={() => executeAutosave(state)}
-                  className="underline text-xs text-[#315F86] hover:text-[#244A69] ml-0.5"
+                  className="underline text-xs text-[#315F86] hover:text-[#244A69] ml-0.5 cursor-pointer"
                 >
                   Thử lại
                 </button>
+              </>
+            )}
+            {activeSaveStatus === 'conflict' && (
+              <>
+                <span className="w-1.5 h-1.5 rounded-full bg-[#B3535D]" />
+                <span className="text-[#B3535D]">Xung đột</span>
               </>
             )}
           </span>
@@ -1944,7 +1959,7 @@ export function CustomizerShell({ context }: CustomizerShellProps = {}) {
         <div className="flex items-center gap-1.5 sm:gap-2">
           {capabilities.isAuthorMode && (
             <TemplateAuthorControls
-              saveStatus={saveStatus}
+              saveStatus={activeSaveStatus}
               isReadOnly={Boolean(context && 'readOnly' in context && context.readOnly)}
               onCustomerPreview={() => {
                 if (context && 'onCustomerPreview' in context && context.onCustomerPreview) {
@@ -2609,13 +2624,13 @@ export function CustomizerShell({ context }: CustomizerShellProps = {}) {
               <AlertTriangle size={20} />
             </div>
             <h3 id="unsaved-title" className="font-semibold text-sm text-[#2E3338]">
-              {saveStatus === 'error'
+              {activeSaveStatus === 'error' || activeSaveStatus === 'conflict'
                 ? 'Không thể lưu thay đổi'
                 : 'Thiết kế vẫn đang được lưu'}
             </h3>
             <p id="unsaved-desc" className="text-xs text-[#666A6D]">
-              {saveStatus === 'error'
-                ? 'Bộ nhớ trình duyệt tạm thời gặp sự cố. Bạn có muốn thử lưu lại trước khi thoát?'
+              {activeSaveStatus === 'error' || activeSaveStatus === 'conflict'
+                ? 'Bộ nhớ tạm thời gặp sự cố hoặc xảy ra xung đột. Bạn có muốn thử lưu lại trước khi thoát?'
                 : 'Hệ thống đang hoàn tất lưu dữ liệu của bạn vào thiết bị. Vui lòng đợi trong giây lát.'}
             </p>
             <div className="pt-2 flex gap-2">
@@ -2623,13 +2638,13 @@ export function CustomizerShell({ context }: CustomizerShellProps = {}) {
                 type="button"
                 onClick={() => {
                   setHasUnsavedWarning(false);
-                  if (saveStatus === 'error') {
+                  if (activeSaveStatus === 'error' || activeSaveStatus === 'conflict') {
                     executeAutosave(state);
                   }
                 }}
                 className="flex-1 h-9 rounded-lg border border-[#DDD6CC] bg-white text-xs font-semibold text-[#2E3338] hover:bg-[#F8F3E8] transition-colors"
               >
-                {saveStatus === 'error' ? 'Thử lưu lại' : 'Tiếp tục chỉnh'}
+                {activeSaveStatus === 'error' || activeSaveStatus === 'conflict' ? 'Thử lưu lại' : 'Tiếp tục chỉnh'}
               </button>
               <button
                 type="button"
