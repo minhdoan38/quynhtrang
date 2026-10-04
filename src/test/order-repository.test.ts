@@ -173,6 +173,10 @@ test('getById rebuilds snapshot design and summary from joined design versions a
   assert.equal(order.snapshot.summary.product, 'Thiệp');
   assert.equal(order.snapshot.summary.variant, 'Ngang');
   assert.equal(order.preflightRevision, 'pf-3');
+  assert.equal(order.commercialSnapshot.productName, 'Thiệp');
+  assert.equal(order.commercialSnapshot.variantName, 'Ngang');
+  assert.equal(order.commercialSnapshot.unitPrice, 29000);
+  assert.equal(order.commercialSnapshot.total, 58000);
 });
 
 test('idempotency lookup returns null only for no rows and throws database errors', async () => {

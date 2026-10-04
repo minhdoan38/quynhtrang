@@ -71,6 +71,24 @@ function createDependencies() {
         },
         approvedDesignVersionId: input.approvedDesignVersionId,
         preflightRevision: input.preflightRevision ?? '',
+        commercialSnapshot: input.commercialSnapshot ?? {
+          productId: input.productId,
+          productName: input.productId,
+          variantId: input.variantId,
+          variantName: input.variantId,
+          definitionKey: null,
+          commercialConfigVersionId: null,
+          tierMinimumQuantity: null,
+          quantity: input.quantity,
+          unitPrice: input.unitPrice,
+          subtotal: input.subtotal,
+          total: input.total,
+          currency: input.currency ?? 'VND',
+          paymentPolicy: input.paymentPolicy ?? { kind: 'full_payment' },
+          depositAmount: input.depositAmount ?? null,
+          amountDueNow: input.amountDueNow ?? input.total,
+          remainingAmount: input.remainingAmount ?? 0,
+        },
         createdAt: '2026-09-30T00:00:00.000Z',
         snapshot: structuredClone(input.designSnapshot),
         payment: { ...structuredClone(input.payment), orderId: id },
@@ -144,6 +162,9 @@ test('prepares project, private assets, immutable approved version, order, payme
   assert.equal(result.order.product.unitPrice, 29000);
   assert.equal(result.order.product.subtotal, 58000);
   assert.equal(result.paymentData.amount, 58000);
+  assert.equal(result.order.commercialSnapshot.quantity, 2);
+  assert.equal(result.order.commercialSnapshot.unitPrice, 29000);
+  assert.equal(result.order.commercialSnapshot.total, 58000);
   assert.equal(deps.records.projects.length, 1);
   assert.equal(deps.records.assets.length, 1);
   assert.equal(deps.records.assets[0]?.storageBucket, 'customer-assets');

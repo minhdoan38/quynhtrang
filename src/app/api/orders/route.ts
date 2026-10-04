@@ -23,6 +23,7 @@ export interface CreateOrderRequestBody {
   preflightRevision?: string;
   preflightAcknowledged?: boolean;
   priceQuoteId?: string;
+  quoteId?: string;
 }
 export interface CreateOrderResponseBody {
   order: PendingOrder;
@@ -85,7 +86,8 @@ export async function POST(request: Request) {
           preflightRevision: body.preflightRevision ?? '',
           preflightAcknowledged: body.preflightAcknowledged === true,
           authenticatedUserId,
-          priceQuoteId: body.priceQuoteId,
+          priceQuoteId: body.quoteId ?? body.priceQuoteId,
+          quoteId: body.quoteId ?? body.priceQuoteId,
         },
         hasSupabaseEnvironment && supabaseClient
           ? {

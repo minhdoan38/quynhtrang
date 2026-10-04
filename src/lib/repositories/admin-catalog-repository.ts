@@ -223,20 +223,38 @@ export class AdminCatalogRepository {
       if (error || !data) return null;
       const row = data as Record<string, unknown>;
       const loaded: PriceQuote = {
-        id: String(row.id),
-        productId: String(row.product_id),
-        variantId: String(row.variant_id),
-        commercialConfigVersionId: String(row.commercial_config_version_id),
-        quantity: Number(row.quantity),
-        calculation: row.calculation as PriceQuote['calculation'],
-        checkoutKeyHash: String(row.checkout_key_hash),
-        createdAt: String(row.created_at),
-        expiresAt: String(row.expires_at),
+        id: String(row.id), productId: String(row.product_id), variantId: String(row.variant_id),
+        productName: typeof row.product_name === 'string' ? row.product_name : undefined,
+        variantName: typeof row.variant_name === 'string' ? row.variant_name : undefined,
+        definitionKey: typeof row.definition_key === 'string' ? row.definition_key : null,
+        commercialConfigVersionId: String(row.commercial_config_version_id), quantity: Number(row.quantity),
+        calculation: row.calculation as PriceQuote['calculation'], checkoutKeyHash: String(row.checkout_key_hash),
+        createdAt: String(row.created_at), expiresAt: String(row.expires_at),
+        consumedOrderId: typeof row.consumed_order_id === 'string' ? row.consumed_order_id : null,
       };
       this.quotes.set(loaded.id, structuredClone(loaded));
       return structuredClone(loaded);
     }
     return null;
+  }
+
+  async consumeQuote(quoteId: string, orderId: string): Promise<PriceQuote | null> {
+    const quote = await this.getPriceQuote(quoteId);
+    if (!quote || (quote.consumedOrderId && quote.consumedOrderId !== orderId)) return null;
+    if (this.client) {
+      const { data, error } = await this.client.from('price_quotes').update({ consumed_order_id: orderId }).eq('id', quoteId).is('consumed_order_id', null).select('*').maybeSingle();
+      if (error) throw new Error(error.message);
+      if (data) {
+        quote.consumedOrderId = orderId;
+        this.quotes.set(quoteId, structuredClone(quote));
+        return quote;
+      }
+      const current = await this.getPriceQuote(quoteId);
+      return current?.consumedOrderId === orderId ? current : null;
+    }
+    quote.consumedOrderId = orderId;
+    this.quotes.set(quoteId, structuredClone(quote));
+    return quote;
   }
 
   getAssetEvents(): CommercialAuditEvent[] {
@@ -410,6 +428,7 @@ export class AdminCatalogRepository {
         commercial_config_version_id: quote.commercialConfigVersionId, quantity: quote.quantity,
         calculation: quote.calculation, checkout_key_hash: quote.checkoutKeyHash,
         created_at: quote.createdAt, expires_at: quote.expiresAt,
+        consumed_order_id: quote.consumedOrderId ?? null,
       }).select('*').single();
       if (error || !data) throw new Error(error?.message ?? 'QUOTE_PERSIST_FAILED');
       const row = data as Record<string, unknown>;
@@ -418,6 +437,7 @@ export class AdminCatalogRepository {
         commercialConfigVersionId: String(row.commercial_config_version_id), quantity: Number(row.quantity),
         calculation: row.calculation as PriceQuote['calculation'], checkoutKeyHash: String(row.checkout_key_hash),
         createdAt: String(row.created_at), expiresAt: String(row.expires_at),
+        consumedOrderId: typeof row.consumed_order_id === 'string' ? row.consumed_order_id : null,
       };
       this.quotes.set(saved.id, structuredClone(saved));
       return saved;

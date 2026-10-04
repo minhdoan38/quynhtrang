@@ -30,6 +30,7 @@ export interface PrepareOrderInput {
   guestAccessSeed?: string;
   authenticatedUserId?: string;
   priceQuoteId?: string;
+  quoteId?: string;
 }
 
 export interface PreparedOrderResult {
@@ -53,7 +54,7 @@ export interface PrepareOrderOptions {
   designVersionRepo?: DesignVersionRepo;
   orderEventRepo?: OrderEventRepo;
   paymentRepo?: PaymentRepo;
-  catalogRepo?: Pick<AdminCatalogRepository, 'getProduct' | 'getProductById' | 'getVariant' | 'getCommercialVersion' | 'getPriceQuote'>;
+  catalogRepo?: Pick<AdminCatalogRepository, 'getProduct' | 'getProductById' | 'getVariant' | 'getCommercialVersion' | 'getPriceQuote' | 'consumeQuote'>;
 }
 
 export class OrderPreparationError extends Error {
@@ -175,58 +176,70 @@ export async function prepareOrderFromGuestCheckout(
   let resolvedPriceQuoteId: string | undefined;
   let resolvedQuoteExpiresAt: string | undefined;
   let resolvedCommercialConfigVersionId: string | undefined;
-  let resolvedPaymentPolicy: PaymentPolicy | undefined;
+  let resolvedPaymentPolicy: PaymentPolicy;
   let resolvedDepositAmount: number | undefined;
   let resolvedAppliedTierMinimumQuantity: number | undefined;
+  let commercialSnapshot: PendingOrder['commercialSnapshot'];
+  const quoteId = input.quoteId ?? input.priceQuoteId;
 
-  if (input.priceQuoteId && repositories.catalogRepo) {
-    const serverQuote = await repositories.catalogRepo.getPriceQuote(input.priceQuoteId);
-    if (!serverQuote) {
-      throw new OrderPreparationError('Báo giá không tồn tại.', 400);
+  if (quoteId && repositories.catalogRepo) {
+    const serverQuote = await repositories.catalogRepo.getPriceQuote(quoteId);
+    if (!serverQuote) throw new OrderPreparationError('Báo giá không tồn tại.', 400);
+    if (new Date(serverQuote.expiresAt).getTime() <= Date.now()) throw new OrderPreparationError('Báo giá đã hết hạn.', 400);
+    if (serverQuote.productId !== immutableDesign.productId) throw new OrderPreparationError('Báo giá không khớp với sản phẩm đặt in.', 400);
+    if (serverQuote.variantId !== immutableDesign.variantId) throw new OrderPreparationError('Báo giá không khớp với biến thể đặt in.', 400);
+    if (serverQuote.quantity !== immutableDesign.quantity) throw new OrderPreparationError('Báo giá không khớp với số lượng đặt in.', 400);
+    const expectedHash = createHash('sha256').update(input.idempotencyKey.trim()).digest('hex');
+    if (serverQuote.checkoutKeyHash !== expectedHash) {
+      throw new OrderPreparationError('Báo giá không khớp với phiên thanh toán.', 400);
     }
-    if (new Date(serverQuote.expiresAt).getTime() <= Date.now()) {
-      throw new OrderPreparationError('Giá sản phẩm vừa được cập nhật.', 400);
+    if (serverQuote.consumedOrderId) {
+      throw new OrderPreparationError('Báo giá đã được sử dụng.', 409);
     }
-    if (serverQuote.productId !== immutableDesign.productId) {
-      throw new OrderPreparationError('Báo giá không khớp với sản phẩm đặt in.', 400);
-    }
-    if (serverQuote.variantId !== immutableDesign.variantId) {
-      throw new OrderPreparationError('Báo giá không khớp với biến thể đặt in.', 400);
-    }
-    if (serverQuote.quantity !== immutableDesign.quantity) {
-      throw new OrderPreparationError('Báo giá không khớp với số lượng đặt in.', 400);
-    }
-    const quoteProd = repositories.catalogRepo.getProduct(serverQuote.productId);
-    if (!quoteProd || quoteProd.status !== 'active') {
-      throw new OrderPreparationError('Sản phẩm đã ngừng kinh doanh.', 400);
-    }
+    const quoteProd = (await repositories.catalogRepo.getProductById?.(serverQuote.productId)) ?? repositories.catalogRepo.getProduct(serverQuote.productId);
+    if (!quoteProd || quoteProd.status !== 'active') throw new OrderPreparationError('Sản phẩm đã ngừng kinh doanh.', 400);
     const quoteVariant = repositories.catalogRepo.getVariant(serverQuote.variantId);
-    if (!quoteVariant || quoteVariant.productId !== serverQuote.productId || quoteVariant.status !== 'active') {
-      throw new OrderPreparationError('Biến thể sản phẩm đã ngừng kinh doanh.', 400);
-    }
-    finalUnitPrice = serverQuote.calculation.unitPrice;
-    finalSubtotal = serverQuote.calculation.totalAmount;
-    finalTotal = serverQuote.calculation.totalAmount;
-    finalAmountDueNow = serverQuote.calculation.amountDueNow;
-    finalRemainingAmount = serverQuote.calculation.remainingAmount;
+    if (!quoteVariant || quoteVariant.productId !== serverQuote.productId || quoteVariant.status !== 'active') throw new OrderPreparationError('Biến thể sản phẩm đã ngừng kinh doanh.', 400);
+    const calc = serverQuote.calculation;
+    finalUnitPrice = calc.unitPrice;
+    finalSubtotal = calc.totalAmount;
+    finalTotal = calc.totalAmount;
+    finalAmountDueNow = calc.amountDueNow;
+    finalRemainingAmount = calc.remainingAmount;
     resolvedPriceQuoteId = serverQuote.id;
     resolvedQuoteExpiresAt = serverQuote.expiresAt;
     resolvedCommercialConfigVersionId = serverQuote.commercialConfigVersionId;
-    resolvedPaymentPolicy = serverQuote.calculation.paymentPolicy;
-    resolvedDepositAmount = serverQuote.calculation.isDeposit ? serverQuote.calculation.amountDueNow : undefined;
-    resolvedAppliedTierMinimumQuantity = serverQuote.calculation.appliedTierMinimumQuantity;
+    resolvedPaymentPolicy = structuredClone(calc.paymentPolicy);
+    resolvedDepositAmount = calc.isDeposit ? calc.amountDueNow : undefined;
+    resolvedAppliedTierMinimumQuantity = calc.appliedTierMinimumQuantity;
+    commercialSnapshot = {
+      productId: serverQuote.productId, productName: serverQuote.productName ?? quoteProd.name,
+      variantId: serverQuote.variantId, variantName: serverQuote.variantName ?? quoteVariant.name,
+      definitionKey: serverQuote.definitionKey ?? quoteVariant.definitionKey ?? null,
+      commercialConfigVersionId: serverQuote.commercialConfigVersionId,
+      tierMinimumQuantity: calc.appliedTierMinimumQuantity, quantity: serverQuote.quantity,
+      unitPrice: finalUnitPrice, subtotal: finalSubtotal, total: finalTotal, currency: 'VND',
+      paymentPolicy: structuredClone(resolvedPaymentPolicy), depositAmount: resolvedDepositAmount ?? null,
+      amountDueNow: finalAmountDueNow, remainingAmount: finalRemainingAmount,
+    };
   } else {
-    const legacyQuote = calculatePriceQuote({
-      productId: immutableDesign.productId,
-      variantId: immutableDesign.variantId,
-      quantity: immutableDesign.quantity,
-      productOptions: immutableDesign.productOptions,
-    });
+    const legacyQuote = calculatePriceQuote({ productId: immutableDesign.productId, variantId: immutableDesign.variantId, quantity: immutableDesign.quantity, productOptions: immutableDesign.productOptions });
     finalUnitPrice = legacyQuote.unitPrice;
     finalSubtotal = legacyQuote.subtotal;
     finalTotal = legacyQuote.subtotal;
     finalAmountDueNow = legacyQuote.subtotal;
     finalRemainingAmount = 0;
+    resolvedPaymentPolicy = { kind: 'full_payment' };
+    const fallbackProduct = repositories.catalogRepo?.getProduct(immutableDesign.productId);
+    const fallbackVariant = repositories.catalogRepo?.getVariant(immutableDesign.variantId);
+    commercialSnapshot = {
+      productId: immutableDesign.productId, productName: fallbackProduct?.name ?? immutableDesign.productId,
+      variantId: immutableDesign.variantId, variantName: fallbackVariant?.name ?? immutableDesign.variantId,
+      definitionKey: fallbackVariant?.definitionKey ?? null, commercialConfigVersionId: null,
+      tierMinimumQuantity: null, quantity: legacyQuote.quantity, unitPrice: finalUnitPrice,
+      subtotal: finalSubtotal, total: finalTotal, currency: 'VND', paymentPolicy: resolvedPaymentPolicy,
+      depositAmount: null, amountDueNow: finalAmountDueNow, remainingAmount: finalRemainingAmount,
+    };
   }
 
   const summary = getDesignSummary({ ...immutableDesign, quantity: immutableDesign.quantity });
@@ -259,6 +272,7 @@ export async function prepareOrderFromGuestCheckout(
     total: finalTotal,
     priceQuoteId: resolvedPriceQuoteId,
     quoteExpiresAt: resolvedQuoteExpiresAt,
+    commercialSnapshot,
     commercialConfigVersionId: resolvedCommercialConfigVersionId,
     paymentPolicy: resolvedPaymentPolicy,
     depositAmount: resolvedDepositAmount,
@@ -289,6 +303,13 @@ export async function prepareOrderFromGuestCheckout(
     },
   };
   const order = await repositories.orderRepo.createPendingOrder(orderInput);
+  if (resolvedPriceQuoteId && repositories.catalogRepo) {
+    const consumed = await repositories.catalogRepo.consumeQuote?.(resolvedPriceQuoteId, order.id);
+    if (!consumed) {
+      await repositories.orderRepo.deleteById(order.id);
+      throw new OrderPreparationError('Báo giá đã được sử dụng.', 409);
+    }
+  }
   const persistedOrder: PendingOrder = {
     ...order,
     payment: {

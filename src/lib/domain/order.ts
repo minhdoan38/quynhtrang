@@ -389,6 +389,7 @@ export interface CreatePendingOrderInput {
   payment: OrderPayment;
   priceQuoteId?: string;
   quoteExpiresAt?: string;
+  commercialSnapshot?: PendingOrder['commercialSnapshot'];
   commercialConfigVersionId?: string;
   paymentPolicy?: PaymentPolicy;
   depositAmount?: number;

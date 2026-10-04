@@ -23,6 +23,7 @@ export interface CreateOrderParams {
   preflightRevision?: string;
   preflightAcknowledged?: boolean;
   assets?: PromotedAsset[];
+  commercialSnapshot?: PendingOrder['commercialSnapshot'];
 }
 
 function isCreateOrderParams(arg: unknown): arg is CreateOrderParams {
@@ -122,11 +123,20 @@ export class ServerOrderStore {
       quantity: design.quantity,
       productOptions: design.productOptions,
     });
+    const commercialSnapshot = (isParams ? arg1.commercialSnapshot : undefined) ?? {
+      productId: design.productId, productName: design.productId,
+      variantId: design.variantId, variantName: design.variantId, definitionKey: null,
+      commercialConfigVersionId: null, tierMinimumQuantity: null, quantity: quote.quantity,
+      unitPrice: quote.unitPrice, subtotal: quote.subtotal, total: quote.subtotal, currency: 'VND',
+      paymentPolicy: { kind: 'full_payment' as const }, depositAmount: null,
+      amountDueNow: quote.subtotal, remainingAmount: 0,
+    };
 
+    const finalAmount = commercialSnapshot.amountDueNow;
     const payment: OrderPayment = {
       orderId,
       provider: 'vietqr-demo',
-      amount: quote.subtotal,
+      amount: finalAmount,
       currency: 'VND',
       paymentReference: orderId,
       status: 'pending_payment',
@@ -146,12 +156,13 @@ export class ServerOrderStore {
       product: {
         productId: design.productId,
         variantId: design.variantId,
-        quantity: quote.quantity,
-        unitPrice: quote.unitPrice,
-        subtotal: quote.subtotal,
+        quantity: commercialSnapshot.quantity,
+        unitPrice: commercialSnapshot.unitPrice,
+        subtotal: commercialSnapshot.subtotal,
       },
       approvedDesignVersionId: versionId,
       preflightRevision,
+      commercialSnapshot,
       snapshot,
       payment,
       createdAt: new Date().toISOString(),
@@ -314,6 +325,7 @@ export function createServerOrderPreparationOptions(): PrepareOrderOptions {
           customer: input.customer,
           preflightRevision: input.preflightRevision,
           preflightAcknowledged: true,
+          commercialSnapshot: input.commercialSnapshot,
         });
       },
       async createGuestAccess(input: { orderId: string; tokenHash: string; expiresAt: string }) {

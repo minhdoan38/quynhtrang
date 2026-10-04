@@ -35,6 +35,9 @@ export interface PriceQuote {
   id: string;
   productId: string;
   variantId: string;
+  productName?: string;
+  variantName?: string;
+  definitionKey?: string | null;
   commercialConfigVersionId: string;
   quantity: number;
   calculation: PriceCalculation & {
@@ -45,6 +48,7 @@ export interface PriceQuote {
   checkoutKeyHash: string;
   expiresAt: string;
   createdAt: string;
+  consumedOrderId?: string | null;
 }
 
 interface QuoteDeps {
@@ -81,6 +85,9 @@ export async function createPriceQuote(input: CreatePriceQuoteInput, deps: Quote
     id: randomUUID(),
     productId: input.productId,
     variantId: input.variantId,
+    productName: product.name,
+    variantName: variant.name,
+    definitionKey: variant.definitionKey,
     commercialConfigVersionId: config.id,
     quantity: input.quantity,
     calculation: enrichedCalculation,
@@ -88,6 +95,7 @@ export async function createPriceQuote(input: CreatePriceQuoteInput, deps: Quote
     checkoutKeyHash: createHash('sha256').update(hashPayload).digest('hex'),
     createdAt: createdAt.toISOString(),
     expiresAt: new Date(createdAt.getTime() + PRICE_QUOTE_TTL_MS).toISOString(),
+    consumedOrderId: null,
   };
   return deps.repo.saveQuote(quote);
 }

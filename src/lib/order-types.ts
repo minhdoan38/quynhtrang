@@ -65,6 +65,25 @@ export interface ApprovedDesignVersion {
   createdAt: string;
 }
 
+export interface CommercialOrderSnapshot {
+  productId: ProductId | string;
+  productName: string;
+  variantId: string;
+  variantName: string;
+  definitionKey: string | null;
+  commercialConfigVersionId: string | null;
+  tierMinimumQuantity: number | null;
+  quantity: number;
+  unitPrice: number;
+  subtotal: number;
+  total: number;
+  currency: string;
+  paymentPolicy: PaymentPolicy;
+  depositAmount: number | null;
+  amountDueNow: number;
+  remainingAmount: number;
+}
+
 export interface PendingOrder {
   id: string;
   idempotencyKey: string;
@@ -82,6 +101,7 @@ export interface PendingOrder {
   preflightRevision: string;
   readonly priceQuoteId?: string;
   readonly quoteExpiresAt?: string;
+  readonly commercialSnapshot: CommercialOrderSnapshot;
   readonly commercialConfigVersionId?: string;
   readonly paymentPolicy?: PaymentPolicy;
   readonly depositAmount?: number;
