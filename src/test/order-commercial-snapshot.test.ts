@@ -272,3 +272,47 @@ test('legacy fallback in-memory store exposes complete commercialSnapshot struct
   assert.equal(order.commercialSnapshot.amountDueNow, 145000);
   assert.equal(order.commercialSnapshot.remainingAmount, 0);
 });
+
+test('returning guest with access context successfully binds quote and creates order', async () => {
+  serverOrderStore.clear();
+  const repo = catalog();
+  setSharedCatalogRepositoryForTest(repo);
+  const guestToken = 'guest-session-token-1234567890123456';
+
+  try {
+    const quote = await createPriceQuote(
+      {
+        productId: 'card',
+        variantId: 'horizontal',
+        quantity: 10,
+        checkoutKey: 'guest-quote-key-1',
+        accessContext: guestToken,
+      },
+      { repo },
+    );
+
+    const orderReq = new Request('http://localhost/api/orders', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        cookie: `quynhtrang_guest_order_access=${guestToken}`,
+      },
+      body: JSON.stringify({
+        idempotencyKey: 'guest-quote-key-1',
+        quoteId: quote.id,
+        design: { ...createInitialState('card'), quantity: 10 },
+        customer: { fullName: 'Khách Cũ', phone: '0901234567', shippingAddress: '123 Đường Hoa Lan, Quận 1, TP.HCM' },
+        designRevision: 'rev-1',
+        preflightRevision: 'rev-1',
+        preflightAcknowledged: true,
+      }),
+    });
+
+    const res = await createOrderRoute(orderReq);
+    const body = await res.json();
+    assert.equal(res.status, 201);
+    assert.equal(body.order.commercialSnapshot.amountDueNow, 50000);
+  } finally {
+    setSharedCatalogRepositoryForTest(null);
+  }
+});

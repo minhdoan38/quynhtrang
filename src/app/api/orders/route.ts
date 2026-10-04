@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server.js';
-import { setGuestOrderAccessCookie } from '../../../lib/guest-order-access.ts';
+import { getGuestOrderAccessTokenFromRequest, setGuestOrderAccessCookie } from '../../../lib/guest-order-access.ts';
 import { validateCustomerInfo } from '../../../lib/customer-info.ts';
 import { DEFAULT_BANK_DETAILS } from '../../../lib/payment-qr-provider.ts';
 import {
@@ -75,6 +75,8 @@ export async function POST(request: Request) {
         // Guest user
       }
     }
+    const guestToken = getGuestOrderAccessTokenFromRequest(request);
+    const accessContext = authenticatedUserId ?? guestToken ?? undefined;
 
     try {
       prepared = await prepareOrderFromGuestCheckout(
@@ -86,6 +88,7 @@ export async function POST(request: Request) {
           preflightRevision: body.preflightRevision ?? '',
           preflightAcknowledged: body.preflightAcknowledged === true,
           authenticatedUserId,
+          accessContext,
           priceQuoteId: body.quoteId ?? body.priceQuoteId,
           quoteId: body.quoteId ?? body.priceQuoteId,
         },

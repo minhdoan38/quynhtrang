@@ -29,6 +29,7 @@ export interface PrepareOrderInput {
   preflightSnapshot?: Record<string, unknown> | null;
   guestAccessSeed?: string;
   authenticatedUserId?: string;
+  accessContext?: string;
   priceQuoteId?: string;
   quoteId?: string;
 }
@@ -189,8 +190,37 @@ export async function prepareOrderFromGuestCheckout(
     if (serverQuote.productId !== immutableDesign.productId) throw new OrderPreparationError('Báo giá không khớp với sản phẩm đặt in.', 400);
     if (serverQuote.variantId !== immutableDesign.variantId) throw new OrderPreparationError('Báo giá không khớp với biến thể đặt in.', 400);
     if (serverQuote.quantity !== immutableDesign.quantity) throw new OrderPreparationError('Báo giá không khớp với số lượng đặt in.', 400);
-    const expectedHash = createHash('sha256').update(input.idempotencyKey.trim()).digest('hex');
-    if (serverQuote.checkoutKeyHash !== expectedHash) {
+    const candidateHashes = new Set<string>();
+    candidateHashes.add(createHash('sha256').update(input.idempotencyKey.trim()).digest('hex'));
+    if (input.accessContext?.trim()) {
+      candidateHashes.add(
+        createHash('sha256')
+          .update([input.idempotencyKey.trim(), input.accessContext.trim()].join(':'))
+          .digest('hex'),
+      );
+    }
+    if (input.authenticatedUserId?.trim()) {
+      candidateHashes.add(
+        createHash('sha256')
+          .update([input.idempotencyKey.trim(), input.authenticatedUserId.trim()].join(':'))
+          .digest('hex'),
+      );
+    }
+    if (guestAccessToken) {
+      candidateHashes.add(
+        createHash('sha256')
+          .update([input.idempotencyKey.trim(), guestAccessToken].join(':'))
+          .digest('hex'),
+      );
+    }
+    if (input.guestAccessSeed?.trim()) {
+      candidateHashes.add(
+        createHash('sha256')
+          .update([input.idempotencyKey.trim(), input.guestAccessSeed.trim()].join(':'))
+          .digest('hex'),
+      );
+    }
+    if (!candidateHashes.has(serverQuote.checkoutKeyHash)) {
       throw new OrderPreparationError('Báo giá không khớp với phiên thanh toán.', 400);
     }
     if (serverQuote.consumedOrderId) {
