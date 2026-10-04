@@ -211,9 +211,32 @@ export class AdminCatalogRepository {
     return null;
   }
 
-  getPriceQuote(id: string): PriceQuote | null {
+  async getPriceQuote(id: string): Promise<PriceQuote | null> {
     const quote = this.quotes.get(id);
-    return quote ? structuredClone(quote) : null;
+    if (quote) return structuredClone(quote);
+    if (this.client) {
+      const { data, error } = await this.client
+        .from('price_quotes')
+        .select('*')
+        .eq('id', id)
+        .maybeSingle();
+      if (error || !data) return null;
+      const row = data as Record<string, unknown>;
+      const loaded: PriceQuote = {
+        id: String(row.id),
+        productId: String(row.product_id),
+        variantId: String(row.variant_id),
+        commercialConfigVersionId: String(row.commercial_config_version_id),
+        quantity: Number(row.quantity),
+        calculation: row.calculation as PriceQuote['calculation'],
+        checkoutKeyHash: String(row.checkout_key_hash),
+        createdAt: String(row.created_at),
+        expiresAt: String(row.expires_at),
+      };
+      this.quotes.set(loaded.id, structuredClone(loaded));
+      return structuredClone(loaded);
+    }
+    return null;
   }
 
   getAssetEvents(): CommercialAuditEvent[] {
@@ -390,12 +413,14 @@ export class AdminCatalogRepository {
       }).select('*').single();
       if (error || !data) throw new Error(error?.message ?? 'QUOTE_PERSIST_FAILED');
       const row = data as Record<string, unknown>;
-      return {
+      const saved: PriceQuote = {
         id: String(row.id), productId: String(row.product_id), variantId: String(row.variant_id),
         commercialConfigVersionId: String(row.commercial_config_version_id), quantity: Number(row.quantity),
         calculation: row.calculation as PriceQuote['calculation'], checkoutKeyHash: String(row.checkout_key_hash),
         createdAt: String(row.created_at), expiresAt: String(row.expires_at),
       };
+      this.quotes.set(saved.id, structuredClone(saved));
+      return saved;
     }
     this.quotes.set(quote.id, structuredClone(quote));
     return structuredClone(quote);

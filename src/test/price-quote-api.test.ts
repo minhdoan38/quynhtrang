@@ -257,7 +257,7 @@ describe('Price Quote API & Commercial Checkout UX', () => {
     repo.seedProduct(product);
 
     // 3. Fast-forward expiry: manually set q1.expiresAt to 1 minute ago in repo
-    const persistedQ1 = repo.getPriceQuote(q1.id);
+    const persistedQ1 = await repo.getPriceQuote(q1.id);
     assert.ok(persistedQ1);
     persistedQ1.expiresAt = new Date(Date.now() - 60000).toISOString();
     await repo.saveQuote(persistedQ1);
@@ -521,5 +521,110 @@ describe('Price Quote API & Commercial Checkout UX', () => {
     assert.equal(fullData.quote.calculation.remainingAmount, 0);
     assert.equal(fullData.quote.summaryLabels.amountDueNowLabel, undefined);
     assert.equal(fullData.quote.summaryLabels.remainingAmountLabel, undefined);
+  });
+
+  it('8. prepareOrderFromGuestCheckout rejects quotes with mismatched product, variant, or quantity', async () => {
+    const repo = createTestCatalog();
+    const prepOptions = {
+      ...createServerOrderPreparationOptions(),
+      catalogRepo: repo,
+    };
+
+    // Create valid quote for card:horizontal qty 10
+    const createReq = new Request('http://localhost/api/quotes', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        productId: 'card',
+        variantId: 'horizontal',
+        quantity: 10,
+        checkoutKey: 'key-mismatch-1',
+      }),
+    });
+    const createRes = await POST(createReq, { repo });
+    const { quote } = await createRes.json();
+
+    // 1. Mismatched quantity: design has qty 15, quote has qty 10
+    await assert.rejects(
+      async () => {
+        await prepareOrderFromGuestCheckout(
+          {
+            idempotencyKey: 'idemp-qty-mismatch',
+            design: { ...createInitialState('card'), quantity: 15 },
+            customer: { fullName: 'Nguyen A', phone: '0901234567', shippingAddress: '123 Test' },
+            designRevision: 'rev-1',
+            preflightRevision: 'rev-1',
+            preflightAcknowledged: true,
+            priceQuoteId: quote.id,
+          },
+          prepOptions
+        );
+      },
+      (error: unknown) => {
+        assert.ok(error instanceof OrderPreparationError);
+        assert.match(error.message, /số lượng/);
+        return true;
+      }
+    );
+
+    // 2. Mismatched variant: design has vertical, quote has horizontal
+    await assert.rejects(
+      async () => {
+        await prepareOrderFromGuestCheckout(
+          {
+            idempotencyKey: 'idemp-variant-mismatch',
+            design: { ...createInitialState('card'), variantId: 'vertical', quantity: 10 },
+            customer: { fullName: 'Nguyen A', phone: '0901234567', shippingAddress: '123 Test' },
+            designRevision: 'rev-1',
+            preflightRevision: 'rev-1',
+            preflightAcknowledged: true,
+            priceQuoteId: quote.id,
+          },
+          prepOptions
+        );
+      },
+      (error: unknown) => {
+        assert.ok(error instanceof OrderPreparationError);
+        assert.match(error.message, /biến thể/);
+        return true;
+      }
+    );
+  });
+
+  it('9. Quote refresh reflects updated design quantity', async () => {
+    const repo = createTestCatalog();
+
+    // Initial quote with qty 10
+    const initialReq = new Request('http://localhost/api/quotes', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        productId: 'card',
+        variantId: 'horizontal',
+        quantity: 10,
+        checkoutKey: 'key-qty-update',
+      }),
+    });
+    const initialRes = await POST(initialReq, { repo });
+    const { quote: q1 } = await initialRes.json();
+    assert.equal(q1.quantity, 10);
+
+    // Refresh with updated qty 25
+    const refreshReq = new Request('http://localhost/api/quotes', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        quoteId: q1.id,
+        productId: 'card',
+        variantId: 'horizontal',
+        quantity: 25,
+        checkoutKey: 'key-qty-update',
+      }),
+    });
+    const refreshRes = await POST(refreshReq, { repo });
+    const refreshData = await refreshRes.json();
+    assert.ok(refreshData.quote);
+    assert.equal(refreshData.quote.quantity, 25);
+    assert.equal(refreshData.quote.calculation.totalAmount, 625000);
   });
 });

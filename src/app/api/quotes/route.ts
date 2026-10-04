@@ -94,7 +94,8 @@ export async function POST(request: Request, deps?: QuoteRouteDeps) {
         const { quote, previousVersionId } = await refreshPriceQuote(
           body.quoteId,
           checkoutKey,
-          { repo }
+          { repo },
+          body.quantity
         );
         const config = repo.getCommercialVersion(quote.commercialConfigVersionId);
         const rule = config?.variantRules.find((r) => r.variantId === quote.variantId);

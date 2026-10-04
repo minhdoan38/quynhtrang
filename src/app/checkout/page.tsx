@@ -382,7 +382,23 @@ export default function CheckoutPage() {
         setState36Mode('payment');
         advanceToStep(3);
       } catch (err) {
-        setFormError(`${COPY_UNABLE_TO_PREPARE} ${COPY_CHECK_CONNECTION}`);
+        const errorMsg = err instanceof Error ? err.message : '';
+        if (
+          errorMsg.includes('Giá sản phẩm vừa được cập nhật') ||
+          errorMsg.includes('Báo giá đã hết hạn') ||
+          errorMsg.includes('ngừng kinh doanh') ||
+          errorMsg.includes('không khả dụng') ||
+          errorMsg.includes('không khớp') ||
+          errorMsg.includes('không hợp lệ')
+        ) {
+          const displayMsg = errorMsg.includes('Báo giá đã hết hạn') ? 'Giá sản phẩm vừa được cập nhật.' : errorMsg;
+          setFormError(displayMsg);
+          if (displayMsg === 'Giá sản phẩm vừa được cập nhật.') {
+            setQuoteNotice(displayMsg);
+          }
+        } else {
+          setFormError(`${COPY_UNABLE_TO_PREPARE} ${COPY_CHECK_CONNECTION}`);
+        }
       }
     });
   };
@@ -463,9 +479,7 @@ export default function CheckoutPage() {
               </div>
             )}
 
-            <QuantityStepper
-              quantity={design.quantity}
-              onChange={handleUpdateQuantity}
+            <QuantityStepper quantity={design.quantity} onChange={handleUpdateQuantity}
               min={quoteRule?.minimumQuantity ?? 1}
               max={quoteRule?.maximumQuantity ?? 999}
               step={quoteRule?.quantityStep ?? 1}
@@ -490,7 +504,9 @@ export default function CheckoutPage() {
               ) : (
                 <div className="flex justify-between text-[#666A6D]">
                   <span>Tạm tính ({design.quantity} bản):</span>
-                  <span className="font-semibold text-[#2E3338]">{priceQuote.formattedSubtotal}</span>
+                  <span className="font-semibold text-[#2E3338]">
+                    {serverQuote ? formatCurrencyVND(serverQuote.calculation.totalAmount) : priceQuote.formattedSubtotal}
+                  </span>
                 </div>
               )}
               <div className="flex justify-between text-[#666A6D]">
@@ -510,117 +526,131 @@ export default function CheckoutPage() {
         )}
 
         {/* STEP 2: Customer Information Form */}
-        {step === 2 && (
-          <div className="checkout-step-content space-y-4">
-            {/* Compatibility anchors: id="customer-name" id="customer-phone" id="customer-address" id="customer-note" */}
-            {staleRevisionWarning && (
-              <div className="rounded-xl border border-[#A86E22]/40 bg-[#FFFDF8] p-3 text-xs text-[#A86E22] flex items-center justify-between gap-3 shadow-2xs">
-                <div className="flex items-center gap-2">
-                  <AlertTriangle size={18} className="shrink-0 text-[#A86E22]" />
-                  <span>Thiết kế đã thay đổi kể từ lần kiểm tra trước.</span>
+        {
+          step === 2 && (
+            <div className="checkout-step-content space-y-4">
+              {/* Compatibility anchors: id="customer-name" id="customer-phone" id="customer-address" id="customer-note" */}
+              {staleRevisionWarning && (
+                <div className="rounded-xl border border-[#A86E22]/40 bg-[#FFFDF8] p-3 text-xs text-[#A86E22] flex items-center justify-between gap-3 shadow-2xs">
+                  <div className="flex items-center gap-2">
+                    <AlertTriangle size={18} className="shrink-0 text-[#A86E22]" />
+                    <span>Thiết kế đã thay đổi kể từ lần kiểm tra trước.</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => router.push('/?view=editor&mode=preflight')}
+                    className="px-3 py-1.5 rounded-lg bg-[#A86E22] text-white text-xs font-semibold hover:bg-[#8B5919] transition-colors shrink-0"
+                  >
+                    Kiểm tra lại thiết kế
+                  </button>
                 </div>
-                <button
-                  type="button"
-                  onClick={() => router.push('/?view=editor&mode=preflight')}
-                  className="px-3 py-1.5 rounded-lg bg-[#A86E22] text-white text-xs font-semibold hover:bg-[#8B5919] transition-colors shrink-0"
-                >
-                  Kiểm tra lại thiết kế
-                </button>
-              </div>
-            )}
+              )}
 
-            <CustomerInformationForm
-              initialValues={customer}
-              isSubmitting={isPending}
-              submitError={formError}
-              onRetry={handleRetryCustomerInfo}
-              onChange={handleCustomerChange}
-              onSubmit={(submittedValues) => {
-                setCustomer(submittedValues);
-                void handleSubmitCustomerInfo({ preventDefault: () => { } } as React.FormEvent);
-              }}
-              summary={{
-                product: getFriendlyProductName(design),
-                quantity: design.quantity,
-                subtotal: priceQuote.formattedSubtotal,
-              }}
-            />
-          </div>
-        )}
+              <CustomerInformationForm
+                initialValues={customer}
+                isSubmitting={isPending}
+                submitError={formError}
+                onRetry={handleRetryCustomerInfo}
+                onChange={handleCustomerChange}
+                onSubmit={(submittedValues) => {
+                  setCustomer(submittedValues);
+                  void handleSubmitCustomerInfo({ preventDefault: () => { } } as React.FormEvent);
+                }}
+                summary={{
+                  product: getFriendlyProductName(design),
+                  quantity: design.quantity,
+                  subtotal: serverQuote ? formatCurrencyVND(serverQuote.calculation.totalAmount) : priceQuote.formattedSubtotal,
+                }}
+              />
+            </div>
+          )
+        }
 
         {/* STEP 3: QR Payment Demo */}
-        {step === 3 && createdOrder && (
-          <div className="checkout-step-content space-y-5">
-            {state36Mode === 'payment' ? (
-              <PaymentQrPanel
-                order={createdOrder}
-                onPaymentReported={() => {
-                  setCreatedOrder((prev) =>
-                    prev
-                      ? {
-                        ...prev,
-                        paymentStatus: 'payment_reported',
-                        payment: {
-                          ...prev.payment,
-                          status: 'payment_reported',
-                          customerReportedAt: new Date().toISOString(),
-                        },
-                      }
-                      : null
-                  );
-                  setState36Mode('confirmation');
-                }}
-                onPayLater={() => {
-                  setState36Mode('confirmation');
-                }}
-                onBackToCustomerInfo={() => setStep(2)}
-              />
-            ) : (
-              <OrderConfirmationPanel
-                order={createdOrder}
-                onReopenPayment={() => setState36Mode('payment')}
-                onNewDesign={() => router.push('/')}
-              />
-            )}
-          </div>
-        )}
-      </main>
+        {
+          step === 3 && createdOrder && (
+            <div className="checkout-step-content space-y-5">
+              {state36Mode === 'payment' ? (
+                <PaymentQrPanel
+                  order={createdOrder}
+                  onPaymentReported={() => {
+                    setCreatedOrder((prev) =>
+                      prev
+                        ? {
+                          ...prev,
+                          paymentStatus: 'payment_reported',
+                          payment: {
+                            ...prev.payment,
+                            status: 'payment_reported',
+                            customerReportedAt: new Date().toISOString(),
+                          },
+                        }
+                        : null
+                    );
+                    setState36Mode('confirmation');
+                  }}
+                  onPayLater={() => {
+                    setState36Mode('confirmation');
+                  }}
+                  onBackToCustomerInfo={() => setStep(2)}
+                />
+              ) : (
+                <OrderConfirmationPanel
+                  order={createdOrder}
+                  onReopenPayment={() => setState36Mode('payment')}
+                  onNewDesign={() => router.push('/')}
+                />
+              )}
+            </div>
+          )
+        }
+      </main >
 
       {/* Fixed Bottom Action Bar (Only Steps 1 & 2) */}
-      {step !== 3 && (
-        <footer className="fixed bottom-0 inset-x-0 border-t border-[#DDD6CC] bg-[#FFFDF8]/95 backdrop-blur-md p-4 z-40">
-          <div className="max-w-lg mx-auto w-full flex items-center gap-3">
-            {step === 1 && (
-              <div className="w-full flex items-center justify-between gap-4">
-                <div className="flex flex-col">
-                  <span className="text-[11px] text-[#666A6D]">Tạm tính:</span>
-                  <span className="text-base font-bold text-[#315F86]">{priceQuote.formattedSubtotal}</span>
+      {
+        step !== 3 && (
+          <footer className="fixed bottom-0 inset-x-0 border-t border-[#DDD6CC] bg-[#FFFDF8]/95 backdrop-blur-md p-4 z-40">
+            <div className="max-w-lg mx-auto w-full flex items-center gap-3">
+              {step === 1 && (
+                <div className="w-full flex items-center justify-between gap-4">
+                  <div className="flex flex-col">
+                    <span className="text-[11px] text-[#666A6D]">
+                      {serverQuote?.calculation?.isDeposit ? 'Thanh toán trước:' : 'Tạm tính:'}
+                    </span>
+                    <span className="text-base font-bold text-[#315F86]">
+                      {serverQuote
+                        ? (serverQuote.calculation.isDeposit
+                          ? formatCurrencyVND(serverQuote.calculation.amountDueNow)
+                          : formatCurrencyVND(serverQuote.calculation.totalAmount))
+                        : priceQuote.formattedSubtotal}
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => advanceToStep(2)}
+                    className="h-11 px-6 inline-flex items-center justify-center gap-2 rounded-xl bg-[#315F86] text-xs sm:text-sm font-semibold text-white shadow-xs hover:bg-[#244A69] transition-all active:scale-[0.98]"
+                  >
+                    <span>Tiếp tục</span>
+                    <ArrowRight size={16} />
+                  </button>
                 </div>
+              )}
+
+              {step === 2 && (
                 <button
-                  type="button"
-                  onClick={() => advanceToStep(2)}
-                  className="h-11 px-6 inline-flex items-center justify-center gap-2 rounded-xl bg-[#315F86] text-xs sm:text-sm font-semibold text-white shadow-xs hover:bg-[#244A69] transition-all active:scale-[0.98]"
+                  type="submit"
+                  form="customer-info-form"
+                  disabled={isPending}
+                  className="w-full h-11 inline-flex items-center justify-center gap-2 rounded-xl bg-[#315F86] text-xs sm:text-sm font-semibold text-white shadow-xs hover:bg-[#244A69] transition-all active:scale-[0.98] disabled:opacity-50"
                 >
-                  <span>Tiếp tục</span>
+                  <span>{isPending ? COPY_PREPARING_ORDER : 'Tiếp tục'}</span>
                   <ArrowRight size={16} />
                 </button>
-              </div>
-            )}
-
-            {step === 2 && (
-              <button
-                type="submit"
-                form="customer-info-form"
-                disabled={isPending}
-                className="w-full h-11 inline-flex items-center justify-center gap-2 rounded-xl bg-[#315F86] text-xs sm:text-sm font-semibold text-white shadow-xs hover:bg-[#244A69] transition-all active:scale-[0.98] disabled:opacity-50"
-              >
-                <span>{isPending ? COPY_PREPARING_ORDER : 'Tiếp tục'}</span>
-                <ArrowRight size={16} />
-              </button>
-            )}
-          </div>
-        </footer>
-      )}
-    </div>
+              )}
+            </div>
+          </footer>
+        )
+      }
+    </div >
   );
 }

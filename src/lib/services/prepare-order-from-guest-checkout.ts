@@ -180,12 +180,21 @@ export async function prepareOrderFromGuestCheckout(
   let resolvedAppliedTierMinimumQuantity: number | undefined;
 
   if (input.priceQuoteId && repositories.catalogRepo) {
-    const serverQuote = repositories.catalogRepo.getPriceQuote(input.priceQuoteId);
+    const serverQuote = await repositories.catalogRepo.getPriceQuote(input.priceQuoteId);
     if (!serverQuote) {
       throw new OrderPreparationError('Báo giá không tồn tại.', 400);
     }
     if (new Date(serverQuote.expiresAt).getTime() <= Date.now()) {
       throw new OrderPreparationError('Giá sản phẩm vừa được cập nhật.', 400);
+    }
+    if (serverQuote.productId !== immutableDesign.productId) {
+      throw new OrderPreparationError('Báo giá không khớp với sản phẩm đặt in.', 400);
+    }
+    if (serverQuote.variantId !== immutableDesign.variantId) {
+      throw new OrderPreparationError('Báo giá không khớp với biến thể đặt in.', 400);
+    }
+    if (serverQuote.quantity !== immutableDesign.quantity) {
+      throw new OrderPreparationError('Báo giá không khớp với số lượng đặt in.', 400);
     }
     const quoteProd = repositories.catalogRepo.getProduct(serverQuote.productId);
     if (!quoteProd || quoteProd.status !== 'active') {
@@ -195,7 +204,6 @@ export async function prepareOrderFromGuestCheckout(
     if (!quoteVariant || quoteVariant.productId !== serverQuote.productId || quoteVariant.status !== 'active') {
       throw new OrderPreparationError('Biến thể sản phẩm đã ngừng kinh doanh.', 400);
     }
-
     finalUnitPrice = serverQuote.calculation.unitPrice;
     finalSubtotal = serverQuote.calculation.totalAmount;
     finalTotal = serverQuote.calculation.totalAmount;

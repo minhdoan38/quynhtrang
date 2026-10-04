@@ -73,7 +73,7 @@ describe('Price Quote Service', () => {
     assert.ok(quote.expiresAt);
 
     // Persisted in repo
-    const persisted = repo.getPriceQuote(quote.id);
+    const persisted = await repo.getPriceQuote(quote.id);
     assert.ok(persisted);
     assert.equal(persisted?.id, quote.id);
   });

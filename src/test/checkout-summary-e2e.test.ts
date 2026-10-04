@@ -175,7 +175,7 @@ test('5. Quantity changes recalculate and format live subtotal', () => {
   assert.equal(next.formattedSubtotal, '207.000đ');
   assert.notEqual(first.formattedSubtotal, next.formattedSubtotal);
   assert.match(stepOneSource, /Tạm tính \(\{design\.quantity\} bản\):[\s\S]*priceQuote\.formattedSubtotal/);
-  assert.match(checkoutSource, /<span className="text-base font-bold text-\[#315F86\]">\{priceQuote\.formattedSubtotal\}<\/span>/);
+  assert.match(checkoutSource, /<span className="text-base font-bold text-\[#315F86\]">[\s\S]*priceQuote\.formattedSubtotal[\s\S]*<\/span>/);
 });
 
 test('6. Direct numeric quantity entry rejects invalid values and clamps boundaries', () => {

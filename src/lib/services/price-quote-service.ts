@@ -53,6 +53,9 @@ interface QuoteDeps {
 
 export async function createPriceQuote(input: CreatePriceQuoteInput, deps: QuoteDeps): Promise<PriceQuote> {
   if (!input.productId.trim() || !input.variantId.trim() || !input.checkoutKey.trim()) throw new Error('INVALID_INPUT');
+  if ('getProductById' in deps.repo && typeof deps.repo.getProductById === 'function') {
+    await deps.repo.getProductById(input.productId);
+  }
   const product = deps.repo.getProduct(input.productId);
   if (!product || product.status !== 'active') throw new Error('PRODUCT_NOT_SELLABLE');
   const variant = deps.repo.getVariant(input.variantId);
@@ -99,9 +102,12 @@ export async function verifyPriceQuote(
   quoteId: string,
   deps: QuoteDeps
 ): Promise<VerifyQuoteResult> {
-  const quote = deps.repo.getPriceQuote(quoteId);
+  const quote = await deps.repo.getPriceQuote(quoteId);
   if (!quote) {
     return { valid: false, code: 'QUOTE_NOT_FOUND' };
+  }
+  if ('getProductById' in deps.repo && typeof deps.repo.getProductById === 'function') {
+    await deps.repo.getProductById(quote.productId);
   }
   const product = deps.repo.getProduct(quote.productId);
   if (!product || product.status !== 'active') {
@@ -120,15 +126,19 @@ export async function verifyPriceQuote(
 export async function refreshPriceQuote(
   quoteId: string,
   checkoutKey: string,
-  deps: QuoteDeps
+  deps: QuoteDeps,
+  quantity?: number
 ): Promise<{ quote: PriceQuote; previousVersionId: string }> {
-  const oldQuote = deps.repo.getPriceQuote(quoteId);
+  const oldQuote = await deps.repo.getPriceQuote(quoteId);
   if (!oldQuote) throw new Error('QUOTE_NOT_FOUND');
+  const targetQuantity = typeof quantity === 'number' && Number.isSafeInteger(quantity) && quantity >= 1
+    ? quantity
+    : oldQuote.quantity;
   const newQuote = await createPriceQuote(
     {
       productId: oldQuote.productId,
       variantId: oldQuote.variantId,
-      quantity: oldQuote.quantity,
+      quantity: targetQuantity,
       checkoutKey,
     },
     deps
