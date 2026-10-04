@@ -126,6 +126,8 @@ export async function prepareOrderFromGuestCheckout(
   }
 
   const tokenHash = createHash('sha256').update(guestAccessToken).digest('hex');
+  const candTmplId = input.design.sourceTemplate?.templateId ?? (typeof input.design.templateId === 'string' && input.design.templateId !== 'blank' ? input.design.templateId : null);
+  const candVerId = input.design.sourceTemplate?.templateVersionId?.trim() || null;
   const project = await repositories.projectRepo.createProject({
     productId: input.design.productId,
     variantId: input.design.variantId,
@@ -133,6 +135,8 @@ export async function prepareOrderFromGuestCheckout(
     guestKeyHash: tokenHash,
     status: 'approved',
     currentWorkingRevision: 1,
+    sourceTemplateId: candTmplId,
+    sourceTemplateVersionId: candVerId,
   });
   const checkoutDesign = resolveLegacyReferences(input.design);
   const promotion = await promoteDesignAssets(checkoutDesign, [], {
@@ -168,6 +172,8 @@ export async function prepareOrderFromGuestCheckout(
     },
     preflightSnapshot: structuredClone(input.preflightSnapshot ?? {}),
     preflightRevision: input.preflightRevision.trim(),
+    sourceTemplateId: (project as { sourceTemplateId?: string | null }).sourceTemplateId ?? candTmplId,
+    sourceTemplateVersionId: (project as { sourceTemplateVersionId?: string | null }).sourceTemplateVersionId ?? candVerId,
   });
 
   const paymentReference = `QT-${randomUUID().replaceAll('-', '').slice(0, 16).toUpperCase()}`;

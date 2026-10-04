@@ -17,6 +17,8 @@ export interface DesignVersionRecord {
   preflightSnapshot: Record<string, unknown>;
   preflightRevision?: string | null;
   createdBy?: string | null;
+  sourceTemplateId?: string | null;
+  sourceTemplateVersionId?: string | null;
   createdAt: string;
 }
 
@@ -29,8 +31,9 @@ export interface CreateDesignVersionInput {
   preflightSnapshot?: Record<string, unknown>;
   preflightRevision?: string | null;
   createdBy?: string | null;
+  sourceTemplateId?: string | null;
+  sourceTemplateVersionId?: string | null;
 }
-
 export class DesignVersionRepository {
   private readonly client: SupabaseClient;
 
@@ -48,8 +51,13 @@ export class DesignVersionRepository {
       preflight_snapshot: input.preflightSnapshot ?? {},
       preflight_revision: input.preflightRevision ?? null,
       created_by: input.createdBy ?? null,
+      source_template_id: input.sourceTemplateId !== undefined
+        ? input.sourceTemplateId
+        : (input.designDocument?.sourceTemplate?.templateId ?? null),
+      source_template_version_id: input.sourceTemplateVersionId !== undefined
+        ? input.sourceTemplateVersionId
+        : (input.designDocument?.sourceTemplate?.templateVersionId?.trim() || null),
     };
-
     const { data, error } = await this.client
       .from('design_versions')
       .insert(payload)
@@ -99,6 +107,8 @@ export class DesignVersionRepository {
       preflightSnapshot: (r.preflight_snapshot as Record<string, unknown>) ?? {},
       preflightRevision: (r.preflight_revision as string | null) ?? null,
       createdBy: (r.created_by as string | null) ?? null,
+      sourceTemplateId: (r.source_template_id as string | null) ?? null,
+      sourceTemplateVersionId: (r.source_template_version_id as string | null) ?? null,
       createdAt: String(r.created_at),
     };
   }

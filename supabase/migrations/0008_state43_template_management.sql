@@ -324,6 +324,20 @@ create unique index if not exists uq_projects_owner_clone_request
 create index if not exists idx_projects_source_template
   on public.projects(source_template_id, source_template_version_id);
 
+-- 12.1 Extend Design Versions with Template Provenance
+alter table public.design_versions
+  add column if not exists source_template_id text null references public.templates(id) on delete restrict,
+  add column if not exists source_template_version_id uuid null references public.template_versions(id) on delete restrict;
+
+alter table public.design_versions drop constraint if exists fk_design_versions_source_template_version;
+alter table public.design_versions add constraint fk_design_versions_source_template_version
+  foreign key (source_template_id, source_template_version_id)
+  references public.template_versions(template_id, id)
+  on delete restrict;
+
+create index if not exists idx_design_versions_source_template
+  on public.design_versions(source_template_id, source_template_version_id);
+
 -- 13. Template Version Immutability Triggers
 create or replace function public.reject_template_version_mutation()
 returns trigger

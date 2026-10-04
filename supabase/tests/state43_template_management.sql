@@ -72,6 +72,18 @@ begin
     raise exception 'Expected 3 new columns on projects, got %', v_count;
   end if;
 
+  -- public.design_versions extended columns
+  select count(*) into v_count
+  from information_schema.columns
+  where table_schema = 'public'
+    and table_name = 'design_versions'
+    and column_name in (
+      'source_template_id', 'source_template_version_id'
+    );
+  if v_count <> 2 then
+    raise exception 'Expected 2 new columns on design_versions, got %', v_count;
+  end if;
+
   -- public.template_drafts columns
   select count(*) into v_count
   from information_schema.columns
@@ -1782,5 +1794,112 @@ begin
         delete from public.template_drafts where template_id = v_p_tmpl_id;
       end;
   end;
+end $$;
+-- 19. Production Provenance Retention on Design Versions and Historical Isolation
+do $$
+declare
+  v_adm_id uuid := '43000000-0000-0000-0000-0000000000a1';
+  v_cust_id uuid := '43000000-0000-0000-0000-0000000000c1';
+  v_tmpl_id text := 't19-prod-tmpl';
+  v_ver1_id uuid := gen_random_uuid();
+  v_ver2_id uuid := gen_random_uuid();
+  v_proj_id uuid := gen_random_uuid();
+  v_dv1_id uuid := gen_random_uuid();
+  v_order_id uuid := gen_random_uuid();
+  v_failed boolean;
+  v_saved_dv public.design_versions%rowtype;
+begin
+  -- Setup template and published versions
+  insert into public.templates (id, name, status, product_id, variant_id, created_by)
+  values (v_tmpl_id, 'Template 19 Prod', 'published', 'card', 'vertical', v_adm_id);
+
+  insert into public.template_versions (id, template_id, version_number, design_document, published_by)
+  values 
+    (v_ver1_id, v_tmpl_id, 1, '{"productId": "card", "elements": []}'::jsonb, v_adm_id),
+    (v_ver2_id, v_tmpl_id, 2, '{"productId": "card", "elements": [{"id": "new"}]}'::jsonb, v_adm_id);
+
+  update public.templates
+  set current_published_version_id = v_ver2_id
+  where id = v_tmpl_id;
+
+  -- 19.1 Project with provenance
+  insert into public.projects (id, product_id, variant_id, owner_user_id, source_template_id, source_template_version_id, clone_request_key)
+  values (v_proj_id, 'card', 'vertical', v_cust_id, v_tmpl_id, v_ver1_id, 't19-req-1');
+
+  -- 19.2 Design Version provenance composite foreign key constraint
+  -- Mismatched (source_template_id, source_template_version_id) MUST fail
+  v_failed := false;
+  begin
+    insert into public.design_versions (id, project_id, version_number, source, design_document, source_template_id, source_template_version_id)
+    values (gen_random_uuid(), v_proj_id, 99, 'customer_approved', '{}'::jsonb, v_tmpl_id, gen_random_uuid());
+  exception when foreign_key_violation then
+    v_failed := true;
+  end;
+  if not v_failed then
+    raise exception 'Expected FK violation on mismatched design_versions source template version';
+  end if;
+
+  -- Matching provenance MUST succeed
+  insert into public.design_versions (id, project_id, version_number, source, design_document, source_template_id, source_template_version_id)
+  values (v_dv1_id, v_proj_id, 1, 'customer_approved', '{"productId": "card"}'::jsonb, v_tmpl_id, v_ver1_id);
+
+  select * into v_saved_dv from public.design_versions where id = v_dv1_id;
+  if v_saved_dv.source_template_id <> v_tmpl_id or v_saved_dv.source_template_version_id <> v_ver1_id then
+    raise exception 'design_versions did not retain source template provenance';
+  end if;
+
+  -- 19.3 Orders linking to design version with provenance
+  insert into public.orders (
+    id, public_order_code, project_id, customer_user_id, product_id, variant_id, quantity,
+    unit_price, subtotal, total, approved_design_version_id, customer_approved_design_version_id,
+    production_design_version_id
+  )
+  values (
+    v_order_id, 'QT-T19-PROD', v_proj_id, v_cust_id, 'card', 'vertical', 10,
+    30000, 300000, 300000, v_dv1_id, v_dv1_id, v_dv1_id
+  );
+
+  -- 19.4 Historical Isolation:
+  -- Attempting to delete template or template_version referenced by design_versions MUST fail with FK restrict
+  v_failed := false;
+  begin
+    delete from public.template_versions where id = v_ver1_id;
+  exception when foreign_key_violation then
+    v_failed := true;
+  end;
+  if not v_failed then
+    raise exception 'Expected FK restrict when deleting template_version referenced by design_versions';
+  end if;
+
+  v_failed := false;
+  begin
+    delete from public.templates where id = v_tmpl_id;
+  exception when foreign_key_violation then
+    v_failed := true;
+  end;
+  if not v_failed then
+    raise exception 'Expected FK restrict when deleting template referenced by design_versions';
+  end if;
+
+  -- 19.5 Immutability: design_versions cannot be updated or deleted
+  v_failed := false;
+  begin
+    update public.design_versions set source_template_id = 'other' where id = v_dv1_id;
+  exception when sqlstate 'P0001' or others then
+    v_failed := true;
+  end;
+  if not v_failed then
+    raise exception 'Expected design_versions update to be blocked by immutability trigger';
+  end if;
+
+  v_failed := false;
+  begin
+    delete from public.design_versions where id = v_dv1_id;
+  exception when sqlstate 'P0001' or others then
+    v_failed := true;
+  end;
+  if not v_failed then
+    raise exception 'Expected design_versions delete to be blocked by immutability trigger';
+  end if;
 end $$;
 rollback;

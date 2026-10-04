@@ -41,12 +41,20 @@ export interface AssetPromotionOptions {
 }
 
 
+const TEMPLATE_UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 export function isTemplateAssetPath(pathOrUrl: string): boolean {
   if (!pathOrUrl || typeof pathOrUrl !== 'string') return false;
   const trimmed = pathOrUrl.trim();
-  if (trimmed.startsWith('template-asset://')) return true;
-  if (trimmed.includes('api/templates/assets/')) return true;
-  if (trimmed.includes('api/admin/content/templates/') && trimmed.includes('/assets/')) return true;
+  if (!trimmed) return false;
+  if (trimmed.startsWith('template-asset://')) {
+    const id = trimmed.slice('template-asset://'.length).split('?')[0].split('#')[0];
+    return TEMPLATE_UUID_REGEX.test(id);
+  }
+  const pubMatch = trimmed.match(/(?:^|\/)api\/templates\/assets\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})(?:$|[?#])/i);
+  if (pubMatch) return true;
+  const adminMatch = trimmed.match(/(?:^|\/)api\/admin\/content\/templates\/[^/]+\/assets\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})(?:$|[?#])/i);
+  if (adminMatch) return true;
   return false;
 }
 const MAX_FS_ASSETS = 300;
