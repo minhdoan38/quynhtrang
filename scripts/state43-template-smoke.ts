@@ -81,21 +81,21 @@ export async function runAdminSmoke(options: SmokeOptions = {}) {
       });
 
       const guestPage = await guestContext.newPage();
-
+      const canonicalTemplateId = 'wrapping-a1-cute';
       let templateFetchCount = 0;
       guestPage.on('request', (req) => {
-        if (req.url().includes('/api/templates/tpl-smoke-guest')) {
+        if (req.url().includes(`/api/templates/${canonicalTemplateId}`)) {
           templateFetchCount++;
         }
       });
       guestPage.on('console', (msg) => console.log('[BrowserConsole]', msg.text()));
       const usePromise = guestPage.waitForResponse(
-        (res) => res.url().includes('/api/templates/tpl-smoke-guest/use'),
+        (res) => res.url().includes(`/api/templates/${canonicalTemplateId}/use`),
         { timeout: 10000 },
       ).catch(() => null);
 
-      // 1. Guest navigates to template URL: ?template=tpl-smoke-guest
-      await guestPage.goto(`${baseUrl}/?template=tpl-smoke-guest`);
+      // 1. Guest navigates to template URL: ?template=wrapping-a1-cute
+      await guestPage.goto(`${baseUrl}/?template=${canonicalTemplateId}`);
       await guestPage.waitForLoadState('domcontentloaded');
       const useRes = await usePromise;
       if (useRes) {
@@ -118,8 +118,8 @@ export async function runAdminSmoke(options: SmokeOptions = {}) {
       }
 
       const firstProj = savedProjects[0] as { sourceTemplate?: { templateId?: string } };
-      if (firstProj?.sourceTemplate?.templateId !== 'tpl-smoke-guest') {
-        throw new Error(`Expected sourceTemplate tpl-smoke-guest, got: ${JSON.stringify(firstProj?.sourceTemplate)}`);
+      if (firstProj?.sourceTemplate?.templateId !== canonicalTemplateId) {
+        throw new Error(`Expected sourceTemplate ${canonicalTemplateId}, got: ${JSON.stringify(firstProj?.sourceTemplate)}`);
       }
 
       // Customer edits the project in localStorage

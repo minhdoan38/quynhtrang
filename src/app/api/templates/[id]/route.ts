@@ -46,67 +46,6 @@ export async function GET(
     }
 
     const trimmedId = id.trim();
-    if (trimmedId === 'tpl-smoke-guest') {
-      return NextResponse.json({
-        template: {
-          id: 'tpl-smoke-guest',
-          name: 'Mẫu Giấy Gói Sinh Nhật Smoke',
-          status: 'published',
-          productId: 'wrapping',
-          variantId: 'default',
-          mode: 'pattern',
-          shape: null,
-          currentPublishedVersionId: 'ver-smoke-guest-1',
-        },
-        currentVersion: {
-          versionId: 'ver-smoke-guest-1',
-          templateId: 'tpl-smoke-guest',
-          version: 1,
-          documentSchemaVersion: 1,
-          document: {
-            productId: 'wrapping',
-            variantId: 'default',
-            templateId: 'tpl-smoke-guest',
-            text: 'Mẫu Smoke Guest',
-            color: '#2E3338',
-            backgroundColor: '#FFFDF8',
-            quantity: 1,
-            productOptions: { mode: 'pattern' },
-            elements: [
-              {
-                id: 'title',
-                type: 'text',
-                x: 20,
-                y: 20,
-                width: 100,
-                height: 20,
-                customerLocked: true,
-                data: { text: 'Tiêu đề khóa' },
-              },
-              {
-                id: 'body',
-                type: 'text',
-                x: 20,
-                y: 50,
-                width: 100,
-                height: 20,
-                customerLocked: false,
-                data: { text: 'Nội dung sửa được' },
-              },
-            ],
-          },
-          target: {
-            productId: 'wrapping',
-            variantId: 'default',
-            mode: 'pattern',
-            shape: null,
-            geometryKey: 'wrapping:default:pattern',
-            surfaces: [{ id: 'sheet', widthMm: 500, heightMm: 700 }],
-          },
-          dependencies: [],
-        },
-      });
-    }
 
     const deps = dependencies ?? (context && 'repo' in context ? context : undefined);
     const repo = resolveRepo(deps);

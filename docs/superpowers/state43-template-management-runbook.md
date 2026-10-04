@@ -240,8 +240,8 @@ node --experimental-strip-types scripts/state43-template-smoke.ts --scenario all
 node --experimental-strip-types scripts/state43-template-migrate.ts --inventory
 
 # 3. Kiểm tra tính toàn vẹn của danh mục mẫu đã chuyển đổi (Verify)
-# Chế độ offline (khi chưa cấu hình DB): kiểm tra toàn vẹn manifest cục bộ và state fixtures (45 targets / 18 templates)
-# Chế độ live (yêu cầu NEXT_PUBLIC_SUPABASE_URL và SUPABASE_SECRET_KEY): đối chiếu bảng template_legacy_targets, templates, template_versions
+# Chế độ live (yêu cầu NEXT_PUBLIC_SUPABASE_URL và SUPABASE_SECRET_KEY, thoát mã lỗi 1 nếu thiếu thông tin xác thực DB): đối chiếu bảng template_legacy_targets, templates, template_versions
+# (Để kiểm kê hoặc xem manifest offline không cần DB, sử dụng lệnh --inventory hoặc --manifest)
 node --experimental-strip-types scripts/state43-template-migrate.ts --verify
 # 4. Quét và dọn dẹp các tài nguyên ảnh nháp mồ côi quá 24h
 node --experimental-strip-types scripts/state43-template-cleanup.ts --dry-run

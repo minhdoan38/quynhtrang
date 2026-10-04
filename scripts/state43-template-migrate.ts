@@ -148,41 +148,27 @@ export async function migrateTemplates(options: MigrateTemplatesOptions): Promis
   // Ensure DB client for prepare / verify / seed
   let client = options.client;
   if (!client) {
-    if (!getSupabaseSecretKey()) {
+    const hasSecretKey = Boolean(getSupabaseSecretKey());
+    const hasUrl = Boolean(
+      process.env.NEXT_PUBLIC_SUPABASE_URL?.trim() ||
+      process.env.SUPABASE_URL?.trim()
+    );
+    if (!hasSecretKey || !hasUrl) {
       if (mode === 'verify') {
-        logger.log('[State43Migrate] Supabase environment unconfigured (NEXT_PUBLIC_SUPABASE_URL or SUPABASE_SECRET_KEY not set).');
-        logger.log('[State43Migrate] Validating local migration manifest and state fixtures offline...');
-        let totalTargets = 0;
-        const errors: string[] = [];
-        for (const entry of manifest.entries) {
-          for (const target of entry.targets) {
-            totalTargets++;
-            if (!target.targetKey || !target.productId || !target.deterministicSuccessorId) {
-              errors.push(`Invalid target in manifest for ${entry.legacyId}: ${JSON.stringify(target)}`);
-            }
-          }
-        }
-        logger.log(`[State43Migrate] Offline verification complete: validated local migration manifest and state fixtures (${totalTargets} targets across ${manifest.entries.length} templates, errors: ${errors.length}).`);
-        logger.log('[State43Migrate] NOTE: Live database table verification was skipped because Supabase is unconfigured. Live database verification requires NEXT_PUBLIC_SUPABASE_URL and SUPABASE_SECRET_KEY.');
-        return {
-          mode: 'verify',
-          success: errors.length === 0,
-          totalTemplates: manifest.entries.length,
-          totalTargets,
-          mappedCount: totalTargets,
-          createdTemplates: 0,
-          createdVersions: 0,
-          errors,
-          summary: {
-            verificationType: 'offline-manifest-fixtures',
-            liveDatabaseVerified: false,
-            message: 'Validated local migration manifest and state fixtures offline. Live database table verification requires NEXT_PUBLIC_SUPABASE_URL and SUPABASE_SECRET_KEY.',
-          },
-        };
+        console.error('Error: Database verification requires NEXT_PUBLIC_SUPABASE_URL and SUPABASE_SECRET_KEY. Cannot verify live database.');
+        process.exit(1);
       }
       throw new Error('Supabase secret key is missing. Set SUPABASE_SECRET_KEY to run template migration.');
     }
-    client = createPrivilegedSupabaseClient();
+    try {
+      client = createPrivilegedSupabaseClient();
+    } catch (err: unknown) {
+      if (mode === 'verify') {
+        console.error('Error: Database verification requires NEXT_PUBLIC_SUPABASE_URL and SUPABASE_SECRET_KEY. Cannot verify live database.');
+        process.exit(1);
+      }
+      throw err;
+    }
   }
 
   if (mode === 'verify') {
@@ -491,14 +477,14 @@ export async function migrateTemplates(options: MigrateTemplatesOptions): Promis
 // CLI entrypoint
 if (process.argv[1]?.endsWith('state43-template-migrate.ts')) {
   const args = process.argv.slice(2);
-  const isInventory = args.includes('--inventory');
+  const isInventory = args.includes('--inventory') || args.includes('--manifest');
   const isPrepare = args.includes('--prepare');
   const isVerify = args.includes('--verify');
   const isSeed = args.includes('--seed');
 
   const count = [isInventory, isPrepare, isVerify, isSeed].filter(Boolean).length;
   if (count !== 1) {
-    console.error('Usage: node scripts/state43-template-migrate.ts <--inventory | --prepare | --verify | --seed>');
+    console.error('Usage: node scripts/state43-template-migrate.ts <--inventory | --manifest | --prepare | --verify | --seed>');
     process.exit(1);
   }
 
@@ -510,11 +496,7 @@ if (process.argv[1]?.endsWith('state43-template-migrate.ts')) {
         console.error('[State43Migrate] Execution completed with errors:', result.errors);
         process.exit(1);
       }
-      if (mode === 'verify' && result.summary?.liveDatabaseVerified === false) {
-        console.log('[State43Migrate] Successfully finished offline manifest and fixture verification (live database verification requires NEXT_PUBLIC_SUPABASE_URL and SUPABASE_SECRET_KEY).');
-      } else {
-        console.log(`[State43Migrate] Successfully finished ${mode}.`);
-      }
+      console.log(`[State43Migrate] Successfully finished ${mode}.`);
       process.exit(0);
     })
     .catch((err: unknown) => {

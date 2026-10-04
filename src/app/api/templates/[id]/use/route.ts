@@ -76,23 +76,7 @@ export async function POST(
     }
 
     const trimmedId = id.trim();
-    if (trimmedId === 'tpl-smoke-guest') {
-      const result = await cloneTemplateIntoProject(
-        null,
-        {
-          templateId: trimmedId,
-          expectedVersionId: expectedVersionId.trim(),
-          target: target ?? { productId: 'wrapping', variantId: 'default', mode: null, shape: null },
-          requestId: requestId || crypto.randomUUID(),
-        },
-      );
-      return NextResponse.json(result, {
-        status: 200,
-        headers: {
-          'Cache-Control': 'no-store, max-age=0',
-        },
-      });
-    }
+
 
     const deps = dependencies ?? (context && 'repo' in context ? (context as unknown as TemplateUseRouteDependencies) : undefined);
     const repo = resolveRepo(deps);
