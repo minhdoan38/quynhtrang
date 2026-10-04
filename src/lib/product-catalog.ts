@@ -279,9 +279,9 @@ export async function getPublishedProducts(
 ): Promise<CatalogProduct[]> {
   try {
     const repo = repository ?? new CatalogRepository();
-    const products = await repo.listProducts();
+    const products = await repo.browseSellableProducts();
     if (!products || products.length === 0) {
-      return getAllCatalogProducts();
+      return repo.configured ? [] : getAllCatalogProducts();
     }
 
     return await Promise.all(

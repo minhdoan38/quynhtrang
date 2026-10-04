@@ -2,6 +2,8 @@ import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { getSupabaseConfig } from '../supabase/config.ts';
 
 import {
+  type CatalogProduct,
+  type CatalogVariant,
   type DatabaseFontRow,
   type DatabaseProductRow,
   type DatabaseStickerRow,
@@ -28,6 +30,9 @@ import type { ProductId } from '../product-state.ts';
 import { TemplateRepository } from './template-repository.ts';
 export interface PublishedCatalogRepository {
   listProducts(): Promise<PublishedProduct[]>;
+  browseSellableProducts(): Promise<PublishedProduct[]>;
+  resolveProductById(id: string): Promise<CatalogProduct | null>;
+  resolveVariantById(id: string): Promise<CatalogVariant | null>;
   listVariants(productId?: ProductId): Promise<PublishedVariant[]>;
   listTemplates(productId?: ProductId): Promise<PublishedTemplate[]>;
   listPublishedTemplates(productId?: ProductId): Promise<PublishedTemplate[]>;
@@ -44,6 +49,7 @@ export interface PublishedCatalogRepository {
 export class CatalogRepository implements PublishedCatalogRepository {
   private readonly client: SupabaseClient | null;
   private readonly templateRepo: TemplateRepository | null;
+  readonly configured: boolean;
 
   constructor(client?: SupabaseClient | null) {
     if (client !== undefined) {
@@ -66,6 +72,85 @@ export class CatalogRepository implements PublishedCatalogRepository {
       }
     }
     this.templateRepo = this.client ? new TemplateRepository(this.client) : null;
+    this.configured = this.client !== null;
+  }
+  async browseSellableProducts(): Promise<PublishedProduct[]> {
+    if (!this.client) return [];
+    const [productsResult, variantsResult, versionsResult, rulesResult, tiersResult] = await Promise.all([
+      this.client.from('products').select('*').order('id'),
+      this.client.from('product_variants').select('*').order('id'),
+      this.client.from('product_commercial_config_versions').select('*').order('version_number'),
+      this.client.from('commercial_variant_rules').select('*'),
+      this.client.from('commercial_pricing_tiers').select('*'),
+    ]);
+    if (productsResult.error || variantsResult.error) return [];
+    const products = productsResult.data as DatabaseProductRow[];
+    const variants = variantsResult.data as DatabaseVariantRow[];
+    if (versionsResult.error || rulesResult.error || tiersResult.error) return [];
+    if (versionsResult.data.length === 0 && products.every((row) => !row.status && row.current_commercial_config_version_id === undefined)) {
+      return products.filter((row) => row.active).map((row) => ({
+        ...mapProductRow(row),
+        variants: variants.filter((variant) => variant.product_id === row.id && variant.active).map(mapVariantRow),
+      }));
+    }
+    const versions = versionsResult.data as Array<Record<string, unknown>>;
+    const rules = rulesResult.data as Array<Record<string, unknown>>;
+    const tiers = tiersResult.data as Array<Record<string, unknown>>;
+    return products.flatMap((row) => {
+      const status = row.status ?? (row.active ? 'active' : 'draft');
+      if (status !== 'active' || !row.current_commercial_config_version_id) return [];
+      const version = versions.find((candidate) => candidate.id === row.current_commercial_config_version_id && candidate.product_id === row.id);
+      if (!version) return [];
+      const activeVariants = variants.filter((variant) => variant.product_id === row.id && (variant.status ?? (variant.active ? 'active' : 'draft')) === 'active' && variant.definition_key);
+      const sellableVariants = activeVariants.filter((variant) => rules.some((rule) => rule.version_id === version.id && rule.variant_id === variant.id && tiers.some((tier) => tier.rule_id === rule.id)));
+      if (sellableVariants.length === 0) return [];
+      return [{ ...mapProductRow(row), variants: sellableVariants.map(mapVariantRow) }];
+    });
+  }
+
+  async resolveProductById(id: string): Promise<CatalogProduct | null> {
+    if (!this.client || !id.trim()) return null;
+    const { data, error } = await this.client.from('products').select('*').eq('id', id).maybeSingle();
+    if (error || !data) return null;
+    const variants = await this.client.from('product_variants').select('*').eq('product_id', id).order('id');
+    const row = data as DatabaseProductRow;
+    return {
+      id: row.id,
+      slug: row.slug,
+      name: row.name,
+      productType: row.product_type,
+      status: row.status ?? (row.active ? 'active' : 'draft'),
+      revision: Number(row.revision ?? 1),
+      currentCommercialConfigVersionId: row.current_commercial_config_version_id ?? null,
+      variants: variants.data ? (variants.data as DatabaseVariantRow[]).map((variant) => ({
+        id: variant.id,
+        productId: variant.product_id,
+        name: variant.name,
+        price: Number(variant.price),
+        status: variant.status ?? (variant.active ? 'active' : 'draft'),
+        revision: Number(variant.revision ?? 1),
+        definitionKey: variant.definition_key ?? null,
+        metadata: variant.metadata ?? undefined,
+      })) : [],
+      metadata: row.metadata ?? undefined,
+    };
+  }
+
+  async resolveVariantById(id: string): Promise<CatalogVariant | null> {
+    if (!this.client || !id.trim()) return null;
+    const { data, error } = await this.client.from('product_variants').select('*').eq('id', id).maybeSingle();
+    if (error || !data) return null;
+    const row = data as DatabaseVariantRow;
+    return {
+      id: row.id,
+      productId: row.product_id,
+      name: row.name,
+      price: Number(row.price),
+      status: row.status ?? (row.active ? 'active' : 'draft'),
+      revision: Number(row.revision ?? 1),
+      definitionKey: row.definition_key ?? null,
+      metadata: row.metadata ?? undefined,
+    };
   }
 
   async listProducts(): Promise<PublishedProduct[]> {

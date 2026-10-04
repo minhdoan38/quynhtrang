@@ -7,6 +7,59 @@ import type {
   TemplateVersionPayload,
 } from './template.ts';
 
+import type { CatalogStatus, CommercialConfigVersion, PaymentPolicy } from './commercial-config.ts';
+import type { ProductDefinitionCapabilities } from '../product-definition-registry.ts';
+export type { CatalogStatus };
+
+export type DefinitionKey = string;
+
+export interface CommercialSummary {
+  versionId: string;
+  versionNumber: number;
+  currency: 'VND';
+  paymentPolicy: PaymentPolicy;
+  variantCount: number;
+}
+
+export interface CatalogVariant {
+  id: string;
+  productId: string;
+  name: string;
+  price: number;
+  status: CatalogStatus;
+  revision: number;
+  definitionKey: DefinitionKey | null;
+  metadata?: Record<string, unknown>;
+}
+
+export interface CatalogProduct {
+  id: ProductId | string;
+  slug: string;
+  name: string;
+  productType: string;
+  status: CatalogStatus;
+  revision: number;
+  currentCommercialConfigVersionId?: string | null;
+  variants: CatalogVariant[];
+  commercial?: CommercialSummary;
+  metadata?: Record<string, unknown>;
+}
+
+export interface HistoricalCatalogResolution {
+  product: CatalogProduct;
+  variant?: CatalogVariant;
+  definition: ProductDefinitionCapabilities | null;
+  historical: boolean;
+}
+
+export interface CommercialDraft {
+  id: string;
+  productId: string;
+  baseVersionId: string | null;
+  revision: number;
+  payload: Omit<CommercialConfigVersion, 'id' | 'productId' | 'versionNumber'> & Partial<Pick<CommercialConfigVersion, 'id' | 'productId' | 'versionNumber'>>;
+  authorId: string | null;
+}
 export type {
   TemplateCard,
   TemplatePage,
@@ -21,6 +74,9 @@ export interface PublishedVariant {
   name: string;
   price: number;
   active: boolean;
+  status?: CatalogStatus;
+  revision?: number;
+  definitionKey?: string | null;
   dimensions?: string;
   bestFor?: string;
   metadata?: Record<string, unknown>;
@@ -32,6 +88,9 @@ export interface PublishedProduct {
   name: string;
   productType: string;
   active: boolean;
+  status?: CatalogStatus;
+  revision?: number;
+  currentCommercialConfigVersionId?: string | null;
   cardTitle?: string;
   variantSummary?: string;
   englishName?: string;
@@ -95,6 +154,9 @@ export interface DatabaseProductRow {
   name: string;
   product_type: string;
   active: boolean;
+  status?: CatalogStatus | null;
+  revision?: number | string | null;
+  current_commercial_config_version_id?: string | null;
   metadata?: Record<string, unknown> | null;
 }
 
@@ -104,6 +166,9 @@ export interface DatabaseVariantRow {
   name: string;
   price: number;
   active: boolean;
+  status?: CatalogStatus | null;
+  revision?: number | string | null;
+  definition_key?: string | null;
   metadata?: Record<string, unknown> | null;
 }
 
@@ -139,6 +204,7 @@ export interface DatabaseStickerRow {
 
 export function mapProductRow(row: DatabaseProductRow): PublishedProduct {
   const meta = row.metadata ?? {};
+  const lifecycle = row.status !== undefined || row.revision !== undefined || row.current_commercial_config_version_id !== undefined;
   return {
     id: row.id as ProductId,
     slug: row.slug,
@@ -154,12 +220,16 @@ export function mapProductRow(row: DatabaseProductRow): PublishedProduct {
     ...(Array.isArray(meta.capabilities) ? { capabilities: meta.capabilities as string[] } : {}),
     ...(typeof meta.paperSpecs === 'object' && meta.paperSpecs !== null ? { paperSpecs: meta.paperSpecs as PublishedProduct['paperSpecs'] } : {}),
     ...(typeof meta.tone === 'object' && meta.tone !== null ? { tone: meta.tone as PublishedProduct['tone'] } : {}),
-    ...(row.metadata ? {} : {}),
-  };
+    ...(row.status ? { status: row.status } : {}),
+    ...(row.revision !== undefined && row.revision !== null ? { revision: Number(row.revision) } : {}),
+    ...(row.current_commercial_config_version_id ? { currentCommercialConfigVersionId: row.current_commercial_config_version_id } : {}),
+    ...(lifecycle ? { metadata: row.metadata ?? undefined } : {}),
+  } as PublishedProduct;
 }
 
 export function mapVariantRow(row: DatabaseVariantRow): PublishedVariant {
   const meta = row.metadata ?? {};
+  const lifecycle = row.status !== undefined || row.revision !== undefined || row.definition_key !== undefined;
   return {
     id: row.id,
     productId: row.product_id as ProductId,
@@ -168,7 +238,11 @@ export function mapVariantRow(row: DatabaseVariantRow): PublishedVariant {
     active: row.active,
     ...(typeof meta.dimensions === 'string' ? { dimensions: meta.dimensions } : {}),
     ...(typeof meta.bestFor === 'string' ? { bestFor: meta.bestFor } : {}),
-  };
+    ...(row.status ? { status: row.status } : {}),
+    ...(row.revision !== undefined && row.revision !== null ? { revision: Number(row.revision) } : {}),
+    ...(row.definition_key !== undefined ? { definitionKey: row.definition_key } : {}),
+    ...(lifecycle ? { metadata: row.metadata ?? undefined } : {}),
+  } as PublishedVariant;
 }
 
 export function mapTemplateRow(row: DatabaseTemplateRow): PublishedTemplate {
