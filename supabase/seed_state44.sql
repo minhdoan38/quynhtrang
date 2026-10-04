@@ -14,6 +14,12 @@ declare
   v_archived_ord_id  uuid := '44000000-0000-4000-8000-000000005001'::uuid;
   v_archived_tpl_id  text := 'fixture-archived-template';
   v_archived_tver_id uuid := '44000000-0000-4000-8000-000000006001'::uuid;
+  v_v1_order_proj_id uuid := '44000000-0000-4000-8000-000000004002'::uuid;
+  v_v1_order_ver_id  uuid := '44000000-0000-4000-8000-000000004012'::uuid;
+  v_v1_order_ord_id  uuid := '44000000-0000-4000-8000-000000005002'::uuid;
+  v_deposit_proj_id  uuid := '44000000-0000-4000-8000-000000004003'::uuid;
+  v_deposit_ver_id   uuid := '44000000-0000-4000-8000-000000004013'::uuid;
+  v_deposit_ord_id   uuid := '44000000-0000-4000-8000-000000005003'::uuid;
 begin
   select user_id into v_admin_id from public.staff_roles where role = 'admin' limit 1;
   if v_admin_id is null then
@@ -87,7 +93,8 @@ begin
   )
   values
     ('fixture-full-var-1', 'fixture-active-full', 'Khổ chuẩn A1 Mẫu', 70000, true, 'active', 'wrapping:a1', 1),
-    ('fixture-full-var-2', 'fixture-active-full', 'Khổ chuẩn A2 Mẫu', 50000, true, 'active', 'wrapping:a2', 1)
+    ('fixture-full-var-2', 'fixture-active-full', 'Khổ chuẩn A2 Mẫu', 50000, true, 'active', 'wrapping:a2', 1),
+    ('fixture-full-var-archived', 'fixture-active-full', 'Khổ đặc biệt cũ (Đã lưu trữ)', 80000, false, 'archived', 'wrapping:a1', 1)
   on conflict (id) do nothing;
 
   -- Commercial version 1 (Historical)
@@ -109,7 +116,8 @@ begin
   )
   values
     ('44000000-0000-4000-8000-000000001101'::uuid, '44000000-0000-4000-8000-000000001001'::uuid, 'fixture-full-var-1', 1, 1, null),
-    ('44000000-0000-4000-8000-000000001102'::uuid, '44000000-0000-4000-8000-000000001001'::uuid, 'fixture-full-var-2', 1, 1, null)
+    ('44000000-0000-4000-8000-000000001102'::uuid, '44000000-0000-4000-8000-000000001001'::uuid, 'fixture-full-var-2', 1, 1, null),
+    ('44000000-0000-4000-8000-000000001105'::uuid, '44000000-0000-4000-8000-000000001001'::uuid, 'fixture-full-var-archived', 1, 1, null)
   on conflict (id) do nothing;
 
   insert into public.commercial_pricing_tiers (
@@ -117,7 +125,8 @@ begin
   )
   values
     ('44000000-0000-4000-8000-000000001201'::uuid, '44000000-0000-4000-8000-000000001101'::uuid, 1, 70000),
-    ('44000000-0000-4000-8000-000000001202'::uuid, '44000000-0000-4000-8000-000000001102'::uuid, 1, 50000)
+    ('44000000-0000-4000-8000-000000001202'::uuid, '44000000-0000-4000-8000-000000001102'::uuid, 1, 50000),
+    ('44000000-0000-4000-8000-000000001207'::uuid, '44000000-0000-4000-8000-000000001105'::uuid, 1, 80000)
   on conflict (id) do nothing;
 
   -- Commercial version 2 (Current published)
@@ -155,6 +164,91 @@ begin
   update public.products
   set current_commercial_config_version_id = '44000000-0000-4000-8000-000000001002'::uuid
   where id = 'fixture-active-full';
+
+  -- Historical Order fixed to Commercial Version 1 of fixture-active-full
+  insert into public.projects (
+    id, product_id, variant_id, current_design_document, created_at, updated_at
+  )
+  values (
+    v_v1_order_proj_id,
+    'fixture-active-full',
+    'fixture-full-var-1',
+    '{"productId":"fixture-active-full","variantId":"fixture-full-var-1"}'::jsonb,
+    now() - interval '20 days',
+    now() - interval '20 days'
+  )
+  on conflict (id) do nothing;
+
+  insert into public.design_versions (
+    id, project_id, version_number, source, design_document,
+    product_snapshot, preflight_snapshot, created_by, created_at
+  )
+  values (
+    v_v1_order_ver_id,
+    v_v1_order_proj_id,
+    1,
+    'customizer',
+    '{"productId":"fixture-active-full","variantId":"fixture-full-var-1"}'::jsonb,
+    '{"productId":"fixture-active-full","variantId":"fixture-full-var-1"}'::jsonb,
+    '{"level":"pass"}'::jsonb,
+    v_admin_id,
+    now() - interval '20 days'
+  )
+  on conflict (id) do nothing;
+
+  insert into public.orders (
+    id, public_order_code, project_id,
+    customer_approved_design_version_id, production_design_version_id,
+    commercial_config_version_id, payment_policy, amount_due_now, remaining_amount, applied_tier_minimum_quantity,
+    quantity, unit_price, subtotal, total, customer_full_name, customer_phone, customer_phone_normalized,
+    shipping_address, payment_status, design_status, fulfillment_status, idempotency_key,
+    product_snapshot, variant_snapshot, created_at, updated_at
+  )
+  values (
+    v_v1_order_ord_id,
+    'QT44-V1-ORDER-01',
+    v_v1_order_proj_id,
+    v_v1_order_ver_id,
+    v_v1_order_ver_id,
+    '44000000-0000-4000-8000-000000001001'::uuid,
+    '{"kind": "full_payment"}'::jsonb,
+    70000,
+    0,
+    1,
+    1,
+    70000,
+    70000,
+    70000,
+    'Nguyễn Văn V1',
+    '0901231111',
+    '+84901231111',
+    '456 Đường Phiên Bản Một, TP.HCM',
+    'paid',
+    'approved',
+    'completed',
+    'idemp-qt44-v1-order-001',
+    jsonb_build_object('id', 'fixture-active-full', 'name', 'Sản phẩm mẫu trả thẳng 2 phiên bản'),
+    jsonb_build_object('id', 'fixture-full-var-1', 'name', 'Khổ chuẩn A1 Mẫu', 'price', 70000),
+    now() - interval '20 days',
+    now() - interval '20 days'
+  )
+  on conflict (id) do nothing;
+
+  insert into public.order_payments (
+    order_id, provider, amount, currency, reference, status, purpose, confirmed_at, updated_at
+  )
+  values (
+    v_v1_order_ord_id,
+    'vietqr',
+    70000,
+    'VND',
+    'VQR-QT44-V1-01',
+    'paid',
+    'full_order_payment',
+    now() - interval '20 days',
+    now() - interval '20 days'
+  )
+  on conflict (order_id, purpose) do nothing;
 
   -- =========================================================================
   -- Fixture 3: Active fixed-deposit Product with validated tiers (Synthetic test amount)
@@ -228,6 +322,91 @@ begin
   update public.products
   set current_commercial_config_version_id = '44000000-0000-4000-8000-000000002001'::uuid
   where id = 'fixture-active-deposit';
+
+  -- Order with fixed deposit fixture in production
+  insert into public.projects (
+    id, product_id, variant_id, current_design_document, created_at, updated_at
+  )
+  values (
+    v_deposit_proj_id,
+    'fixture-active-deposit',
+    'fixture-deposit-var',
+    '{"productId":"fixture-active-deposit","variantId":"fixture-deposit-var"}'::jsonb,
+    now() - interval '5 days',
+    now() - interval '5 days'
+  )
+  on conflict (id) do nothing;
+
+  insert into public.design_versions (
+    id, project_id, version_number, source, design_document,
+    product_snapshot, preflight_snapshot, created_by, created_at
+  )
+  values (
+    v_deposit_ver_id,
+    v_deposit_proj_id,
+    1,
+    'customizer',
+    '{"productId":"fixture-active-deposit","variantId":"fixture-deposit-var"}'::jsonb,
+    '{"productId":"fixture-active-deposit","variantId":"fixture-deposit-var"}'::jsonb,
+    '{"level":"pass"}'::jsonb,
+    v_admin_id,
+    now() - interval '5 days'
+  )
+  on conflict (id) do nothing;
+
+  insert into public.orders (
+    id, public_order_code, project_id,
+    customer_approved_design_version_id, production_design_version_id,
+    commercial_config_version_id, payment_policy, amount_due_now, remaining_amount, applied_tier_minimum_quantity,
+    quantity, unit_price, subtotal, total, customer_full_name, customer_phone, customer_phone_normalized,
+    shipping_address, payment_status, design_status, fulfillment_status, idempotency_key,
+    product_snapshot, variant_snapshot, created_at, updated_at
+  )
+  values (
+    v_deposit_ord_id,
+    'QT44-DEPOSIT-01',
+    v_deposit_proj_id,
+    v_deposit_ver_id,
+    v_deposit_ver_id,
+    '44000000-0000-4000-8000-000000002001'::uuid,
+    '{"kind": "fixed_deposit", "depositAmount": 50000}'::jsonb,
+    50000,
+    100000,
+    10,
+    10,
+    15000,
+    150000,
+    150000,
+    'Phạm Thị Đặt Cọc',
+    '0901237777',
+    '+84901237777',
+    '101 Đường Cọc Tiền, Hải Phòng',
+    'deposit_confirmed',
+    'approved',
+    'in_production',
+    'idemp-qt44-deposit-001',
+    jsonb_build_object('id', 'fixture-active-deposit', 'name', 'Sản phẩm mẫu đặt cọc cố định'),
+    jsonb_build_object('id', 'fixture-deposit-var', 'name', 'Sticker bế theo hình mẫu', 'price', 15000),
+    now() - interval '5 days',
+    now() - interval '5 days'
+  )
+  on conflict (id) do nothing;
+
+  insert into public.order_payments (
+    order_id, provider, amount, currency, reference, status, purpose, confirmed_at, updated_at
+  )
+  values (
+    v_deposit_ord_id,
+    'vietqr',
+    50000,
+    'VND',
+    'VQR-QT44-DEP-01',
+    'paid',
+    'checkout_deposit',
+    now() - interval '5 days',
+    now() - interval '5 days'
+  )
+  on conflict (order_id, purpose) do nothing;
 
   -- =========================================================================
   -- Fixture 4: Archived Product & Archived Variant with historical references
@@ -406,6 +585,22 @@ begin
     now() - interval '25 days'
   )
   on conflict (id) do nothing;
+
+  insert into public.order_payments (
+    order_id, provider, amount, currency, reference, status, purpose, confirmed_at, updated_at
+  )
+  values (
+    v_archived_ord_id,
+    'vietqr',
+    45000,
+    'VND',
+    'VQR-QT44-ARCH-01',
+    'paid',
+    'full_order_payment',
+    now() - interval '25 days',
+    now() - interval '25 days'
+  )
+  on conflict (order_id, purpose) do nothing;
 
   set local migration.allow_commercial_mutation = '0';
 end $$;
