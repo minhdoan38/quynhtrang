@@ -19,6 +19,7 @@ export function CommercialConfigEditor({ product, initialDraft, editable, onPubl
   const [pending, setPending] = useState(false);
   const [message, setMessage] = useState('');
   const [publishOpen, setPublishOpen] = useState(false);
+  const [publishError, setPublishError] = useState<string | null>(null);
   const activeIds = product.variants.filter((variant) => variant.status === 'active').map((variant) => variant.id);
   const invalid = config ? validateCommercialConfig(config, activeIds).length > 0 : true;
   const locked = !editable || !draft || pending;
@@ -48,11 +49,12 @@ export function CommercialConfigEditor({ product, initialDraft, editable, onPubl
   async function publish() {
     if (!draft || dirty) return;
     setPending(true);
+    setPublishError(null);
     try {
       const result = await publishCommercialConfigAction({ productId: String(product.id), draftId: draft.id, expectedDraftRevision: draft.revision, expectedProductRevision: product.revision, requestId: crypto.randomUUID() });
-      if (!result.ok) { setMessage(result.message); return; }
-      setDraft(null); setConfig(result.value); setPublishOpen(false); setMessage('Đã xuất bản cấu hình. Orders hiện có không thay đổi.'); onPublished();
-    } catch { setMessage('Chưa thể áp dụng giá mới.'); }
+      if (!result.ok) { setPublishError(result.message); setMessage(result.message); return; }
+      setDraft(null); setConfig(result.value); setPublishOpen(false); setPublishError(null); setMessage('Đã xuất bản cấu hình. Orders hiện có không thay đổi.'); onPublished();
+    } catch { const text = 'Chưa thể áp dụng giá mới.'; setPublishError(text); setMessage(text); }
     finally { setPending(false); }
   }
   return <div className="flex flex-col gap-6" aria-busy={pending}>
@@ -94,6 +96,6 @@ export function CommercialConfigEditor({ product, initialDraft, editable, onPubl
       <CommercialPreview config={config} />
       {editable && draft && <div className="flex flex-wrap gap-2"><Button className="min-h-11" disabled={pending || invalid || !dirty} onClick={save}>{pending ? 'Đang xử lý…' : 'Lưu bản nháp'}</Button><Button variant="outline" className="min-h-11" disabled={pending || invalid || dirty} onClick={() => setPublishOpen(true)}>Xuất bản giá</Button></div>}
     </> : <p className="text-sm text-muted-foreground">Chưa có cấu hình giá hoặc thanh toán đã xuất bản.</p>}
-    <PublishProductDialog open={publishOpen} onOpenChange={setPublishOpen} onConfirm={publish} pending={pending} />
+    <PublishProductDialog open={publishOpen} onOpenChange={(open) => { setPublishOpen(open); if (!open) setPublishError(null); }} onConfirm={publish} pending={pending} error={publishError} />
   </div>;
 }

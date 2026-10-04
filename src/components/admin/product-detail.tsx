@@ -25,13 +25,23 @@ export function ProductDetail({ product, draft, availableDefinitions, canMutate 
   const [notice, setNotice] = useState('');
   const [pending, setPending] = useState(false);
   const [archiveTarget, setArchiveTarget] = useState<string | null>(null);
-  async function run(operation: () => Promise<CatalogActionResult<unknown>>) {
+  const [archiveError, setArchiveError] = useState<string | null>(null);
+  async function run(operation: () => Promise<CatalogActionResult<unknown>>, inDialog = false) {
     setPending(true);
+    if (inDialog) setArchiveError(null);
     try {
       const result = await operation();
-      if (!result.ok) { setNotice(result.message); return; }
-      setNotice('Đã lưu thay đổi.'); setArchiveTarget(null); router.refresh();
-    } catch { setNotice('Chưa thể áp dụng giá mới.'); }
+      if (!result.ok) {
+        setNotice(result.message);
+        if (inDialog) setArchiveError(result.message);
+        return;
+      }
+      setNotice('Đã lưu thay đổi.'); setArchiveTarget(null); setArchiveError(null); router.refresh();
+    } catch {
+      const text = 'Chưa thể áp dụng giá mới.';
+      setNotice(text);
+      if (inDialog) setArchiveError(text);
+    }
     finally { setPending(false); }
   }
   const productId = String(product.id);
@@ -52,9 +62,9 @@ export function ProductDetail({ product, draft, availableDefinitions, canMutate 
       return <article key={variant.id} className="flex flex-col gap-3 border-b pb-4"><div className="flex flex-wrap justify-between gap-3"><div><h3 className="font-medium">{variant.name}</h3><p className="break-words text-sm text-muted-foreground">{variant.definitionKey ?? 'Chưa gắn definition key'}</p><p className="text-sm">{variant.definition?.physicalSummary ?? 'Chưa có thông tin vật lý'} · {variant.definition?.surfacesSummary}</p><p className="text-sm">Giá từ: {price === null ? 'Chưa xuất bản giá' : formatCurrencyVND(price)}</p></div><Badge variant={CATALOG_STATUS_BADGE[variant.status]}>{CATALOG_STATUS_LABEL[variant.status]}</Badge></div>{canMutate && <div className="flex flex-wrap gap-2">{variant.status !== 'active' && <Button variant="outline" className="min-h-11" disabled={pending} onClick={() => run(() => activateVariantAction({ productId, variantId: variant.id, expectedRevision: variant.revision }))}>Đưa variant vào bán</Button>}{variant.status !== 'archived' && <Button variant="outline" className="min-h-11" disabled={pending} onClick={() => setArchiveTarget(variant.id)}>Lưu trữ variant</Button>}</div>}</article>;
     })}{canMutate && <fieldset disabled={pending} className="flex flex-col gap-2"><legend className="mb-2 font-medium">Bật variant</legend><p className="text-sm text-muted-foreground">Chỉ định nghĩa được hỗ trợ và chưa cấu hình. Variant mới bắt đầu ở bản nháp.</p>{availableDefinitions.length === 0 ? <p className="text-sm">Đã cấu hình tất cả định nghĩa được hỗ trợ.</p> : availableDefinitions.map((definition) => <Button key={definition.definitionKey} variant="outline" className="min-h-11 self-start" onClick={() => run(() => enableVariantAction({ productId, definitionKey: definition.definitionKey, expectedProductRevision: product.revision }))}>{definition.physicalSummary} ({definition.definitionKey})</Button>)}</fieldset>}</section>
     <CommercialConfigEditor product={product} initialDraft={draft} editable={canMutate} onPublished={() => router.refresh()} />
-    <ArchiveProductDialog open={archiveTarget !== null} onOpenChange={(open) => { if (!open) setArchiveTarget(null); }} pending={pending} onConfirm={() => {
-      if (archiveTarget === productId) void run(() => archiveProductAction({ productId, expectedRevision: product.revision }));
-      else { const variant = product.variants.find((item) => item.id === archiveTarget); if (variant) void run(() => archiveVariantAction({ productId, variantId: variant.id, expectedRevision: variant.revision })); }
+    <ArchiveProductDialog open={archiveTarget !== null} onOpenChange={(open) => { if (!open) { setArchiveTarget(null); setArchiveError(null); } }} pending={pending} error={archiveError} onConfirm={() => {
+      if (archiveTarget === productId) void run(() => archiveProductAction({ productId, expectedRevision: product.revision }), true);
+      else { const variant = product.variants.find((item) => item.id === archiveTarget); if (variant) void run(() => archiveVariantAction({ productId, variantId: variant.id, expectedRevision: variant.revision }), true); }
     }} />
   </div>;
 }

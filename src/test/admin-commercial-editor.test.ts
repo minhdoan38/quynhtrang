@@ -6,6 +6,40 @@ import { AdminCatalogRepository } from '../lib/repositories/admin-catalog-reposi
 import { createOrLoadCommercialDraft, saveCommercialDraft, publishProductCommercialConfig } from '../lib/services/commercial-config-service.ts';
 import { catalogActionError, catalogStartingPrice, commercialDraftConfig } from '../lib/admin/product-catalog-ui.ts';
 import { activateProductAction, archiveProductAction, activateVariantAction, archiveVariantAction, updateProductMetadataAction, enableVariantAction, loadCommercialDraftAction, saveCommercialDraftAction, publishCommercialConfigAction } from '../app/admin/products/actions.ts';
+import { readFileSync } from 'node:fs';
+import { createRequire } from 'node:module';
+import { setImmediate as nextTurn } from 'node:timers/promises';
+
+interface TestElement {
+  type: unknown;
+  key: string | null;
+  props: { children?: unknown; type?: string; checked?: boolean; open?: boolean; error?: string; role?: string; onChange: () => void; onClick: () => void; onConfirm: () => Promise<void>; onOpenChange: (open: boolean) => void };
+}
+
+// Execute real TSX component functions; mock only React hooks, framework and I/O boundaries.
+function componentModule(path: string, mocks: Record<string, unknown>) {
+  const source = readFileSync(new URL(path, import.meta.url), 'utf8');
+  const require = createRequire(import.meta.url);
+  const babel = require('next/dist/compiled/babel/core') as { transformSync: (source: string, options: object) => { code: string } };
+  const compiled = babel.transformSync(source, { filename: 'component.tsx', presets: [require('next/dist/compiled/babel/preset-typescript'), [require('next/dist/compiled/babel/preset-react'), { runtime: 'automatic' }]], plugins: [require('next/dist/compiled/babel/plugin-transform-modules-commonjs')] }).code;
+  const module = { exports: {} as Record<string, (props: unknown) => TestElement> };
+  new Function('require', 'module', 'exports', compiled)((id: string) => mocks[id] ?? (id.startsWith('@/components/') || id.startsWith('./') ? new Proxy({}, { get: (_, name) => String(name) }) : require(id)), module, module.exports);
+  return module.exports;
+}
+
+function componentHarness(path: string, name: string, mocks: Record<string, unknown>) {
+  const state: unknown[] = []; let cursor = 0;
+  const hooks = { useState(initial: unknown) { const index = cursor++; if (!(index in state)) state[index] = initial; return [state[index], (value: unknown) => { state[index] = typeof value === 'function' ? value(state[index]) : value; }]; } };
+  const component = componentModule(path, { ...mocks, react: hooks })[name];
+  return { render(props: unknown) { cursor = 0; return component(props); } };
+}
+
+function elements(tree: unknown): TestElement[] {
+  if (!tree || typeof tree !== 'object') return [];
+  if (Array.isArray(tree)) return tree.flatMap(elements);
+  const element = tree as TestElement; // React JSX runtime owns these in-process element shapes.
+  return [element, ...elements(element.props?.children)];
+}
 
 describe('Admin commercial editor contracts', () => {
   it('preview uses calculatePrice tier, due now, and remaining values', () => {
@@ -55,5 +89,74 @@ describe('Admin commercial editor contracts', () => {
       ]);
       for (const result of results) { assert.equal(result.ok, false); if (!result.ok) { assert.equal(result.code, 'FORBIDDEN'); assert.equal(result.status, 403); } }
     } finally { if (previous === undefined) delete process.env.SMOKE_TEST_STAFF_ROLE; else process.env.SMOKE_TEST_STAFF_ROLE = previous; }
+  });
+  it('keeps editor identity and dirty pricing/payment across unrelated product revision refresh', async () => {
+    let product = { id: 'card', revision: 1, variants: [{ id: 'horizontal', revision: 1 }], currentConfig: null };
+    const page = componentModule('../app/admin/products/[id]/page.tsx', {
+      '@/lib/admin/authorization.ts': { requireCurrentStaff: async () => ({ role: 'admin' }) },
+      '@/lib/supabase/server.ts': { createServerSupabaseClient: async () => ({}) },
+      '@/lib/repositories/admin-catalog-repository.ts': { AdminCatalogRepository: class { async getProductById() { return product; } getCommercialDraft() { return null; } getAvailableDefinitions() { return []; } } },
+    }).default;
+    const before = await page({ params: Promise.resolve({ id: 'card' }) });
+    product = { ...product, revision: 2, variants: [{ id: 'horizontal', revision: 2 }] };
+    const after = await page({ params: Promise.resolve({ id: 'card' }) });
+    assert.equal(after.key, before.key, 'React key must not discard local commercial edits on metadata/variant refresh');
+    const draft = { id: 'd', productId: 'card', revision: 1, payload: { currency: 'VND', paymentPolicy: { kind: 'full_payment' }, variantRules: [] } };
+    const harness = componentHarness('../components/admin/commercial-config-editor.tsx', 'CommercialConfigEditor', {
+      '@/lib/admin/product-catalog-ui.ts': { commercialDraftConfig },
+      '@/lib/domain/commercial-config.ts': { validateCommercialConfig },
+      '@/app/admin/products/actions.ts': {},
+    });
+    const props = { product, initialDraft: draft, editable: true, onPublished() { } };
+    let tree = harness.render(props);
+    elements(tree).filter((item) => item.type === 'input' && item.props.type === 'radio')[1].props.onChange();
+    tree = harness.render({ ...props, product: { ...product, revision: 3 } });
+    assert.equal(elements(tree).filter((item) => item.type === 'input' && item.props.type === 'radio')[1].props.checked, true);
+    assert.ok(elements(tree).some((item) => item.props?.children === 'Bản nháp · chưa lưu'));
+  });
+  it('failed publish and archive responses stay visible inside active dialogs', async () => {
+    const failure = { ok: false, code: 'REVISION_CONFLICT', status: 409, message: 'Cấu hình đã thay đổi. Tải lại.' };
+    const draft = { id: 'd', productId: 'card', revision: 1, payload: { currency: 'VND', paymentPolicy: { kind: 'full_payment' }, variantRules: [] } };
+    const product = { id: 'card', name: 'Thiệp', revision: 1, status: 'draft', variants: [], metadata: {} };
+    const editor = componentHarness('../components/admin/commercial-config-editor.tsx', 'CommercialConfigEditor', {
+      '@/lib/admin/product-catalog-ui.ts': { commercialDraftConfig }, '@/lib/domain/commercial-config.ts': { validateCommercialConfig },
+      '@/app/admin/products/actions.ts': { publishCommercialConfigAction: async () => failure },
+    });
+    const props = { product, initialDraft: draft, editable: true, onPublished() { } };
+    let tree = editor.render(props);
+    const initialDialog = elements(tree).find((item) => item.type === 'PublishProductDialog');
+    assert.ok(initialDialog);
+    initialDialog.props.onOpenChange(true);
+    await initialDialog.props.onConfirm();
+    tree = editor.render(props);
+    const dialog = elements(tree).find((item) => item.type === 'PublishProductDialog');
+    assert.ok(dialog);
+    assert.equal(dialog.props.open, true);
+    assert.equal(dialog.props.error, failure.message);
+    const detail = componentHarness('../components/admin/product-detail.tsx', 'ProductDetail', {
+      'next/navigation': { useRouter: () => ({ refresh() { } }) },
+      '@/lib/admin/product-catalog-ui.ts': { CATALOG_STATUS_LABEL: { draft: 'Bản nháp' }, CATALOG_STATUS_BADGE: { draft: 'honey' }, catalogStartingPrice },
+      '@/lib/domain/commercial-config.ts': {}, '@/app/admin/products/actions.ts': { archiveProductAction: async () => failure },
+    });
+    const detailProps = { product, draft, availableDefinitions: [], canMutate: true };
+    tree = detail.render(detailProps);
+    const archiveButton = elements(tree).find((item) => item.props?.children === 'Lưu trữ sản phẩm');
+    assert.ok(archiveButton);
+    archiveButton.props.onClick();
+    tree = detail.render(detailProps);
+    const confirmDialog = elements(tree).find((item) => item.type === 'ArchiveProductDialog');
+    assert.ok(confirmDialog);
+    confirmDialog.props.onConfirm();
+    await nextTurn();
+    const finalDialog = elements(detail.render(detailProps)).find((item) => item.type === 'ArchiveProductDialog');
+    assert.ok(finalDialog);
+    assert.equal(finalDialog.props.open, true);
+    assert.equal(finalDialog.props.error, failure.message);
+    const dialogs = componentModule('../components/admin/product-lifecycle-dialogs.tsx', {});
+    for (const name of ['PublishProductDialog', 'ArchiveProductDialog']) {
+      const rendered = dialogs[name]({ open: true, pending: false, error: failure.message, onConfirm() { }, onOpenChange() { } });
+      const content = elements(rendered).find((item) => item.type === 'DialogContent');
+      assert.ok(elements(content).some((item) => item.props?.role === 'alert' && item.props.children === failure.message));
+    }
   });
 });

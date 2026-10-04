@@ -76,16 +76,35 @@ export class AdminCatalogRepository {
   }
   async listProducts(options: AdminCatalogListOptions = {}): Promise<AdminProduct[]> {
     if (this.client) {
-      const results = await Promise.all([
+      const [productsResult, variantsResult, draftsResult] = await Promise.all([
         this.client.from('products').select('*').order('id'),
         this.client.from('product_variants').select('*').order('id'),
-        this.client.from('product_commercial_config_versions').select('*'),
-        this.client.from('commercial_variant_rules').select('*'),
-        this.client.from('commercial_pricing_tiers').select('*').order('minimum_quantity'),
         this.client.from('product_commercial_drafts').select('*'),
       ]);
-      if (results.some((result) => result.error || !result.data)) throw new Error('CATALOG_READ_FAILED');
-      const [products, variants, versions, rules, tiers, drafts] = results.map((result) => result.data as Record<string, unknown>[]);
+      if (productsResult.error || variantsResult.error || draftsResult.error || !productsResult.data || !variantsResult.data || !draftsResult.data) {
+        throw new Error('CATALOG_READ_FAILED');
+      }
+      const products = productsResult.data as Record<string, unknown>[];
+      const variants = variantsResult.data as Record<string, unknown>[];
+      const drafts = draftsResult.data as Record<string, unknown>[];
+      const versionIds = [...new Set(products.map((row) => row.current_commercial_config_version_id).filter((id): id is string => typeof id === 'string'))];
+      let versions: Record<string, unknown>[] = [];
+      let rules: Record<string, unknown>[] = [];
+      let tiers: Record<string, unknown>[] = [];
+      if (versionIds.length) {
+        const versionsResult = await this.client.from('product_commercial_config_versions').select('*').in('id', versionIds);
+        if (versionsResult.error || !versionsResult.data) throw new Error('CATALOG_READ_FAILED');
+        versions = versionsResult.data as Record<string, unknown>[];
+        const rulesResult = await this.client.from('commercial_variant_rules').select('*').in('version_id', versionIds);
+        if (rulesResult.error || !rulesResult.data) throw new Error('CATALOG_READ_FAILED');
+        rules = rulesResult.data as Record<string, unknown>[];
+        const ruleIds = rules.map((rule) => String(rule.id));
+        if (ruleIds.length) {
+          const tiersResult = await this.client.from('commercial_pricing_tiers').select('*').in('rule_id', ruleIds).order('minimum_quantity');
+          if (tiersResult.error || !tiersResult.data) throw new Error('CATALOG_READ_FAILED');
+          tiers = tiersResult.data as Record<string, unknown>[];
+        }
+      }
       this.products.clear();
       this.variants.clear();
       this.versions.clear();

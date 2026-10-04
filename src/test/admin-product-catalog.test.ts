@@ -65,7 +65,24 @@ describe('Admin product catalog operations', () => {
       commercial_pricing_tiers: [{ rule_id: 'r1', minimum_quantity: 1, unit_price: 120 }],
       product_commercial_drafts: [{ id: 'd1', product_id: 'card', base_version_id: 'v1', revision: 3, payload: { currency: 'VND', paymentPolicy: { kind: 'full_payment' }, variantRules: [] }, author_id: 'admin' }],
     };
-    const remote = new AdminCatalogRepository({ from(table: string) { assert.ok(rows[table]); const response = { data: rows[table], error: null }; return { select() { return { ...Promise.resolve(response), then: Promise.resolve(response).then.bind(Promise.resolve(response)), order: async () => response }; } }; } } as never);
+    // Model PostgREST's 1000-row cap: current rows occur after a large history.
+    for (const table of ['product_commercial_config_versions', 'commercial_variant_rules', 'commercial_pricing_tiers']) {
+      rows[table].unshift(...Array.from({ length: 1005 }, (_, i) => ({ id: `old-${i}`, version_id: `old-${i}`, rule_id: `old-${i}`, product_id: 'card', variant_id: 'horizontal', version_number: i + 1, minimum_quantity: 1, quantity_step: 1, maximum_quantity: null, unit_price: 999, payment_policy: { kind: 'full_payment' } })));
+    }
+    const remote = new AdminCatalogRepository({
+      from(table: string) {
+        assert.ok(rows[table]);
+        let selected = rows[table] as Record<string, unknown>[];
+        let start = 0; let end = 999;
+        const query = {
+          select() { return query; }, order() { return query; },
+          in(column: string, ids: string[]) { selected = selected.filter((row) => ids.includes(String(row[column]))); return query; },
+          range(from: number, to: number) { start = from; end = to; return query; },
+          then(resolve: (value: unknown) => void) { resolve({ data: selected.slice(start, Math.min(end + 1, start + 1000)), error: null }); },
+        };
+        return query;
+      }
+    } as never);
     const product = await remote.getProductById('card');
     assert.equal(product?.revision, 4);
     assert.equal(catalogStartingPrice(product!), 120);

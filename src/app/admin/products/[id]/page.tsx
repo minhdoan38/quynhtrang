@@ -19,5 +19,5 @@ export default async function AdminProductDetailPage({ params }: { params: Promi
     return <section><h1 className="text-2xl font-semibold">Chi tiết sản phẩm</h1><p role="alert" className="mt-4">Chưa thể tải cấu hình sản phẩm.</p><Link href="/admin/products" className="inline-flex min-h-11 items-center underline">Về danh mục</Link></section>;
   }
   if (!product) notFound();
-  return <ProductDetail key={`${product.id}:${product.revision}:${product.variants.map((variant) => `${variant.id}-${variant.revision}`).join(',')}`} product={product} draft={repo.getCommercialDraft(id)} availableDefinitions={repo.getAvailableDefinitions(id)} canMutate={staff.role === 'admin'} />;
+  return <ProductDetail key={String(product.id)} product={product} draft={repo.getCommercialDraft(id)} availableDefinitions={repo.getAvailableDefinitions(id)} canMutate={staff.role === 'admin'} />;
 }
