@@ -65,7 +65,7 @@ test('switches products without mutating the previous design', () => {
   assert.deepEqual(card.productOptions, { surface: 'front' });
 });
 
-test('updates templateId provenance without static dictionary mutations', () => {
+test('applies template content and product-specific options', () => {
   const initial = createInitialState('wrapping');
   const celebrated = transitionState(initial, {
     type: 'SET_TEMPLATE',
@@ -73,14 +73,20 @@ test('updates templateId provenance without static dictionary mutations', () => 
   });
 
   assert.equal(celebrated.templateId, 'celebrate');
-  assert.equal(celebrated.text, initial.text);
-  assert.equal(celebrated.backgroundColor, initial.backgroundColor);
+  assert.equal(celebrated.text, 'Chúc mừng!');
+  assert.equal(celebrated.color, '#7c2d12');
+  assert.equal(celebrated.backgroundColor, '#fef3c7');
+  assert.equal(celebrated.productOptions.repeatStyle, 'brick');
+  assert.equal(celebrated.productOptions.patternScale, 125);
 
   const blank = transitionState(celebrated, {
     type: 'SET_TEMPLATE',
     value: 'blank',
   });
   assert.equal(blank.templateId, 'blank');
+  assert.equal(blank.text, '');
+  assert.equal(blank.backgroundColor, '#ffffff');
+  assert.equal(blank.productOptions.repeatStyle, 'regular');
 });
 
 test('SET_TEMPLATE resets sourceTemplate.templateVersionId when switching to a different template', () => {

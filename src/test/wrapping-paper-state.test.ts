@@ -50,8 +50,8 @@ test('wrapping template applies canonical mode and pattern config without genera
   const initial = transitionState(createInitialState('wrapping'), { type: 'SET_ELEMENTS', value: [source] });
   const applied = transitionState(initial, { type: 'SET_TEMPLATE', value: 'celebrate' });
 
-  const celebrateWrap = TEMPLATES.celebrate.productOptions.wrapping as { patternConfig?: Record<string, unknown> };
-  assert.deepEqual(celebrateWrap?.patternConfig, {
+  assert.equal(applied.productOptions.mode, 'pattern');
+  assert.deepEqual(applied.productOptions.patternConfig, {
     ...DEFAULT_PATTERN,
     repeatMode: 'half-brick',
     scale: 125,

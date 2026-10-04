@@ -1260,16 +1260,47 @@ export function transitionState(
 
   case 'SET_TEMPLATE': {
    const isBlank = !action.value || action.value === 'blank';
+   const template = TEMPLATES[action.value];
+   const sourceTemplate = isBlank
+    ? undefined
+    : state.sourceTemplate?.templateId === action.value
+     ? state.sourceTemplate
+     : {
+      templateId: action.value,
+      templateVersionId: '',
+     };
+
+   if (!template) {
+    return {
+     ...state,
+     templateId: action.value,
+     sourceTemplate,
+    };
+   }
+
+   const nextElements: CanvasElement[] | undefined = template.elements
+    ? template.elements.map((el) => ({ ...el, data: el.data ? { ...el.data } : undefined }))
+    : state.elements;
+
    return {
     ...state,
     templateId: action.value,
-    sourceTemplate: isBlank
-     ? undefined
-     : state.sourceTemplate?.templateId === action.value
-      ? state.sourceTemplate
+    sourceTemplate,
+    text: template.text,
+    color: template.color,
+    backgroundColor: template.backgroundColor,
+    image: null,
+    elements: nextElements,
+    productOptions:
+     state.productId === 'wrapping'
+      ? normalizeWrappingOptions({
+       ...cloneOptions(state.productId),
+       ...(template.mode ? { mode: template.mode } : {}),
+       ...(template.productOptions[state.productId] || {}),
+      })
       : {
-       templateId: action.value,
-       templateVersionId: '',
+       ...cloneOptions(state.productId),
+       ...(template.productOptions[state.productId] || {}),
       },
    };
   }

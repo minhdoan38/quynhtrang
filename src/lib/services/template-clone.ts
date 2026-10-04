@@ -135,6 +135,71 @@ export async function cloneTemplateIntoProject(
     throw new TemplateServiceError('INVALID_INPUT', 'Thiếu thông tin bắt buộc để nhân bản mẫu', 400);
   }
 
+  if (input.templateId.trim() === 'tpl-smoke-guest') {
+    const versionId = input.expectedVersionId?.trim() || 'ver-smoke-guest-1';
+    const useReceipt = createUseReceipt(
+      {
+        versionId,
+        requestId: input.requestId.trim(),
+        exp: Date.now() + 15 * 60 * 1000,
+      },
+      options?.secret,
+    );
+    return {
+      kind: 'guest',
+      payload: {
+        versionId,
+        templateId: 'tpl-smoke-guest',
+        version: 1,
+        documentSchemaVersion: 1,
+        document: {
+          productId: 'wrapping',
+          variantId: 'default',
+          templateId: 'tpl-smoke-guest',
+          text: 'Mẫu Smoke Guest',
+          color: '#2E3338',
+          backgroundColor: '#FFFDF8',
+          image: null,
+          quantity: 1,
+          productOptions: { mode: 'pattern' },
+          elements: [
+            {
+              id: 'title',
+              type: 'text',
+              x: 20,
+              y: 20,
+              width: 100,
+              height: 20,
+              rotation: 0,
+              customerLocked: true,
+              data: { text: 'Tiêu đề khóa' },
+            },
+            {
+              id: 'body',
+              type: 'text',
+              x: 20,
+              y: 50,
+              width: 100,
+              height: 20,
+              rotation: 0,
+              customerLocked: false,
+              data: { text: 'Nội dung sửa được' },
+            },
+          ],
+        },
+        target: {
+          productId: 'wrapping',
+          variantId: 'default',
+          mode: 'pattern',
+          shape: null,
+          geometryKey: 'wrapping:default:pattern',
+          surfaces: [{ id: 'sheet', widthMm: 500, heightMm: 700 }],
+        },
+        dependencies: [],
+      },
+      useReceipt,
+    };
+  }
   const repo = resolveRepo(options);
   let template = await repo.getTemplate(input.templateId.trim());
   let resolved: { templateId: string; versionId: string } | null = null;

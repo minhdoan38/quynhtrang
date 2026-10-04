@@ -52,9 +52,9 @@ test('selecting template applies declared shape directly without losing options'
   });
 
   assert.equal(withTemplate.templateId, 'sticker-cute-pack');
-  const templateOpts = TEMPLATES['sticker-cute-pack'].productOptions.sticker as StickerOptions;
-  assert.equal(templateOpts.shape, 'circle');
-  assert.equal(templateOpts.hasWhiteBorder, true);
+  const stickerOpts = withTemplate.productOptions as StickerOptions;
+  assert.equal(stickerOpts.shape, 'circle');
+  assert.equal(stickerOpts.hasWhiteBorder, true);
 });
 
 test('starting blank with shape sets shape in sticker productOptions', () => {

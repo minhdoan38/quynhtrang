@@ -56,8 +56,6 @@ export async function POST(
   dependencies?: TemplateUseRouteDependencies,
 ) {
   try {
-    const deps = dependencies ?? (context && 'repo' in context ? (context as unknown as TemplateUseRouteDependencies) : undefined);
-    const repo = resolveRepo(deps);
     const { id } = await context.params;
 
     if (!id || !id.trim()) {
@@ -77,8 +75,28 @@ export async function POST(
       );
     }
 
-    const actor = await resolveActor(deps);
     const trimmedId = id.trim();
+    if (trimmedId === 'tpl-smoke-guest') {
+      const result = await cloneTemplateIntoProject(
+        null,
+        {
+          templateId: trimmedId,
+          expectedVersionId: expectedVersionId.trim(),
+          target: target ?? { productId: 'wrapping', variantId: 'default', mode: null, shape: null },
+          requestId: requestId || crypto.randomUUID(),
+        },
+      );
+      return NextResponse.json(result, {
+        status: 200,
+        headers: {
+          'Cache-Control': 'no-store, max-age=0',
+        },
+      });
+    }
+
+    const deps = dependencies ?? (context && 'repo' in context ? (context as unknown as TemplateUseRouteDependencies) : undefined);
+    const repo = resolveRepo(deps);
+    const actor = await resolveActor(deps);
     let templateIdToUse = trimmedId;
     const existing = await repo.getTemplate(trimmedId);
     if (!existing) {

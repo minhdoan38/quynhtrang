@@ -150,7 +150,8 @@ export async function migrateTemplates(options: MigrateTemplatesOptions): Promis
   if (!client) {
     if (!getSupabaseSecretKey()) {
       if (mode === 'verify') {
-        logger.log('[State43Migrate] Supabase environment unconfigured. Verifying legacy manifest integrity offline...');
+        logger.log('[State43Migrate] Supabase environment unconfigured (NEXT_PUBLIC_SUPABASE_URL or SUPABASE_SECRET_KEY not set).');
+        logger.log('[State43Migrate] Validating local migration manifest and state fixtures offline...');
         let totalTargets = 0;
         const errors: string[] = [];
         for (const entry of manifest.entries) {
@@ -161,7 +162,8 @@ export async function migrateTemplates(options: MigrateTemplatesOptions): Promis
             }
           }
         }
-        logger.log(`[State43Migrate] Offline verify complete. Validated ${totalTargets} targets across ${manifest.entries.length} templates. Errors: ${errors.length}`);
+        logger.log(`[State43Migrate] Offline verification complete: validated local migration manifest and state fixtures (${totalTargets} targets across ${manifest.entries.length} templates, errors: ${errors.length}).`);
+        logger.log('[State43Migrate] NOTE: Live database table verification was skipped because Supabase is unconfigured. Live database verification requires NEXT_PUBLIC_SUPABASE_URL and SUPABASE_SECRET_KEY.');
         return {
           mode: 'verify',
           success: errors.length === 0,
@@ -171,6 +173,11 @@ export async function migrateTemplates(options: MigrateTemplatesOptions): Promis
           createdTemplates: 0,
           createdVersions: 0,
           errors,
+          summary: {
+            verificationType: 'offline-manifest-fixtures',
+            liveDatabaseVerified: false,
+            message: 'Validated local migration manifest and state fixtures offline. Live database table verification requires NEXT_PUBLIC_SUPABASE_URL and SUPABASE_SECRET_KEY.',
+          },
         };
       }
       throw new Error('Supabase secret key is missing. Set SUPABASE_SECRET_KEY to run template migration.');
@@ -503,7 +510,11 @@ if (process.argv[1]?.endsWith('state43-template-migrate.ts')) {
         console.error('[State43Migrate] Execution completed with errors:', result.errors);
         process.exit(1);
       }
-      console.log(`[State43Migrate] Successfully finished ${mode}.`);
+      if (mode === 'verify' && result.summary?.liveDatabaseVerified === false) {
+        console.log('[State43Migrate] Successfully finished offline manifest and fixture verification (live database verification requires NEXT_PUBLIC_SUPABASE_URL and SUPABASE_SECRET_KEY).');
+      } else {
+        console.log(`[State43Migrate] Successfully finished ${mode}.`);
+      }
       process.exit(0);
     })
     .catch((err: unknown) => {

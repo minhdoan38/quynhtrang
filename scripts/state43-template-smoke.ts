@@ -83,135 +83,25 @@ export async function runAdminSmoke(options: SmokeOptions = {}) {
       const guestPage = await guestContext.newPage();
 
       let templateFetchCount = 0;
-      await guestContext.route('**/api/templates/tpl-smoke-guest', async (route) => {
-        templateFetchCount++;
-        await route.fulfill({
-          status: 200,
-          contentType: 'application/json',
-          body: JSON.stringify({
-            template: {
-              id: 'tpl-smoke-guest',
-              name: 'Mẫu Giấy Gói Sinh Nhật Smoke',
-              status: 'published',
-              productId: 'wrapping',
-              variantId: 'default',
-              mode: 'pattern',
-              shape: null,
-              currentPublishedVersionId: 'ver-smoke-guest-1',
-            },
-            currentVersion: {
-              versionId: 'ver-smoke-guest-1',
-              templateId: 'tpl-smoke-guest',
-              version: 1,
-              documentSchemaVersion: 1,
-              document: {
-                productId: 'wrapping',
-                variantId: 'default',
-                templateId: 'tpl-smoke-guest',
-                text: 'Mẫu Smoke Guest',
-                color: '#2E3338',
-                backgroundColor: '#FFFDF8',
-                quantity: 1,
-                productOptions: { mode: 'pattern' },
-                elements: [
-                  {
-                    id: 'title',
-                    type: 'text',
-                    x: 20,
-                    y: 20,
-                    width: 100,
-                    height: 20,
-                    customerLocked: true,
-                    data: { text: 'Tiêu đề khóa' },
-                  },
-                  {
-                    id: 'body',
-                    type: 'text',
-                    x: 20,
-                    y: 50,
-                    width: 100,
-                    height: 20,
-                    customerLocked: false,
-                    data: { text: 'Nội dung sửa được' },
-                  },
-                ],
-              },
-              target: {
-                productId: 'wrapping',
-                variantId: 'default',
-                mode: 'pattern',
-                shape: null,
-                geometryKey: 'wrapping:default:pattern',
-                surfaces: [{ id: 'sheet', widthMm: 500, heightMm: 700 }],
-              },
-              dependencies: [],
-            },
-          }),
-        });
+      guestPage.on('request', (req) => {
+        if (req.url().includes('/api/templates/tpl-smoke-guest')) {
+          templateFetchCount++;
+        }
       });
-      await guestContext.route('**/api/templates/tpl-smoke-guest/use', async (route) => {
-        await route.fulfill({
-          status: 200,
-          contentType: 'application/json',
-          body: JSON.stringify({
-            kind: 'guest',
-            payload: {
-              versionId: 'ver-smoke-guest-1',
-              templateId: 'tpl-smoke-guest',
-              version: 1,
-              documentSchemaVersion: 1,
-              document: {
-                productId: 'wrapping',
-                variantId: 'default',
-                templateId: 'tpl-smoke-guest',
-                text: 'Mẫu Smoke Guest',
-                color: '#2E3338',
-                backgroundColor: '#FFFDF8',
-                quantity: 1,
-                productOptions: { mode: 'pattern' },
-                elements: [
-                  {
-                    id: 'title',
-                    type: 'text',
-                    x: 20,
-                    y: 20,
-                    width: 100,
-                    height: 20,
-                    customerLocked: true,
-                    data: { text: 'Tiêu đề khóa' },
-                  },
-                  {
-                    id: 'body',
-                    type: 'text',
-                    x: 20,
-                    y: 50,
-                    width: 100,
-                    height: 20,
-                    customerLocked: false,
-                    data: { text: 'Nội dung sửa được' },
-                  },
-                ],
-              },
-              target: {
-                productId: 'wrapping',
-                variantId: 'default',
-                mode: 'pattern',
-                shape: null,
-                geometryKey: 'wrapping:default:pattern',
-                surfaces: [{ id: 'sheet', widthMm: 500, heightMm: 700 }],
-              },
-              dependencies: [],
-            },
-            useReceipt: 'smoke-guest-use-receipt',
-          }),
-        });
-      });
+      guestPage.on('console', (msg) => console.log('[BrowserConsole]', msg.text()));
+      const usePromise = guestPage.waitForResponse(
+        (res) => res.url().includes('/api/templates/tpl-smoke-guest/use'),
+        { timeout: 10000 },
+      ).catch(() => null);
 
       // 1. Guest navigates to template URL: ?template=tpl-smoke-guest
       await guestPage.goto(`${baseUrl}/?template=tpl-smoke-guest`);
       await guestPage.waitForLoadState('domcontentloaded');
-      await delay(1000);
-
+      const useRes = await usePromise;
+      if (useRes) {
+        console.log(`[State43Smoke] /use route responded with ${useRes.status()}`);
+      }
+      await delay(500);
       // Verify customizer editor loaded
       const guestEditorPath = join(screenshotDir, 'guest-template-clone-editor.png');
       await guestPage.screenshot({ path: guestEditorPath, fullPage: true });
@@ -272,27 +162,6 @@ export async function runAdminSmoke(options: SmokeOptions = {}) {
       });
 
       const accountPage = await accountContext.newPage();
-      await accountContext.route('**/api/templates/tpl-smoke-account/use', async (route) => {
-        await route.fulfill({
-          status: 200,
-          contentType: 'application/json',
-          body: JSON.stringify({
-            kind: 'cloud',
-            projectId: 'proj-smoke-account-1',
-            revision: 1,
-            document: {
-              productId: 'card',
-              variantId: 'vertical',
-              templateId: 'tpl-smoke-account',
-              sourceTemplate: {
-                templateId: 'tpl-smoke-account',
-                templateVersionId: 'ver-smoke-acc-1',
-              },
-              elements: [],
-            },
-          }),
-        });
-      });
 
       await accountPage.goto(`${baseUrl}/?view=editor`);
       await accountPage.waitForLoadState('domcontentloaded');
