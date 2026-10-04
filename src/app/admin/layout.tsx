@@ -61,17 +61,23 @@ export default async function AdminLayout({
   return (
     <div className="min-h-screen bg-stone-50/70 text-stone-900 font-sans">
       <header className="sticky top-0 z-40 bg-white/95 backdrop-blur-xs border-b border-stone-200">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 h-14 flex items-center justify-between gap-4">
-          <div className="flex items-center gap-6 min-w-0">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 min-h-14 flex flex-wrap items-center justify-between gap-2 py-2">
+          <div className="flex flex-wrap items-center gap-3 min-w-0">
             <Link href="/admin/orders" className="text-sm sm:text-base font-semibold text-stone-900 truncate hover:opacity-80">
               Quỳnh Trang Studio
             </Link>
-            <nav className="flex items-center gap-1 text-xs font-medium" aria-label="Điều hướng quản trị">
+            <nav className="flex flex-wrap items-center gap-1 text-xs font-medium" aria-label="Điều hướng quản trị">
               <Link
                 href="/admin/orders"
                 className="px-2.5 py-1 rounded-md text-stone-600 hover:text-stone-900 hover:bg-stone-100 transition"
               >
                 Đơn hàng
+              </Link>
+              <Link
+                href="/admin/products"
+                className="inline-flex min-h-11 items-center px-2.5 py-1 rounded-md text-stone-600 hover:text-stone-900 hover:bg-stone-100 transition"
+              >
+                Sản phẩm
               </Link>
               <Link
                 href="/admin/content/stickers"

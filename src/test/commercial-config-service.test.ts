@@ -119,6 +119,7 @@ describe('Commercial Config Service', () => {
       status: 'draft',
       revision: 1,
     });
+    repo.seedVariant({ id: 'horizontal', productId: 'card', name: 'Ngang', price: 29000, status: 'draft', revision: 1, definitionKey: 'card:horizontal' });
     repo.seedCommercialDraft({
       id: 'draft-card-1',
       productId: 'card',
@@ -160,6 +161,7 @@ describe('Commercial Config Service', () => {
       status: 'draft',
       revision: 1,
     });
+    repo.seedVariant({ id: 'horizontal', productId: 'card', name: 'Ngang', price: 29000, status: 'draft', revision: 1, definitionKey: 'card:horizontal' });
     repo.seedCommercialDraft({
       id: 'draft-card-1',
       productId: 'card',

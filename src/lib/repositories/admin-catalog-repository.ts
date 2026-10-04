@@ -2,9 +2,12 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import type { CatalogProduct, CatalogVariant, CommercialDraft } from '../domain/catalog.ts';
 import type { CatalogStatus, CommercialConfigVersion } from '../domain/commercial-config.ts';
 import type { PriceQuote } from '../services/price-quote-service.ts';
+import { listProductDefinitionCapabilities, resolveProductDefinitionKey } from '../product-definition-registry.ts';
+import type { ProductDefinitionCapabilities } from '../product-definition-registry.ts';
 
 export interface AdminProduct extends CatalogProduct {
   currentCommercialConfigVersionId?: string | null;
+  currentConfig?: CommercialConfigVersion | null;
 }
 
 export interface CatalogMutationResult {
@@ -15,6 +18,17 @@ export interface CatalogMutationResult {
   variantId?: string;
   status?: CatalogStatus;
   revision?: number;
+}
+
+export interface ProductMetadataPatch {
+  name?: string;
+  description?: string;
+  thumbnail?: string | null;
+  sortOrder?: number;
+}
+
+export interface AdminCatalogListOptions {
+  status?: CatalogStatus | 'all';
 }
 
 export interface CommercialAuditEvent {
@@ -57,7 +71,100 @@ export class AdminCatalogRepository {
   getProduct(id: string): AdminProduct | null {
     const product = this.products.get(id);
     if (!product) return null;
-    return structuredClone({ ...product, variants: this.listVariants(id) });
+    const currentConfig = product.currentCommercialConfigVersionId ? this.getCommercialVersion(product.currentCommercialConfigVersionId) : null;
+    return structuredClone({ ...product, variants: this.listVariants(id), currentConfig });
+  }
+  async listProducts(options: AdminCatalogListOptions = {}): Promise<AdminProduct[]> {
+    if (this.client) {
+      const results = await Promise.all([
+        this.client.from('products').select('*').order('id'),
+        this.client.from('product_variants').select('*').order('id'),
+        this.client.from('product_commercial_config_versions').select('*'),
+        this.client.from('commercial_variant_rules').select('*'),
+        this.client.from('commercial_pricing_tiers').select('*').order('minimum_quantity'),
+        this.client.from('product_commercial_drafts').select('*'),
+      ]);
+      if (results.some((result) => result.error || !result.data)) throw new Error('CATALOG_READ_FAILED');
+      const [products, variants, versions, rules, tiers, drafts] = results.map((result) => result.data as Record<string, unknown>[]);
+      this.products.clear();
+      this.variants.clear();
+      this.versions.clear();
+      this.drafts.clear();
+      for (const row of variants) this.seedVariant({
+        id: String(row.id), productId: String(row.product_id), name: String(row.name), price: Number(row.price),
+        status: row.status as CatalogStatus, revision: Number(row.revision),
+        definitionKey: typeof row.definition_key === 'string' ? row.definition_key : null,
+        definition: typeof row.definition_key === 'string' ? resolveProductDefinitionKey(row.definition_key) : null,
+        metadata: (row.metadata ?? {}) as Record<string, unknown>,
+      });
+      for (const row of versions) this.seedCommercialVersion({
+        id: String(row.id), productId: String(row.product_id), versionNumber: Number(row.version_number), currency: 'VND',
+        paymentPolicy: row.payment_policy as CommercialConfigVersion['paymentPolicy'],
+        variantRules: rules.filter((rule) => rule.version_id === row.id).map((rule) => ({
+          variantId: String(rule.variant_id), minimumQuantity: Number(rule.minimum_quantity), quantityStep: Number(rule.quantity_step),
+          maximumQuantity: rule.maximum_quantity === null ? null : Number(rule.maximum_quantity),
+          tiers: tiers.filter((tier) => tier.rule_id === rule.id).map((tier) => ({ minimumQuantity: Number(tier.minimum_quantity), unitPrice: Number(tier.unit_price) })),
+        })),
+      });
+      for (const row of products) this.seedProduct({
+        id: String(row.id), slug: String(row.slug), name: String(row.name), productType: String(row.product_type),
+        status: row.status as CatalogStatus, revision: Number(row.revision),
+        currentCommercialConfigVersionId: row.current_commercial_config_version_id as string | null,
+        metadata: (row.metadata ?? {}) as Record<string, unknown>,
+      });
+      for (const row of drafts) this.seedCommercialDraft({
+        id: String(row.id), productId: String(row.product_id), baseVersionId: row.base_version_id as string | null,
+        revision: Number(row.revision), payload: row.payload as CommercialDraft['payload'], authorId: row.author_id as string | null,
+      });
+    }
+    return [...this.products.keys()].map((id) => this.getProduct(id)!)
+      .filter((product) => !options.status || options.status === 'all' || product.status === options.status)
+      .sort((a, b) => Number(a.metadata?.sortOrder ?? 0) - Number(b.metadata?.sortOrder ?? 0) || a.name.localeCompare(b.name, 'vi'));
+  }
+
+  async getProductById(id: string): Promise<AdminProduct | null> {
+    if (this.client) await this.listProducts();
+    return this.getProduct(id);
+  }
+
+  getAvailableDefinitions(productId: string): readonly ProductDefinitionCapabilities[] {
+    const configured = new Set(this.listVariants(productId).map((variant) => variant.definitionKey).filter(Boolean));
+    return listProductDefinitionCapabilities().filter((definition) => definition.productId === productId && !configured.has(definition.definitionKey) && !this.variants.has(definition.variantId));
+  }
+
+  async updateProductMetadata(productId: string, expectedRevision: number, patch: ProductMetadataPatch): Promise<CatalogMutationResult> {
+    if (this.client) {
+      const { data, error } = await this.client.rpc('catalog_update_product_metadata', { p_product_id: productId, p_expected_revision: expectedRevision, p_patch: patch });
+      if (error) return { ok: false, code: 'INTERNAL_ERROR', message: error.message };
+      return data as CatalogMutationResult;
+    }
+    const product = this.products.get(productId);
+    if (!product) return { ok: false, code: 'NOT_FOUND', message: 'Không tìm thấy sản phẩm' };
+    if (product.revision !== expectedRevision) return { ok: false, code: 'REVISION_CONFLICT', message: 'Phiên bản chỉnh sửa đã thay đổi' };
+    if (patch.name !== undefined) product.name = patch.name.trim();
+    product.metadata = { ...(product.metadata ?? {}), ...(patch.description === undefined ? {} : { description: patch.description }), ...(patch.thumbnail === undefined ? {} : { thumbnail: patch.thumbnail }), ...(patch.sortOrder === undefined ? {} : { sortOrder: patch.sortOrder }) };
+    product.revision += 1;
+    this.products.set(productId, product);
+    return { ok: true, productId, revision: product.revision, status: product.status };
+  }
+
+  async enableVariant(productId: string, definitionKey: string, expectedProductRevision: number): Promise<CatalogMutationResult> {
+    const definition = resolveProductDefinitionKey(definitionKey);
+    if (!definition || definition.productId !== productId) return { ok: false, code: 'UNKNOWN_DEFINITION_KEY', message: 'Definition_key không thuộc danh mục hỗ trợ' };
+    if (this.client) {
+      const { data, error } = await this.client.rpc('catalog_enable_variant', { p_product_id: productId, p_definition_key: definition.definitionKey, p_expected_product_revision: expectedProductRevision });
+      if (error) return { ok: false, code: 'INTERNAL_ERROR', message: error.message };
+      return data as CatalogMutationResult;
+    }
+    const product = this.products.get(productId);
+    if (!product) return { ok: false, code: 'NOT_FOUND', message: 'Không tìm thấy sản phẩm' };
+    if (product.revision !== expectedProductRevision) return { ok: false, code: 'REVISION_CONFLICT', message: 'Phiên bản chỉnh sửa đã thay đổi' };
+    if (this.variants.has(definition.variantId)) return { ok: false, code: 'ALREADY_CONFIGURED' };
+    const variant: CatalogVariant = { id: definition.variantId, productId, name: definition.physicalSummary, price: 0, status: 'draft', revision: 1, definitionKey: definition.definitionKey, definition };
+    this.variants.set(variant.id, variant);
+    product.revision += 1;
+    this.products.set(productId, product);
+    return { ok: true, productId, variantId: variant.id, status: variant.status, revision: product.revision };
   }
 
   getVariant(id: string): CatalogVariant | null {
@@ -152,35 +259,16 @@ export class AdminCatalogRepository {
 
   async loadDraft(productId: string, staffId: string): Promise<CommercialDraft> {
     if (this.client) {
-      const existing = await this.client.from('product_commercial_drafts').select('*').eq('product_id', productId).maybeSingle();
-      if (existing.error) throw new Error(existing.error.message);
-      if (existing.data) {
-        const row = existing.data as Record<string, unknown>;
-        return {
-          id: String(row.id),
-          productId: String(row.product_id),
-          baseVersionId: typeof row.base_version_id === 'string' ? row.base_version_id : null,
-          revision: Number(row.revision ?? 1),
-          payload: (row.payload ?? {}) as CommercialDraft['payload'],
-          authorId: typeof row.author_id === 'string' ? row.author_id : null,
-        };
-      }
-      const created = await this.client.from('product_commercial_drafts').insert({
-        product_id: productId,
-        revision: 1,
-        payload: { currency: 'VND', paymentPolicy: { kind: 'full_payment' }, variantRules: [] },
-        author_id: staffId,
-      }).select('*').single();
-      if (created.error || !created.data) throw new Error(created.error?.message ?? 'DRAFT_CREATE_FAILED');
-      const row = created.data as Record<string, unknown>;
-      return {
-        id: String(row.id),
-        productId: String(row.product_id),
-        baseVersionId: typeof row.base_version_id === 'string' ? row.base_version_id : null,
-        revision: Number(row.revision ?? 1),
-        payload: (row.payload ?? {}) as CommercialDraft['payload'],
-        authorId: typeof row.author_id === 'string' ? row.author_id : null,
+      const { data, error } = await this.client.rpc('catalog_open_commercial_draft', { p_product_id: productId });
+      if (error || !data) throw new Error('DRAFT_CREATE_FAILED');
+      if (data.ok === false) throw new Error(String(data.code));
+      const row = data.draft;
+      const draft: CommercialDraft = {
+        id: String(row.id), productId: String(row.product_id), baseVersionId: row.base_version_id,
+        revision: Number(row.revision), payload: row.payload, authorId: row.author_id,
       };
+      this.seedCommercialDraft(draft);
+      return draft;
     }
     const existing = this.drafts.get(productId);
     if (existing) return structuredClone(existing);
