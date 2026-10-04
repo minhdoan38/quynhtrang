@@ -29,6 +29,7 @@ export interface CatalogVariant {
   status: CatalogStatus;
   revision: number;
   definitionKey: DefinitionKey | null;
+  definition?: ProductDefinitionCapabilities | null;
   metadata?: Record<string, unknown>;
 }
 
@@ -41,6 +42,7 @@ export interface CatalogProduct {
   revision: number;
   currentCommercialConfigVersionId?: string | null;
   variants: CatalogVariant[];
+  definition?: ProductDefinitionCapabilities | null;
   commercial?: CommercialSummary;
   metadata?: Record<string, unknown>;
 }

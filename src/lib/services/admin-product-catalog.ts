@@ -1,7 +1,7 @@
 import type { StaffIdentity } from '../domain/order.ts';
 import type { CatalogStatus } from '../domain/commercial-config.ts';
 import type { AdminCatalogRepository, CatalogMutationResult } from '../repositories/admin-catalog-repository.ts';
-import { resolveProductDefinition } from '../product-definition-registry.ts';
+import { resolveProductDefinitionKey } from '../product-definition-registry.ts';
 
 export type MutationResult = CatalogMutationResult;
 
@@ -29,7 +29,11 @@ async function setVariantStatus(variantId: string, status: CatalogStatus, expect
   }
   if (status === 'active') {
     const variant = deps.repo.getVariant(variantId);
-    if (variant?.definitionKey && !resolveProductDefinition(variant.productId, variant.id)) {
+    if (!variant?.definitionKey) {
+      return { ok: false, code: 'MISSING_DEFINITION_KEY', message: 'Biến thể chưa được gắn definition_key' };
+    }
+    const definition = resolveProductDefinitionKey(variant.definitionKey);
+    if (!definition || definition.productId !== variant.productId || definition.variantId !== variant.id) {
       return { ok: false, code: 'UNKNOWN_DEFINITION_KEY', message: 'Definition_key không thuộc danh mục hỗ trợ' };
     }
   }

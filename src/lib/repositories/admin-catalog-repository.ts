@@ -151,6 +151,37 @@ export class AdminCatalogRepository {
   }
 
   async loadDraft(productId: string, staffId: string): Promise<CommercialDraft> {
+    if (this.client) {
+      const existing = await this.client.from('product_commercial_drafts').select('*').eq('product_id', productId).maybeSingle();
+      if (existing.error) throw new Error(existing.error.message);
+      if (existing.data) {
+        const row = existing.data as Record<string, unknown>;
+        return {
+          id: String(row.id),
+          productId: String(row.product_id),
+          baseVersionId: typeof row.base_version_id === 'string' ? row.base_version_id : null,
+          revision: Number(row.revision ?? 1),
+          payload: (row.payload ?? {}) as CommercialDraft['payload'],
+          authorId: typeof row.author_id === 'string' ? row.author_id : null,
+        };
+      }
+      const created = await this.client.from('product_commercial_drafts').insert({
+        product_id: productId,
+        revision: 1,
+        payload: { currency: 'VND', paymentPolicy: { kind: 'full_payment' }, variantRules: [] },
+        author_id: staffId,
+      }).select('*').single();
+      if (created.error || !created.data) throw new Error(created.error?.message ?? 'DRAFT_CREATE_FAILED');
+      const row = created.data as Record<string, unknown>;
+      return {
+        id: String(row.id),
+        productId: String(row.product_id),
+        baseVersionId: typeof row.base_version_id === 'string' ? row.base_version_id : null,
+        revision: Number(row.revision ?? 1),
+        payload: (row.payload ?? {}) as CommercialDraft['payload'],
+        authorId: typeof row.author_id === 'string' ? row.author_id : null,
+      };
+    }
     const existing = this.drafts.get(productId);
     if (existing) return structuredClone(existing);
     const product = this.products.get(productId);

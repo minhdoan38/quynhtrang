@@ -1,5 +1,4 @@
 import { PRODUCTS, type ProductId } from './product-state.ts';
-import { CATALOG_PRODUCTS } from './product-catalog.ts';
 import { listSupportedTargetKeysFor } from './template-target.ts';
 
 export type ProductDefinitionKey =
@@ -23,6 +22,12 @@ export type ProductDefinitionCapabilities = {
   productionRendererAvailable: boolean;
   templateTargetKeys: readonly string[];
 };
+const FAMILY_LABELS: Record<ProductId, string> = {
+  wrapping: 'Giấy gói quà',
+  card: 'Thiệp chúc mừng',
+  sticker: 'Sticker dán theo yêu cầu',
+  notebook: 'Bìa sổ tay cá nhân hóa',
+};
 
 const PRODUCT_DEFINITION_KEYS: readonly ProductDefinitionKey[] = [
   'wrapping:a1',
@@ -39,14 +44,9 @@ function buildCapabilities(key: ProductDefinitionKey): ProductDefinitionCapabili
   const [productId, variantId] = key.split(':') as [ProductId, string];
   const product = PRODUCTS[productId];
   const variant = product?.variants.find((item) => item.id === variantId);
-  const catalogProduct = CATALOG_PRODUCTS[productId];
-  const catalogVariant = catalogProduct?.variants.find((item) => item.id === variantId);
-
-  const familyLabel = catalogProduct?.name ?? product?.name ?? productId;
-  const physicalSummary = catalogVariant?.dimensions
-    ? `${catalogVariant.name} · ${catalogVariant.dimensions}`
-    : (variant?.name ?? variantId);
-  const surfacesSummary = catalogProduct?.paperSpecs?.printSurfaces ?? '1 mặt';
+  const familyLabel = FAMILY_LABELS[productId];
+  const physicalSummary = variant?.name ?? variantId;
+  const surfacesSummary = productId === 'card' ? 'Tùy biến 3 mặt' : '1 mặt';
   const templateTargetKeys = Object.freeze(listSupportedTargetKeysFor(productId, variantId));
 
   return Object.freeze({
@@ -77,6 +77,10 @@ export function resolveProductDefinition(
   if (!productId || !variantId) return null;
   const key = `${productId.trim().toLowerCase()}:${variantId.trim().toLowerCase()}`;
   return REGISTRY_BY_KEY[key] ?? null;
+}
+export function resolveProductDefinitionKey(definitionKey: string): ProductDefinitionCapabilities | null {
+  const normalized = definitionKey.trim().toLowerCase();
+  return normalized ? REGISTRY_BY_KEY[normalized] ?? null : null;
 }
 
 export function listProductDefinitionCapabilities(): readonly ProductDefinitionCapabilities[] {

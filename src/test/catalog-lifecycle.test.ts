@@ -237,6 +237,23 @@ describe('Admin Product Catalog Lifecycle Service', () => {
       assert.equal(unknownResult.code, 'UNKNOWN_DEFINITION_KEY');
     }
   });
+  it('rejects activation when definition_key mismatches variant identity', async () => {
+    const admin = createAdmin();
+    const repo = new AdminCatalogRepository(null);
+    repo.seedVariant({
+      id: 'horizontal',
+      productId: 'card',
+      name: 'Ngang',
+      price: 29000,
+      status: 'draft',
+      definitionKey: 'card:vertical',
+      revision: 1,
+    });
+
+    const result = await activateVariant('horizontal', 1, { staff: admin, repo });
+    assert.equal(result.ok, false);
+    if (!result.ok) assert.equal(result.code, 'UNKNOWN_DEFINITION_KEY');
+  });
 
   it('rejects archiving the last active variant of an active product with actionable blocker', async () => {
     const admin = createAdmin();

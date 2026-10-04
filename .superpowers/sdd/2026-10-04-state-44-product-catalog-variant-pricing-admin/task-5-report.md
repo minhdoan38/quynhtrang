@@ -53,3 +53,20 @@ Tests were written before service/repository production modules. Initial focused
 
 - Production Supabase publish atomicity depends on the existing migration-controlled RPC/schema path; in-memory repository seam models atomic state transitions for tests.
 - Full suite emitted existing Supabase API-key warning and template-route diagnostic output, but all 1075 tests passed.
+
+## Review Fix Round 1
+
+- Lifecycle activation now resolves and compares stored `definitionKey` against exact registry metadata and row identity; added mismatch regression coverage.
+- Historical `CatalogProduct`/`CatalogVariant` resolvers attach optional `ProductDefinitionCapabilities` metadata while retaining archived rows and legacy shapes.
+- Added `supabase/migrations/0014_state44_catalog_operations.sql` with admin-authenticated, revision-checked draft save and atomic commercial publish RPC. Publish locks Product, allocates version under lock, inserts immutable rules/tiers, updates pointer, closes draft, and appends one `asset_events` audit record.
+- `AdminCatalogRepository` keeps Map fallback for offline tests and uses Supabase table/RPC branches for remote drafts, revision-checked draft saves, publication, and quote inserts.
+- Removed registry/product-catalog runtime cycle by keeping registry metadata dependency-neutral; all changed source uses static imports only.
+
+### Review fix verification
+
+- Focused review suite: `node --test --experimental-strip-types src/test/catalog-lifecycle.test.ts src/test/commercial-config-service.test.ts src/test/price-quote-service.test.ts src/test/catalog-repository.test.ts` — 31 passed, 0 failed.
+- Registry/catalog consistency suite: `node --test --experimental-strip-types src/test/product-catalog.test.ts src/test/product-definition-registry.test.ts src/test/state44-catalog-backfill.test.ts src/test/catalog-repository.test.ts` — 39 passed, 0 failed.
+- Full suite: `pnpm test` — 1076 passed, 0 failed.
+- Typecheck: `pnpm typecheck` — passed.
+- Consistency search covered resolver, lifecycle, draft, publish, quote, and `definitionKey` call sites; no changed source contains inline or dynamic type imports.
+- Scope review: changes limited to reviewer-requested lifecycle validation, historical metadata, Supabase persistence/RPC migration, registry cycle repair, tests, and report.
