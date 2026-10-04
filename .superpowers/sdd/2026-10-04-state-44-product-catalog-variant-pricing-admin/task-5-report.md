@@ -82,3 +82,12 @@ Tests were written before service/repository production modules. Initial focused
 Round 2 verification: focused Task 5 plus registry/catalog/remote-adapter suites 63 passed, 0 failed; `pnpm test` 1077 passed, 0 failed; `pnpm typecheck` passed. Existing Supabase API-key and template diagnostic output remained non-failing.
 
 - Added `src/test/catalog-remote-adapter.test.ts` proving remote draft-save RPC, atomic publish RPC with draft ID, and `price_quotes` table persistence paths.
+
+## Review Fix Round 3
+
+- Fixed `supabase/migrations/0014_state44_catalog_operations.sql`: added `language plpgsql` immediately after `returns jsonb` for `publish_product_commercial_config`.
+- Created `supabase/migrations/0015_state44_catalog_operations_publish_signature.sql`: forward-compatible migration that drops legacy 4-argument overload if present (`drop function if exists public.publish_product_commercial_config(text, bigint, bigint, text)`), establishes canonical 5-argument `publish_product_commercial_config(text, uuid, bigint, bigint, text)` with `language plpgsql`, `security definer`, `set search_path = public, pg_temp`, and grants execute to authenticated.
+- Created `supabase/tests/state44_catalog_operations.sql`: tests 4-arg absence in `pg_proc`, canonical 5-arg presence, PL/pgSQL language, security definer, editor FORBIDDEN rejection, admin stale revision conflicts on save and publish, draft close, and single `commercial_config_published` audit event insertion into `asset_events`.
+- Enhanced `src/test/catalog-remote-adapter.test.ts` to verify exact 5-arg RPC parameter payloads and `price_quotes` schema fields.
+
+Round 3 verification: focused Task 5 + registry/catalog + remote adapter suites 63 passed, 0 failed; `pnpm test` 1077 passed, 0 failed; `pnpm typecheck` passed; `git diff --check` clean.

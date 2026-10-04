@@ -44,6 +44,7 @@ create or replace function public.publish_product_commercial_config(
   p_request_id text
 )
 returns jsonb
+language plpgsql
 security definer
 set search_path = public, pg_temp
 as $$
