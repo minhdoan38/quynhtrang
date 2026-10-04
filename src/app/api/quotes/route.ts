@@ -36,8 +36,13 @@ async function getRepository(deps?: QuoteRouteDeps): Promise<AdminCatalogReposit
   return new AdminCatalogRepository(hasSupabase ? await createServerSupabaseClient() : null);
 }
 
-export async function GET(request: Request, deps?: QuoteRouteDeps) {
+export async function GET(
+  request: Request,
+  context?: { params?: Promise<Record<string, string>> } | QuoteRouteDeps,
+  dependencies?: QuoteRouteDeps,
+) {
   try {
+    const deps = dependencies ?? (context && 'repo' in context ? context : undefined);
     const url = new URL(request.url);
     const quoteId = url.searchParams.get('id');
     if (!quoteId) {
@@ -78,8 +83,13 @@ export async function GET(request: Request, deps?: QuoteRouteDeps) {
   }
 }
 
-export async function POST(request: Request, deps?: QuoteRouteDeps) {
+export async function POST(
+  request: Request,
+  context?: { params?: Promise<Record<string, string>> } | QuoteRouteDeps,
+  dependencies?: QuoteRouteDeps,
+) {
   try {
+    const deps = dependencies ?? (context && 'repo' in context ? context : undefined);
     const body = (await request.json().catch(() => ({}))) as QuoteRequestBody;
     const repo = await getRepository(deps);
     const checkoutKey =
