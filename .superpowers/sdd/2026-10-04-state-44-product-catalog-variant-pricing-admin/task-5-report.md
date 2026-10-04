@@ -70,3 +70,13 @@ Tests were written before service/repository production modules. Initial focused
 - Typecheck: `pnpm typecheck` — passed.
 - Consistency search covered resolver, lifecycle, draft, publish, quote, and `definitionKey` call sites; no changed source contains inline or dynamic type imports.
 - Scope review: changes limited to reviewer-requested lifecycle validation, historical metadata, Supabase persistence/RPC migration, registry cycle repair, tests, and report.
+
+## Review Fix Round 2
+
+- Resolver methods now statically import `resolveProductDefinitionKey` and attach exact registry capabilities to resolved Product and Variant models, including archived rows.
+- `AdminCatalogRepository.saveDraft` now uses `save_product_commercial_draft` RPC with expected revision and maps returned draft; Map seam remains for null clients.
+- `publishDraft` now uses `publish_product_commercial_config` with Product, draft ID, both expected revisions, and request ID; Map seam remains for null clients.
+- `saveQuote` now inserts schema-aligned `price_quotes` fields and maps selected row when client exists.
+- Migration 0014 publish RPC signature and grants now match adapter calls and validate draft ID ownership under Product lock.
+
+Round 2 verification: focused Task 5 plus registry/catalog suites 62 passed, 0 failed; `pnpm test` 1076 passed, 0 failed; `pnpm typecheck` passed. Existing Supabase API-key and template diagnostic output remained non-failing.

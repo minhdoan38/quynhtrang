@@ -38,12 +38,12 @@ $$;
 
 create or replace function public.publish_product_commercial_config(
   p_product_id text,
+  p_draft_id uuid,
   p_expected_draft_revision bigint,
   p_expected_product_revision bigint,
   p_request_id text
 )
 returns jsonb
-language plpgsql
 security definer
 set search_path = public, pg_temp
 as $$
@@ -74,7 +74,7 @@ begin
   if v_product.revision <> p_expected_product_revision then
     return jsonb_build_object('ok', false, 'code', 'REVISION_CONFLICT');
   end if;
-  select * into v_draft from public.product_commercial_drafts where product_id = p_product_id for update;
+  select * into v_draft from public.product_commercial_drafts where id = p_draft_id and product_id = p_product_id for update;
   if not found then return jsonb_build_object('ok', false, 'code', 'NOT_FOUND'); end if;
   if v_draft.revision <> p_expected_draft_revision then
     return jsonb_build_object('ok', false, 'code', 'REVISION_CONFLICT');
@@ -128,5 +128,5 @@ $$;
 
 revoke all on function public.save_product_commercial_draft(uuid, bigint, jsonb) from public, anon;
 grant execute on function public.save_product_commercial_draft(uuid, bigint, jsonb) to authenticated;
-revoke all on function public.publish_product_commercial_config(text, bigint, bigint, text) from public, anon;
-grant execute on function public.publish_product_commercial_config(text, bigint, bigint, text) to authenticated;
+revoke all on function public.publish_product_commercial_config(text, uuid, bigint, bigint, text) from public, anon;
+grant execute on function public.publish_product_commercial_config(text, uuid, bigint, bigint, text) to authenticated;

@@ -70,5 +70,5 @@ export async function publishProductCommercialConfig(input: PublishCommercialCon
   if (!product || !draft) throw new Error('NOT_FOUND');
   const activeVariantIds = deps.repo.listVariants(input.productId).filter((variant) => variant.status === 'active').map((variant) => variant.id);
   validatePayload({ ...draft.payload, id: draft.payload.id ?? draft.id, productId: input.productId, versionNumber: Math.max(1, draft.payload.versionNumber ?? 1) }, activeVariantIds);
-  return deps.repo.publishDraft(input.productId, input.expectedDraftRevision, input.expectedProductRevision, input.requestId);
+  return deps.repo.publishDraft(input.productId, draft.id, input.expectedDraftRevision, input.expectedProductRevision, input.requestId);
 }

@@ -26,6 +26,7 @@ import {
 } from '../domain/catalog.ts';
 import { FONT_REGISTRY } from '../fonts.ts';
 import { CATALOG_PRODUCTS } from '../product-catalog.ts';
+import { resolveProductDefinitionKey } from '../product-definition-registry.ts';
 import type { ProductId } from '../product-state.ts';
 import { TemplateRepository } from './template-repository.ts';
 export interface PublishedCatalogRepository {
@@ -114,6 +115,17 @@ export class CatalogRepository implements PublishedCatalogRepository {
     if (error || !data) return null;
     const variants = await this.client.from('product_variants').select('*').eq('product_id', id).order('id');
     const row = data as DatabaseProductRow;
+    const resolvedVariants = variants.data ? (variants.data as DatabaseVariantRow[]).map((variant) => ({
+      id: variant.id,
+      productId: variant.product_id,
+      name: variant.name,
+      price: Number(variant.price),
+      status: variant.status ?? (variant.active ? 'active' : 'draft'),
+      revision: Number(variant.revision ?? 1),
+      definitionKey: variant.definition_key ?? null,
+      definition: variant.definition_key ? resolveProductDefinitionKey(variant.definition_key) : null,
+      metadata: variant.metadata ?? undefined,
+    })) : [];
     return {
       id: row.id,
       slug: row.slug,
@@ -122,16 +134,8 @@ export class CatalogRepository implements PublishedCatalogRepository {
       status: row.status ?? (row.active ? 'active' : 'draft'),
       revision: Number(row.revision ?? 1),
       currentCommercialConfigVersionId: row.current_commercial_config_version_id ?? null,
-      variants: variants.data ? (variants.data as DatabaseVariantRow[]).map((variant) => ({
-        id: variant.id,
-        productId: variant.product_id,
-        name: variant.name,
-        price: Number(variant.price),
-        status: variant.status ?? (variant.active ? 'active' : 'draft'),
-        revision: Number(variant.revision ?? 1),
-        definitionKey: variant.definition_key ?? null,
-        metadata: variant.metadata ?? undefined,
-      })) : [],
+      variants: resolvedVariants,
+      definition: resolvedVariants.find((variant) => variant.definition)?.definition ?? null,
       metadata: row.metadata ?? undefined,
     };
   }
@@ -149,6 +153,7 @@ export class CatalogRepository implements PublishedCatalogRepository {
       status: row.status ?? (row.active ? 'active' : 'draft'),
       revision: Number(row.revision ?? 1),
       definitionKey: row.definition_key ?? null,
+      definition: row.definition_key ? resolveProductDefinitionKey(row.definition_key) : null,
       metadata: row.metadata ?? undefined,
     };
   }

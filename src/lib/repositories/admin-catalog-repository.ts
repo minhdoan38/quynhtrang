@@ -207,6 +207,24 @@ export class AdminCatalogRepository {
   }
 
   async saveDraft(draftId: string, expectedRevision: number, payload: CommercialConfigVersion): Promise<CommercialDraft> {
+    if (this.client) {
+      const { data, error } = await this.client.rpc('save_product_commercial_draft', {
+        p_draft_id: draftId,
+        p_expected_revision: expectedRevision,
+        p_payload: payload,
+      });
+      if (error) throw new Error(error.message);
+      if (!data || typeof data !== 'object') throw new Error('DRAFT_SAVE_FAILED');
+      const result = data as Record<string, unknown>;
+      if (result.ok === false) throw new Error(String(result.code ?? 'DRAFT_SAVE_FAILED'));
+      const row = result.draft as Record<string, unknown>;
+      return {
+        id: String(row.id), productId: String(row.product_id),
+        baseVersionId: typeof row.base_version_id === 'string' ? row.base_version_id : null,
+        revision: Number(row.revision), payload: row.payload as CommercialDraft['payload'],
+        authorId: typeof row.author_id === 'string' ? row.author_id : null,
+      };
+    }
     const draft = [...this.drafts.values()].find((item) => item.id === draftId);
     if (!draft) throw new Error('NOT_FOUND');
     if (draft.revision !== expectedRevision) throw new Error('REVISION_CONFLICT');
@@ -216,18 +234,36 @@ export class AdminCatalogRepository {
     return structuredClone(draft);
   }
 
-  async publishDraft(productId: string, expectedDraftRevision: number, expectedProductRevision: number, requestId: string): Promise<CommercialConfigVersion> {
+  async publishDraft(productId: string, draftIdOrExpectedRevision: string | number, expectedDraftRevisionOrProductRevision: number, expectedProductRevisionOrRequestId: number | string, requestIdValue?: string): Promise<CommercialConfigVersion> {
+    const draftId = typeof draftIdOrExpectedRevision === 'string' ? draftIdOrExpectedRevision : this.drafts.get(productId)?.id ?? '';
+    const expectedDraftRevision = typeof draftIdOrExpectedRevision === 'string' ? expectedDraftRevisionOrProductRevision : draftIdOrExpectedRevision;
+    const expectedProductRevision = typeof draftIdOrExpectedRevision === 'string' ? expectedProductRevisionOrRequestId as number : expectedDraftRevisionOrProductRevision;
+    const requestId = typeof draftIdOrExpectedRevision === 'string' ? requestIdValue ?? '' : String(expectedProductRevisionOrRequestId);
+    if (this.client) {
+      const { data, error } = await this.client.rpc('publish_product_commercial_config', {
+        p_product_id: productId, p_draft_id: draftId,
+        p_expected_draft_revision: expectedDraftRevision,
+        p_expected_product_revision: expectedProductRevision,
+        p_request_id: requestId,
+      });
+      if (error) throw new Error(error.message);
+      if (!data || typeof data !== 'object') throw new Error('PUBLISH_FAILED');
+      const result = data as Record<string, unknown>;
+      if (result.ok === false) throw new Error(String(result.code ?? 'PUBLISH_FAILED'));
+      const row = result.version as Record<string, unknown>;
+      return {
+        id: String(row.id), productId: String(row.product_id ?? productId), versionNumber: Number(row.version_number),
+        currency: 'VND', paymentPolicy: row.payment_policy as CommercialConfigVersion['paymentPolicy'],
+        variantRules: Array.isArray(row.variantRules) ? row.variantRules as CommercialConfigVersion['variantRules'] : [],
+      };
+    }
     const product = this.products.get(productId);
     const draft = this.drafts.get(productId);
     if (!product || !draft) throw new Error('NOT_FOUND');
+    if (draft.id !== draftId) throw new Error('NOT_FOUND');
     if (product.revision !== expectedProductRevision || draft.revision !== expectedDraftRevision) throw new Error('REVISION_CONFLICT');
     const previous = [...this.versions.values()].filter((version) => version.productId === productId);
-    const version: CommercialConfigVersion = {
-      ...structuredClone(draft.payload),
-      id: `commercial-${productId}-${previous.length + 1}`,
-      productId,
-      versionNumber: previous.length + 1,
-    };
+    const version: CommercialConfigVersion = { ...structuredClone(draft.payload), id: `commercial-${productId}-${previous.length + 1}`, productId, versionNumber: previous.length + 1 };
     this.versions.set(version.id, version);
     product.currentCommercialConfigVersionId = version.id;
     product.revision += 1;
@@ -238,6 +274,22 @@ export class AdminCatalogRepository {
   }
 
   async saveQuote(quote: PriceQuote): Promise<PriceQuote> {
+    if (this.client) {
+      const { data, error } = await this.client.from('price_quotes').insert({
+        id: quote.id, product_id: quote.productId, variant_id: quote.variantId,
+        commercial_config_version_id: quote.commercialConfigVersionId, quantity: quote.quantity,
+        calculation: quote.calculation, checkout_key_hash: quote.checkoutKeyHash,
+        created_at: quote.createdAt, expires_at: quote.expiresAt,
+      }).select('*').single();
+      if (error || !data) throw new Error(error?.message ?? 'QUOTE_PERSIST_FAILED');
+      const row = data as Record<string, unknown>;
+      return {
+        id: String(row.id), productId: String(row.product_id), variantId: String(row.variant_id),
+        commercialConfigVersionId: String(row.commercial_config_version_id), quantity: Number(row.quantity),
+        calculation: row.calculation as PriceQuote['calculation'], checkoutKeyHash: String(row.checkout_key_hash),
+        createdAt: String(row.created_at), expiresAt: String(row.expires_at),
+      };
+    }
     this.quotes.set(quote.id, structuredClone(quote));
     return structuredClone(quote);
   }
