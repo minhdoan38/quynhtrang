@@ -149,23 +149,6 @@ export async function cloneTemplateIntoProject(
     }
   }
 
-  if (!template || template.status !== 'published' || template.archivedAt) {
-    throw new TemplateServiceError('TEMPLATE_UNAVAILABLE', 'Mẫu này hiện không còn khả dụng.', 409);
-  }
-
-  if (
-    template.currentPublishedVersionId !== input.expectedVersionId.trim() &&
-    (!resolved || resolved.versionId !== input.expectedVersionId.trim())
-  ) {
-    throw new TemplateServiceError('TEMPLATE_CHANGED', 'Phiên bản mẫu đã thay đổi, vui lòng tải lại.', 409);
-  }
-  const availability = await repo.getTemplateAvailability(template.id);
-  if (!availability.available) {
-    throw new TemplateServiceError('TEMPLATE_UNAVAILABLE', 'Mẫu này hiện không còn khả dụng.', 409, {
-      blockers: availability.blockers,
-    });
-  }
-
   let actorUserId: string | null = null;
   if (actor && typeof actor === 'object' && 'userId' in actor && typeof actor.userId === 'string') {
     actorUserId = actor.userId;
@@ -183,6 +166,23 @@ export async function cloneTemplateIntoProject(
       revision: cloudResult.revision,
       document: cloudResult.document,
     };
+  }
+
+  if (!template || template.status !== 'published' || template.archivedAt) {
+    throw new TemplateServiceError('TEMPLATE_UNAVAILABLE', 'Mẫu này hiện không còn khả dụng.', 409);
+  }
+
+  if (
+    template.currentPublishedVersionId !== input.expectedVersionId.trim() &&
+    (!resolved || resolved.versionId !== input.expectedVersionId.trim())
+  ) {
+    throw new TemplateServiceError('TEMPLATE_CHANGED', 'Phiên bản mẫu đã thay đổi, vui lòng tải lại.', 409);
+  }
+  const availability = await repo.getTemplateAvailability(template.id);
+  if (!availability.available) {
+    throw new TemplateServiceError('TEMPLATE_UNAVAILABLE', 'Mẫu này hiện không còn khả dụng.', 409, {
+      blockers: availability.blockers,
+    });
   }
 
   const version = await repo.getVersion(input.expectedVersionId.trim());
