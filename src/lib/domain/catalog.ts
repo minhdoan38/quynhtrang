@@ -112,7 +112,8 @@ export interface DatabaseTemplateRow {
   product_id?: string | null;
   slug?: string | null;
   name: string;
-  published: boolean;
+  status?: string;
+  published?: boolean;
   thumbnail_path?: string | null;
   metadata?: Record<string, unknown> | null;
 }

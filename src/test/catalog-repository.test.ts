@@ -75,10 +75,10 @@ test('catalog repository reads mapped published rows', async () => {
   assert.equal((await repository.listStickers())[0]?.storagePath, 'cat.svg');
 });
 
-test('catalog repository falls back to static catalog when unconfigured or query fails', async () => {
+test('catalog repository falls back to static catalog for products/fonts when unconfigured or query fails, but returns empty for templates', async () => {
   const unconfigured = new CatalogRepository(null);
   assert.ok((await unconfigured.listProducts()).some((product: { id: string }) => product.id === 'wrapping'));
-  assert.ok((await unconfigured.listTemplates()).some((template: { id: string }) => template.id === 'blank'));
+  assert.deepEqual(await unconfigured.listTemplates(), []);
   assert.ok((await unconfigured.listFonts()).some((font: { id: string }) => font.id === 'be-vietnam-pro'));
 
   const failing = new CatalogRepository(new CatalogClient({ products: { data: null, error: new Error('offline') } }) as never);
@@ -108,11 +108,20 @@ test('catalog repository preserves successful empty queries and returns empty st
 });
 
 test('catalog repository provides alias methods matching PublishedCatalogRepository', async () => {
-  const repo = new CatalogRepository();
+  const client = new CatalogClient({
+    templates: {
+      data: [{ id: 'card-1', product_id: 'card', slug: 'card-1', name: 'Thiệp 1', status: 'published', thumbnail_path: null, metadata: {} }],
+      error: null,
+    },
+    fonts: {
+      data: Array.from({ length: 8 }, (_, i) => ({ id: `font-${i}`, family_name: `Font ${i}`, published: true })),
+      error: null,
+    },
+  });
+  const repo = new CatalogRepository(client as never);
   const templates = await repo.listPublishedTemplates('card');
   assert.ok(templates.length > 0);
   assert.ok(templates.every((t) => !t.productId || t.productId === 'card'));
-
   const fonts = await repo.listPublishedFonts();
   assert.ok(fonts.length >= 8);
 

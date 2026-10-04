@@ -24,7 +24,7 @@ import {
 } from '../domain/catalog.ts';
 import { FONT_REGISTRY } from '../fonts.ts';
 import { CATALOG_PRODUCTS } from '../product-catalog.ts';
-import { type ProductId, TEMPLATES } from '../product-state.ts';
+import type { ProductId } from '../product-state.ts';
 import { TemplateRepository } from './template-repository.ts';
 export interface PublishedCatalogRepository {
   listProducts(): Promise<PublishedProduct[]>;
@@ -102,12 +102,12 @@ export class CatalogRepository implements PublishedCatalogRepository {
   }
 
   async listTemplates(productId?: ProductId): Promise<PublishedTemplate[]> {
-    if (!this.client) return this.getStaticTemplates(productId);
-    // When database client is configured, failure yields error, not fallback to static templates
+    if (!this.client) return [];
+    // Database-only catalog query: status = 'published' (published boolean dropped in 0009)
     let query = this.client
       .from('templates')
       .select('*')
-      .eq('published', true);
+      .eq('status', 'published');
     if (productId) {
       query = query.or(`product_id.eq.${productId},product_id.is.null`);
     }
@@ -238,22 +238,6 @@ export class CatalogRepository implements PublishedCatalogRepository {
     );
   }
 
-  private getStaticTemplates(productId?: ProductId): PublishedTemplate[] {
-    return Object.entries(TEMPLATES)
-      .filter(([, tpl]) => {
-        if (!productId) return true;
-        if (!tpl.productIds || tpl.productIds.length === 0) return true;
-        return tpl.productIds.includes(productId);
-      })
-      .map(([id, tpl]) => ({
-        id,
-        productId: (tpl.productIds?.[0] as ProductId | undefined) ?? null,
-        name: tpl.name,
-        category: tpl.category,
-        variantIds: tpl.variantIds ? [...tpl.variantIds] : undefined,
-        previewHint: tpl.previewHint,
-      }));
-  }
 
   private getStaticFonts(): PublishedFont[] {
     return FONT_REGISTRY.filter((f) => f.status === 'published').map((f) => ({

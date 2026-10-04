@@ -132,31 +132,35 @@ on conflict (id) do update set
   updated_at = now();
 
 -- 3. Templates & Template Versions
-insert into public.templates (id, product_id, slug, name, published, thumbnail_path, metadata)
+insert into public.templates (id, product_id, variant_id, product_mode, fixed_sticker_shape, slug, name, status, category_id, target_snapshot, metadata)
 values
-  ('blank', null, 'blank', 'Trống', true, null, jsonb_build_object('category', 'minimal', 'previewHint', 'Bắt đầu từ trang trắng')),
-  ('minimal', null, 'minimal', 'Tối giản', true, null, jsonb_build_object('category', 'minimal', 'previewHint', 'Đường nét thanh lịch, gam màu trung tính')),
-  ('celebrate', null, 'celebrate', 'Tiệc tùng', true, null, jsonb_build_object('category', 'birthday', 'previewHint', 'Rực rỡ cho các dịp sinh nhật và kỷ niệm')),
-  ('card-h-birthday', 'card', 'card-h-birthday', 'Sinh nhật ấm áp', true, null, jsonb_build_object('category', 'birthday', 'variantIds', jsonb_build_array('horizontal'))),
-  ('card-h-cute', 'card', 'card-h-cute', 'Gấu con đáng yêu', true, null, jsonb_build_object('category', 'cute', 'variantIds', jsonb_build_array('horizontal'))),
-  ('card-h-love', 'card', 'card-h-love', 'Tình yêu dịu êm', true, null, jsonb_build_object('category', 'love', 'variantIds', jsonb_build_array('horizontal'))),
-  ('card-v-floral', 'card', 'card-v-floral', 'Nhành hoa nhỏ', true, null, jsonb_build_object('category', 'floral', 'variantIds', jsonb_build_array('vertical'))),
-  ('card-thanks', 'card', 'card-thanks', 'Lời cảm ơn', true, null, jsonb_build_object('category', 'thanks')),
-  ('wrapping-a1-cute', 'wrapping', 'wrapping-a1-cute', 'Họa tiết Cute A1', true, null, jsonb_build_object('category', 'cute', 'variantIds', jsonb_build_array('a1'))),
-  ('wrapping-a1-floral', 'wrapping', 'wrapping-a1-floral', 'Vườn hoa Pastel A1', true, null, jsonb_build_object('category', 'floral', 'variantIds', jsonb_build_array('a1'))),
-  ('wrapping-a2-minimal', 'wrapping', 'wrapping-a2-minimal', 'Kẻ sọc Minimal A2', true, null, jsonb_build_object('category', 'minimal', 'variantIds', jsonb_build_array('a2'))),
-  ('wrapping-birthday-balloons', 'wrapping', 'wrapping-birthday-balloons', 'Bóng bay Sinh nhật', true, null, jsonb_build_object('category', 'birthday')),
-  ('sticker-diecut-love', 'sticker', 'sticker-diecut-love', 'Trái tim viền trắng', true, null, jsonb_build_object('category', 'love', 'variantIds', jsonb_build_array('die-cut'))),
-  ('sticker-cute-pack', 'sticker', 'sticker-cute-pack', 'Sticker Mèo con', true, null, jsonb_build_object('category', 'cute')),
-  ('sticker-cozy-coffee', 'sticker', 'sticker-cozy-coffee', 'Tách cà phê Ấm', true, null, jsonb_build_object('category', 'minimal', 'variantIds', jsonb_build_array('fixed-shape', 'die-cut'))),
-  ('notebook-floral', 'notebook', 'notebook-floral', 'Khu vườn bí mật', true, null, jsonb_build_object('category', 'floral')),
-  ('notebook-minimal', 'notebook', 'notebook-minimal', 'Ghi chú Tối giản', true, null, jsonb_build_object('category', 'minimal'))
+  ('blank', 'wrapping', 'a1', 'pattern', null, 'blank', 'Trống', 'published', 'minimal', '{"productId":"wrapping","variantId":"a1","mode":"pattern","shape":null,"surfaces":[{"id":"sheet","widthMm":594,"heightMm":841}],"geometryKey":"wrapping:a1:mode:pattern:shape:none:surfaces:sheet-594x841"}'::jsonb, jsonb_build_object('category', 'minimal', 'previewHint', 'Bắt đầu từ trang trắng')),
+  ('minimal', 'wrapping', 'a1', 'full-sheet', null, 'minimal', 'Tối giản', 'published', 'minimal', '{"productId":"wrapping","variantId":"a1","mode":"full-sheet","shape":null,"surfaces":[{"id":"sheet","widthMm":594,"heightMm":841}],"geometryKey":"wrapping:a1:mode:full-sheet:shape:none:surfaces:sheet-594x841"}'::jsonb, jsonb_build_object('category', 'minimal', 'previewHint', 'Đường nét thanh lịch, gam màu trung tính')),
+  ('celebrate', 'wrapping', 'a1', 'pattern', null, 'celebrate', 'Tiệc tùng', 'published', 'birthday', '{"productId":"wrapping","variantId":"a1","mode":"pattern","shape":null,"surfaces":[{"id":"sheet","widthMm":594,"heightMm":841}],"geometryKey":"wrapping:a1:mode:pattern:shape:none:surfaces:sheet-594x841"}'::jsonb, jsonb_build_object('category', 'birthday', 'previewHint', 'Rực rỡ cho các dịp sinh nhật và kỷ niệm')),
+  ('card-h-birthday', 'card', 'horizontal', null, null, 'card-h-birthday', 'Sinh nhật ấm áp', 'published', 'birthday', '{"productId":"card","variantId":"horizontal","mode":null,"shape":null,"surfaces":[{"id":"front","widthMm":148,"heightMm":105},{"id":"inside","widthMm":296,"heightMm":105},{"id":"back","widthMm":148,"heightMm":105}],"geometryKey":"card:horizontal:mode:none:shape:none:surfaces:front-148x105_inside-296x105_back-148x105"}'::jsonb, jsonb_build_object('category', 'birthday', 'variantIds', jsonb_build_array('horizontal'))),
+  ('card-h-cute', 'card', 'horizontal', null, null, 'card-h-cute', 'Gấu con đáng yêu', 'published', 'cute', '{"productId":"card","variantId":"horizontal","mode":null,"shape":null,"surfaces":[{"id":"front","widthMm":148,"heightMm":105},{"id":"inside","widthMm":296,"heightMm":105},{"id":"back","widthMm":148,"heightMm":105}],"geometryKey":"card:horizontal:mode:none:shape:none:surfaces:front-148x105_inside-296x105_back-148x105"}'::jsonb, jsonb_build_object('category', 'cute', 'variantIds', jsonb_build_array('horizontal'))),
+  ('card-h-love', 'card', 'horizontal', null, null, 'card-h-love', 'Tình yêu dịu êm', 'published', 'love', '{"productId":"card","variantId":"horizontal","mode":null,"shape":null,"surfaces":[{"id":"front","widthMm":148,"heightMm":105},{"id":"inside","widthMm":296,"heightMm":105},{"id":"back","widthMm":148,"heightMm":105}],"geometryKey":"card:horizontal:mode:none:shape:none:surfaces:front-148x105_inside-296x105_back-148x105"}'::jsonb, jsonb_build_object('category', 'love', 'variantIds', jsonb_build_array('horizontal'))),
+  ('card-v-floral', 'card', 'vertical', null, null, 'card-v-floral', 'Nhành hoa nhỏ', 'published', 'floral', '{"productId":"card","variantId":"vertical","mode":null,"shape":null,"surfaces":[{"id":"front","widthMm":105,"heightMm":148},{"id":"inside","widthMm":210,"heightMm":148},{"id":"back","widthMm":105,"heightMm":148}],"geometryKey":"card:vertical:mode:none:shape:none:surfaces:front-105x148_inside-210x148_back-105x148"}'::jsonb, jsonb_build_object('category', 'floral', 'variantIds', jsonb_build_array('vertical'))),
+  ('card-thanks', 'card', 'horizontal', null, null, 'card-thanks', 'Lời cảm ơn', 'published', 'thanks', '{"productId":"card","variantId":"horizontal","mode":null,"shape":null,"surfaces":[{"id":"front","widthMm":148,"heightMm":105},{"id":"inside","widthMm":296,"heightMm":105},{"id":"back","widthMm":148,"heightMm":105}],"geometryKey":"card:horizontal:mode:none:shape:none:surfaces:front-148x105_inside-296x105_back-148x105"}'::jsonb, jsonb_build_object('category', 'thanks')),
+  ('wrapping-a1-cute', 'wrapping', 'a1', 'pattern', null, 'wrapping-a1-cute', 'Họa tiết Cute A1', 'published', 'cute', '{"productId":"wrapping","variantId":"a1","mode":"pattern","shape":null,"surfaces":[{"id":"sheet","widthMm":594,"heightMm":841}],"geometryKey":"wrapping:a1:mode:pattern:shape:none:surfaces:sheet-594x841"}'::jsonb, jsonb_build_object('category', 'cute', 'variantIds', jsonb_build_array('a1'))),
+  ('wrapping-a1-floral', 'wrapping', 'a1', 'pattern', null, 'wrapping-a1-floral', 'Vườn hoa Pastel A1', 'published', 'floral', '{"productId":"wrapping","variantId":"a1","mode":"pattern","shape":null,"surfaces":[{"id":"sheet","widthMm":594,"heightMm":841}],"geometryKey":"wrapping:a1:mode:pattern:shape:none:surfaces:sheet-594x841"}'::jsonb, jsonb_build_object('category', 'floral', 'variantIds', jsonb_build_array('a1'))),
+  ('wrapping-a2-minimal', 'wrapping', 'a2', 'pattern', null, 'wrapping-a2-minimal', 'Kẻ sọc Minimal A2', 'published', 'minimal', '{"productId":"wrapping","variantId":"a2","mode":"pattern","shape":null,"surfaces":[{"id":"sheet","widthMm":420,"heightMm":594}],"geometryKey":"wrapping:a2:mode:pattern:shape:none:surfaces:sheet-420x594"}'::jsonb, jsonb_build_object('category', 'minimal', 'variantIds', jsonb_build_array('a2'))),
+  ('wrapping-birthday-balloons', 'wrapping', 'a1', 'pattern', null, 'wrapping-birthday-balloons', 'Bóng bay Sinh nhật', 'published', 'birthday', '{"productId":"wrapping","variantId":"a1","mode":"pattern","shape":null,"surfaces":[{"id":"sheet","widthMm":594,"heightMm":841}],"geometryKey":"wrapping:a1:mode:pattern:shape:none:surfaces:sheet-594x841"}'::jsonb, jsonb_build_object('category', 'birthday')),
+  ('sticker-diecut-love', 'sticker', 'die-cut', null, null, 'sticker-diecut-love', 'Trái tim viền trắng', 'published', 'love', '{"productId":"sticker","variantId":"die-cut","mode":null,"shape":null,"surfaces":[{"id":"front","widthMm":50,"heightMm":50}],"geometryKey":"sticker:die-cut:mode:none:shape:none:surfaces:front-50x50"}'::jsonb, jsonb_build_object('category', 'love', 'variantIds', jsonb_build_array('die-cut'))),
+  ('sticker-cute-pack', 'sticker', 'fixed-shape', null, 'circle', 'sticker-cute-pack', 'Sticker Mèo con', 'published', 'cute', '{"productId":"sticker","variantId":"fixed-shape","mode":null,"shape":"circle","surfaces":[{"id":"front","widthMm":50,"heightMm":50}],"geometryKey":"sticker:fixed-shape:mode:none:shape:circle:surfaces:front-50x50"}'::jsonb, jsonb_build_object('category', 'cute')),
+  ('sticker-cozy-coffee', 'sticker', 'fixed-shape', null, 'rounded-rectangle', 'sticker-cozy-coffee', 'Tách cà phê Ấm', 'published', 'minimal', '{"productId":"sticker","variantId":"fixed-shape","mode":null,"shape":"rounded-rectangle","surfaces":[{"id":"front","widthMm":70,"heightMm":50}],"geometryKey":"sticker:fixed-shape:mode:none:shape:rounded-rectangle:surfaces:front-70x50"}'::jsonb, jsonb_build_object('category', 'minimal', 'variantIds', jsonb_build_array('fixed-shape', 'die-cut'))),
+  ('notebook-floral', 'notebook', 'standard', null, null, 'notebook-floral', 'Khu vườn bí mật', 'published', 'floral', '{"productId":"notebook","variantId":"standard","mode":null,"shape":null,"surfaces":[{"id":"front","widthMm":148,"heightMm":210}],"geometryKey":"notebook:standard:mode:none:shape:none:surfaces:front-148x210"}'::jsonb, jsonb_build_object('category', 'floral')),
+  ('notebook-minimal', 'notebook', 'standard', null, null, 'notebook-minimal', 'Ghi chú Tối giản', 'published', 'minimal', '{"productId":"notebook","variantId":"standard","mode":null,"shape":null,"surfaces":[{"id":"front","widthMm":148,"heightMm":210}],"geometryKey":"notebook:standard:mode:none:shape:none:surfaces:front-148x210"}'::jsonb, jsonb_build_object('category', 'minimal'))
 on conflict (id) do update set
   product_id = excluded.product_id,
+  variant_id = excluded.variant_id,
+  product_mode = excluded.product_mode,
+  fixed_sticker_shape = excluded.fixed_sticker_shape,
   slug = excluded.slug,
   name = excluded.name,
-  published = excluded.published,
-  thumbnail_path = excluded.thumbnail_path,
+  status = excluded.status,
+  category_id = excluded.category_id,
+  target_snapshot = excluded.target_snapshot,
   metadata = excluded.metadata,
   updated_at = now();
 
@@ -720,6 +724,32 @@ values
   )
 on conflict (template_id, version) do update set
   design_document = excluded.design_document;
+
+-- Update templates current_published_version_id
+update public.templates t
+set current_published_version_id = (
+  select tv.id
+  from public.template_versions tv
+  where tv.template_id = t.id
+  order by tv.version desc
+  limit 1
+)
+where t.current_published_version_id is null;
+
+-- Seed template_legacy_targets for legacy mapping resolution
+insert into public.template_legacy_targets (legacy_id, target_key, template_id, version_id, verified_at)
+select
+  t.id as legacy_id,
+  concat(t.product_id, ':', t.variant_id, ':', coalesce(t.product_mode, 'none'), ':', coalesce(t.fixed_sticker_shape, 'none')) as target_key,
+  t.id as template_id,
+  t.current_published_version_id as version_id,
+  now() as verified_at
+from public.templates t
+where t.current_published_version_id is not null
+on conflict (legacy_id, target_key) do update set
+  template_id = excluded.template_id,
+  version_id = excluded.version_id,
+  verified_at = now();
 
 -- 4. Fonts (authoritative matching src/lib/fonts.ts)
 insert into public.fonts (id, family_name, display_name, google_font, storage_path, published, status, revision, ever_published_at, tags, search_keywords, metadata)

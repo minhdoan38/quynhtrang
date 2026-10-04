@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import {
   createInitialState,
   filterElementsBySurface,
-  transitionState,
+  TEMPLATES,
   type CanvasElement,
 } from '../lib/product-state.ts';
 import { loadState, saveState } from '../lib/storage.ts';
@@ -21,12 +21,14 @@ function setupSessionStorage() {
   };
 }
 
-test('applying card templates populates front and inside surfaces', () => {
+test('card template fixtures populate front and inside surfaces', () => {
   for (const templateId of ['card-h-birthday', 'card-h-cute', 'card-v-floral']) {
-    const state = transitionState(createInitialState('card'), { type: 'SET_TEMPLATE', value: templateId });
-    assert.ok(filterElementsBySurface(state.elements, 'front').length > 0, `${templateId} front`);
-    assert.ok(filterElementsBySurface(state.elements, 'inside').length > 0, `${templateId} inside`);
-    assert.equal(filterElementsBySurface(state.elements, 'back').length, 0, `${templateId} back starts empty`);
+    const fixture = TEMPLATES[templateId];
+    assert.ok(fixture, `template fixture ${templateId} exists`);
+    const elements = fixture.elements ?? [];
+    assert.ok(filterElementsBySurface(elements, 'front').length > 0, `${templateId} front`);
+    assert.ok(filterElementsBySurface(elements, 'inside').length > 0, `${templateId} inside`);
+    assert.equal(filterElementsBySurface(elements, 'back').length, 0, `${templateId} back starts empty`);
   }
 });
 

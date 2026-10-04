@@ -220,7 +220,13 @@ export async function resolveTemplateForUse(
   const repo = resolveRepo(options);
 
   const direct = await repo.getTemplate(idOrLegacyId);
-  if (direct && direct.status === 'published' && !direct.archivedAt && direct.currentPublishedVersionId) {
+  const targetReq = options?.target as { productId?: string; variantId?: string; mode?: string | null; shape?: string | null; geometryKey?: string } | undefined;
+  const directMatchesTarget = !targetReq || (
+    (!targetReq.productId || direct?.productId === targetReq.productId) &&
+    (!targetReq.variantId || direct?.variantId === targetReq.variantId)
+  );
+
+  if (direct && directMatchesTarget && direct.status === 'published' && !direct.archivedAt && direct.currentPublishedVersionId) {
     const availability = await repo.getTemplateAvailability(direct.id);
     if (availability.available) {
       return {
@@ -234,12 +240,15 @@ export async function resolveTemplateForUse(
     ? await repo.resolveLegacyTarget(idOrLegacyId, options.targetKey)
     : null;
 
-  if (!legacy && options?.target) {
-    const target = options.target as { geometryKey?: string; productId?: string; variantId?: string };
+  if (!legacy && targetReq) {
+    const formattedKey = targetReq.productId && targetReq.variantId
+      ? `${targetReq.productId}:${targetReq.variantId}:${targetReq.mode ?? 'none'}:${targetReq.shape ?? 'none'}`
+      : null;
     const candidateKeys = [
-      target.geometryKey,
-      target.productId && target.variantId ? `${target.productId}:${target.variantId}` : null,
-      target.productId,
+      formattedKey,
+      targetReq.geometryKey,
+      targetReq.productId && targetReq.variantId ? `${targetReq.productId}:${targetReq.variantId}` : null,
+      targetReq.productId,
     ].filter(Boolean) as string[];
 
     for (const key of candidateKeys) {

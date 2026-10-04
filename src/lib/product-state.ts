@@ -1259,30 +1259,9 @@ export function transitionState(
   }
 
   case 'SET_TEMPLATE': {
-   const template = TEMPLATES[action.value];
-   if (!template) return state;
-   const nextElements: CanvasElement[] | undefined = template.elements
-    ? template.elements.map((el) => ({ ...el, data: el.data ? { ...el.data } : undefined }))
-    : state.elements;
    return {
     ...state,
     templateId: action.value,
-    text: template.text,
-    color: template.color,
-    backgroundColor: template.backgroundColor,
-    image: null,
-    elements: nextElements,
-    productOptions:
-     state.productId === 'wrapping'
-      ? normalizeWrappingOptions({
-       ...cloneOptions(state.productId),
-       ...(template.mode ? { mode: template.mode } : {}),
-       ...(template.productOptions[state.productId] || {}),
-      })
-      : {
-       ...cloneOptions(state.productId),
-       ...(template.productOptions[state.productId] || {}),
-      },
    };
   }
 

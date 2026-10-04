@@ -200,7 +200,7 @@
       "canonicalTarget": {
         "productId": "wrapping",
         "variantId": "a1",
-        "mode": null,
+        "mode": "pattern",
         "shape": null,
         "surfaces": [
           {
@@ -209,14 +209,14 @@
             "heightMm": 841
           }
         ],
-        "geometryKey": "wrapping:a1:mode:none:shape:none:surfaces:sheet-594x841"
+        "geometryKey": "wrapping:a1:mode:pattern:shape:none:surfaces:sheet-594x841"
       },
       "targets": [
         {
-          "targetKey": "wrapping:a1:none:none",
+          "targetKey": "wrapping:a1:pattern:none",
           "productId": "wrapping",
           "variantId": "a1",
-          "mode": null,
+          "mode": "pattern",
           "shape": null,
           "surfaces": [
             {
@@ -225,15 +225,15 @@
               "heightMm": 841
             }
           ],
-          "geometryKey": "wrapping:a1:mode:none:shape:none:surfaces:sheet-594x841",
+          "geometryKey": "wrapping:a1:mode:pattern:shape:none:surfaces:sheet-594x841",
           "isCanonical": true,
           "deterministicSuccessorId": "blank"
         },
         {
-          "targetKey": "wrapping:a2:none:none",
+          "targetKey": "wrapping:a2:pattern:none",
           "productId": "wrapping",
           "variantId": "a2",
-          "mode": null,
+          "mode": "pattern",
           "shape": null,
           "surfaces": [
             {
@@ -242,7 +242,7 @@
               "heightMm": 594
             }
           ],
-          "geometryKey": "wrapping:a2:mode:none:shape:none:surfaces:sheet-420x594",
+          "geometryKey": "wrapping:a2:mode:pattern:shape:none:surfaces:sheet-420x594",
           "isCanonical": false,
           "deterministicSuccessorId": "blank--wrapping--a2--none--none"
         },
@@ -318,11 +318,11 @@
           "deterministicSuccessorId": "blank--sticker--die-cut--none--none"
         },
         {
-          "targetKey": "sticker:fixed-shape:none:none",
+          "targetKey": "sticker:fixed-shape:none:circle",
           "productId": "sticker",
           "variantId": "fixed-shape",
           "mode": null,
-          "shape": null,
+          "shape": "circle",
           "surfaces": [
             {
               "id": "front",
@@ -330,7 +330,7 @@
               "heightMm": 50
             }
           ],
-          "geometryKey": "sticker:fixed-shape:mode:none:shape:none:surfaces:front-50x50",
+          "geometryKey": "sticker:fixed-shape:mode:none:shape:circle:surfaces:front-50x50",
           "isCanonical": false,
           "deterministicSuccessorId": "blank--sticker--fixed-shape--none--none"
         },
@@ -1613,11 +1613,11 @@
           "deterministicSuccessorId": "celebrate--sticker--die-cut--none--none"
         },
         {
-          "targetKey": "sticker:fixed-shape:none:none",
+          "targetKey": "sticker:fixed-shape:none:circle",
           "productId": "sticker",
           "variantId": "fixed-shape",
           "mode": null,
-          "shape": null,
+          "shape": "circle",
           "surfaces": [
             {
               "id": "front",
@@ -1625,7 +1625,7 @@
               "heightMm": 50
             }
           ],
-          "geometryKey": "sticker:fixed-shape:mode:none:shape:none:surfaces:front-50x50",
+          "geometryKey": "sticker:fixed-shape:mode:none:shape:circle:surfaces:front-50x50",
           "isCanonical": false,
           "deterministicSuccessorId": "celebrate--sticker--fixed-shape--none--none"
         },
@@ -1878,11 +1878,11 @@
           "deterministicSuccessorId": "minimal--sticker--die-cut--none--none"
         },
         {
-          "targetKey": "sticker:fixed-shape:none:none",
+          "targetKey": "sticker:fixed-shape:none:circle",
           "productId": "sticker",
           "variantId": "fixed-shape",
           "mode": null,
-          "shape": null,
+          "shape": "circle",
           "surfaces": [
             {
               "id": "front",
@@ -1890,7 +1890,7 @@
               "heightMm": 50
             }
           ],
-          "geometryKey": "sticker:fixed-shape:mode:none:shape:none:surfaces:front-50x50",
+          "geometryKey": "sticker:fixed-shape:mode:none:shape:circle:surfaces:front-50x50",
           "isCanonical": false,
           "deterministicSuccessorId": "minimal--sticker--fixed-shape--none--none"
         },
