@@ -203,9 +203,26 @@ set
     )
   ),
   metadata = case
-    when v.active = true and v.definition_key is not null then v.metadata - 'state44Blockers'
+    when v.active = true
+      and v.definition_key is not null
+      and exists (
+        select 1
+        from public.products p
+        join public.product_commercial_config_versions cv
+          on cv.id = p.current_commercial_config_version_id
+        join public.commercial_variant_rules r
+          on r.version_id = cv.id and r.variant_id = v.id
+        join public.commercial_pricing_tiers t on t.rule_id = r.id
+        where p.id = v.product_id
+          and cv.version_number = 1
+          and r.minimum_quantity = 1
+          and r.quantity_step = 1
+          and r.maximum_quantity is null
+          and t.minimum_quantity = 1
+          and t.unit_price = v.price
+      ) then coalesce(v.metadata, '{}'::jsonb) - 'state44Blockers'
     else jsonb_set(
-      v.metadata,
+      coalesce(v.metadata, '{}'::jsonb),
       '{state44Blockers}',
       '[{"code":"COMMERCIAL_CONFIG_INCOMPLETE","message":"Variant requires a validated State 44 commercial rule"}]'::jsonb,
       true
@@ -239,9 +256,9 @@ set
       and exists (
         select 1 from public.product_variants v
         where v.product_id = p.id and v.status = 'active'
-      ) then p.metadata - 'state44Blockers'
+      ) then coalesce(p.metadata, '{}'::jsonb) - 'state44Blockers'
     else jsonb_set(
-      p.metadata,
+      coalesce(p.metadata, '{}'::jsonb),
       '{state44Blockers}',
       '[{"code":"COMMERCIAL_CONFIG_INCOMPLETE","message":"Product requires a validated active commercial Variant rule"}]'::jsonb,
       true

@@ -150,10 +150,13 @@ describe('State 44 Catalog Backfill Specifications', () => {
       assert.match(migrationSql, /update public\.products\s+set current_commercial_config_version_id = v_version_id/);
     });
 
-    it('updates status and metadata with explicit blockers for non-qualifying rows', () => {
+    it('updates status and metadata with explicit blockers for non-qualifying rows using coalesce and exists checks', () => {
       assert.match(migrationSql, /state44Blockers/);
       assert.match(migrationSql, /COMMERCIAL_CONFIG_INCOMPLETE/);
       assert.match(migrationSql, /status = case\s+when/);
+      assert.match(migrationSql, /coalesce\(v\.metadata,\s*'\{\}'::jsonb\)/);
+      assert.match(migrationSql, /coalesce\(p\.metadata,\s*'\{\}'::jsonb\)/);
+      assert.match(migrationSql, /metadata = case[\s\S]*?when v\.active = true[\s\S]*?and exists \([\s\S]*?from public\.products p/);
     });
 
     it('preserves legacy orders without recomputing totals or changing snapshots', () => {
@@ -200,7 +203,7 @@ describe('State 44 Catalog Backfill Specifications', () => {
     it('contains active fixed-deposit product fixture with validated tiers', () => {
       assert.match(seedSql, /'fixture-active-deposit'/);
       assert.match(seedSql, /'fixture-deposit-var'/);
-      assert.match(seedSql, /'\{"kind": "fixed_deposit", "depositAmount": "50000"\}'::jsonb/);
+      assert.match(seedSql, /'\{"kind": "fixed_deposit", "depositAmount": 50000\}'::jsonb/);
       // Validated tiers: tier at 10 (15000) and tier at 50 (12000)
       assert.match(seedSql, /10,\s*15000/);
       assert.match(seedSql, /50,\s*12000/);

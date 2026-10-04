@@ -199,7 +199,7 @@ begin
     'fixture-active-deposit',
     1,
     'VND',
-    '{"kind": "fixed_deposit", "depositAmount": "50000"}'::jsonb,
+    '{"kind": "fixed_deposit", "depositAmount": 50000}'::jsonb,
     v_admin_id
   )
   on conflict (id) do nothing;
