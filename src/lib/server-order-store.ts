@@ -135,6 +135,7 @@ export class ServerOrderStore {
     const finalAmount = commercialSnapshot.amountDueNow;
     const payment: OrderPayment = {
       orderId,
+      purpose: commercialSnapshot.paymentPolicy.kind === 'fixed_deposit' ? 'checkout_deposit' : 'full_order_payment',
       provider: 'vietqr-demo',
       amount: finalAmount,
       currency: 'VND',
@@ -209,6 +210,10 @@ export class ServerOrderStore {
   reportPayment(id: string): PendingOrder | null {
     const order = this.orders.get(id);
     if (!order) return null;
+    const purpose = order.commercialSnapshot.paymentPolicy.kind === 'fixed_deposit' ? 'checkout_deposit' : 'full_order_payment';
+    if (order.payment.purpose !== purpose || order.status === 'cancelled') return null;
+    if (order.payment.status === 'paid' || order.payment.status === 'payment_reported') return structuredClone(order);
+    if (order.payment.status !== 'pending_payment') return null;
     order.paymentStatus = 'payment_reported';
     order.payment.status = 'payment_reported';
     order.payment.customerReportedAt = new Date().toISOString();
@@ -341,6 +346,7 @@ export function createServerOrderPreparationOptions(): PrepareOrderOptions {
         return {
           id: `payment-${randomUUID()}`,
           orderId: input.orderId,
+          purpose: input.purpose ?? 'full_order_payment',
           provider: input.provider,
           amount: input.amount,
           currency: input.currency ?? 'VND',

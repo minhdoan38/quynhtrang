@@ -1,6 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 
-import type { PaymentStatus } from '../order-types.ts';
+import type { PaymentPurpose, PaymentRequirementStatus } from '../order-types.ts';
 
 export interface PaymentRecord {
   id: string;
@@ -10,7 +10,8 @@ export interface PaymentRecord {
   currency: string;
   reference: string;
   qrPayload?: string | null;
-  status: PaymentStatus;
+  status: PaymentRequirementStatus;
+  purpose: PaymentPurpose;
   customerReportedAt?: string | null;
   confirmedAt?: string | null;
   confirmedBy?: string | null;
@@ -25,7 +26,16 @@ export interface CreatePaymentInput {
   currency?: string;
   reference: string;
   qrPayload?: string | null;
-  status?: PaymentStatus;
+  status?: PaymentRequirementStatus;
+  purpose?: PaymentPurpose;
+}
+
+export interface ConfirmPaymentRequirementInput {
+  orderId: string;
+  purpose?: PaymentPurpose;
+  paymentId?: string;
+  confirmedByUserId?: string;
+  confirmedAt?: string;
 }
 
 export class PaymentRepository {
@@ -44,6 +54,7 @@ export class PaymentRepository {
       reference: input.reference,
       qr_payload: input.qrPayload ?? null,
       status: input.status ?? 'pending_payment',
+      purpose: input.purpose ?? 'full_order_payment',
     };
 
     const { data, error } = await this.client
@@ -59,28 +70,34 @@ export class PaymentRepository {
     return this.mapRow(data);
   }
 
-  async getByOrderId(orderId: string): Promise<PaymentRecord | null> {
-    const { data, error } = await this.client
-      .from('order_payments')
-      .select('*')
-      .eq('order_id', orderId)
-      .maybeSingle();
-
-    if (error || !data) return null;
-    return this.mapRow(data);
+  async getByOrderId(orderId: string, purpose?: PaymentPurpose): Promise<PaymentRecord | null> {
+    let query = this.client.from('order_payments').select('*').eq('order_id', orderId);
+    if (purpose) {
+      query = query.eq('purpose', purpose);
+    }
+    const { data, error } = await query.maybeSingle();
+    if (error) throw new Error(`Failed to read payment: ${error.message}`);
+    return data ? this.mapRow(data) : null;
   }
 
-  async markCustomerReported(orderId: string, reportedAt: string = new Date().toISOString()): Promise<PaymentRecord> {
-    const { data, error } = await this.client
+  async markCustomerReported(
+    orderId: string,
+    reportedAt: string = new Date().toISOString(),
+    purpose?: PaymentPurpose
+  ): Promise<PaymentRecord> {
+    let query = this.client
       .from('order_payments')
       .update({
         status: 'payment_reported',
         customer_reported_at: reportedAt,
       })
-      .eq('order_id', orderId)
-      .select('*')
-      .single();
+      .eq('order_id', orderId);
 
+    if (purpose) {
+      query = query.eq('purpose', purpose);
+    }
+
+    const { data, error } = await query.select('*').single();
     if (error || !data) {
       throw new Error(`Failed to mark payment reported: ${error?.message ?? 'unknown'}`);
     }
@@ -93,29 +110,45 @@ export class PaymentRepository {
     if (orderError) {
       throw orderError;
     }
+
     return this.mapRow(data);
   }
 
-  async confirmPayment(orderId: string, confirmedByUserId?: string, confirmedAt: string = new Date().toISOString()): Promise<PaymentRecord> {
-    const { data, error } = await this.client
+  async confirmPayment(input: ConfirmPaymentRequirementInput): Promise<PaymentRecord> {
+    if (!input.orderId || (!input.purpose && !input.paymentId)) {
+      throw new Error('Payment confirmation requires an explicit purpose or payment ID');
+    }
+
+    const confirmedAt = input.confirmedAt ?? new Date().toISOString();
+    let query = this.client
       .from('order_payments')
       .update({
         status: 'paid',
         confirmed_at: confirmedAt,
-        confirmed_by: confirmedByUserId ?? null,
-      })
-      .eq('order_id', orderId)
-      .select('*')
-      .single();
+        confirmed_by: input.confirmedByUserId ?? null,
+      });
 
+    if (input.paymentId) {
+      query = query.eq('id', input.paymentId);
+    } else {
+      query = query.eq('order_id', input.orderId);
+      if (input.purpose) {
+        query = query.eq('purpose', input.purpose);
+      }
+    }
+
+    const { data, error } = await query.select('*').single();
     if (error || !data) {
       throw new Error(`Failed to confirm payment: ${error?.message ?? 'unknown'}`);
     }
 
+    const targetPurpose = input.purpose ?? (data.purpose as PaymentPurpose);
+    const resultingOrderStatus = targetPurpose === 'checkout_deposit' ? 'deposit_confirmed' : 'paid';
+
     const { error: orderError } = await this.client
       .from('orders')
-      .update({ payment_status: 'paid' })
-      .eq('id', orderId);
+      .update({ payment_status: resultingOrderStatus })
+      .eq('id', input.orderId);
 
     if (orderError) {
       throw orderError;
@@ -123,7 +156,6 @@ export class PaymentRepository {
 
     return this.mapRow(data);
   }
-
   private mapRow(row: unknown): PaymentRecord {
     const r = row as Record<string, unknown>;
     return {
@@ -134,7 +166,8 @@ export class PaymentRepository {
       currency: String(r.currency || 'VND'),
       reference: String(r.reference),
       qrPayload: (r.qr_payload as string | null) ?? null,
-      status: (r.status as PaymentStatus) ?? 'pending_payment',
+      status: r.status as PaymentRequirementStatus,
+      purpose: r.purpose as PaymentPurpose,
       customerReportedAt: (r.customer_reported_at as string | null) ?? null,
       confirmedAt: (r.confirmed_at as string | null) ?? null,
       confirmedBy: (r.confirmed_by as string | null) ?? null,

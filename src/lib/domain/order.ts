@@ -1,4 +1,4 @@
-import type { CustomerInfo, OrderPayment, PaymentStatus, PendingOrder } from '../order-types.ts';
+import type { CustomerInfo, OrderPayment, PaymentPurpose, PaymentStatus, PendingOrder } from '../order-types.ts';
 import type { PaymentPolicy } from './commercial-config.ts';
 export type { PaymentStatus } from '../order-types.ts';
 import type { ProductId } from '../product-state.ts';
@@ -115,6 +115,7 @@ export interface AdminOrderDetail {
   fulfillmentStatus: FulfillmentStatus;
   payment: {
     id: string;
+    purpose: PaymentPurpose;
     status: PaymentStatus;
     amount: number;
     currency: string;

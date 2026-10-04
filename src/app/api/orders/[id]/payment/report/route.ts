@@ -47,14 +47,27 @@ export async function POST(
         const orderEventRepo = new OrderEventRepository(client);
         const orderRepo = new OrderRepository(client);
 
-        await paymentRepo.markCustomerReported(id);
+        if (staff) {
+          order = await orderRepo.getById(id, { kind: 'staff', staff });
+        } else {
+          const tokens = getAllGuestTokensFromRequest(request, id);
+          for (const token of tokens) {
+            order = await orderRepo.getById(id, {
+              kind: 'guest',
+              tokenHash: hashGuestOrderAccessToken(token),
+            });
+            if (order) break;
+          }
+        }
+        const purpose = order?.payment.purpose
+          ?? serverOrderStore.getOrder(id)?.payment.purpose
+          ?? 'full_order_payment';
+        await paymentRepo.markCustomerReported(id, new Date().toISOString(), purpose);
         await orderEventRepo.append({
           orderId: id,
           eventType: 'PAYMENT_REPORTED',
           actorRole: 'customer',
-          payload: {
-            reportedAt: new Date().toISOString(),
-          },
+          payload: { purpose, reportedAt: new Date().toISOString() },
         });
 
         if (staff) {

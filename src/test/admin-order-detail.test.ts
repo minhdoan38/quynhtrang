@@ -14,6 +14,7 @@ function createMockDetail(overrides: Partial<AdminOrderDetail> = {}): AdminOrder
     fulfillmentStatus: 'unprocessed',
     payment: {
       id: 'pay-1',
+      purpose: 'full_order_payment',
       status: 'payment_reported',
       amount: 200000,
       currency: 'VND',
@@ -128,6 +129,7 @@ describe('AdminOrderDetail data contracts and permissions', () => {
       fulfillmentStatus: 'ready_for_production',
       payment: {
         id: 'pay-1',
+        purpose: 'full_order_payment',
         status: 'paid',
         amount: 200000,
         currency: 'VND',

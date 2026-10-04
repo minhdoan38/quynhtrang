@@ -21,6 +21,11 @@ test('Step 3 supports QR Payment and Order Confirmation under State 36', () => {
   assert.match(qrPanelSource, /Nội dung chuyển khoản/);
   assert.match(qrPanelSource, /Sao chép/);
   assert.match(qrPanelSource, /Không quét được trên điện thoại này\? Xem thông tin chuyển khoản/);
+  // State 44 purpose semantics: deposit vs full payment QR copy
+  assert.match(qrPanelSource, /Quét mã để thanh toán tiền cọc/);
+  assert.match(qrPanelSource, /Tiền cọc:/);
+  assert.match(qrPanelSource, /Tổng đơn:/);
+  assert.match(qrPanelSource, /Còn lại:/);
 
   // Integration into checkout page
   assert.match(checkoutSource, /PaymentQrPanel/);
@@ -38,6 +43,8 @@ test('Order Confirmation shows recorded headline and unverified status', () => {
   assert.match(confirmationPanelSource, /Đã ghi nhận đơn hàng/);
   assert.doesNotMatch(confirmationPanelSource, /Thanh toán thành công/);
   assert.match(confirmationPanelSource, /Chờ xác nhận/);
+  assert.match(confirmationPanelSource, /Chờ xác nhận cọc/);
+  assert.doesNotMatch(confirmationPanelSource, />Đã thanh toán<\/strong>/);
 });
 
 test('Confirmation allows reopening payment instructions for the same order', () => {

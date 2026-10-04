@@ -1,3 +1,4 @@
+import type { PaymentPurpose } from '../order-types.ts';
 import type { SupabaseClient } from '@supabase/supabase-js';
 
 import {
@@ -390,6 +391,7 @@ export class OrderRepository {
 
     const payment = {
       id: paymentRow ? String(paymentRow.id) : '',
+      purpose: (paymentRow?.purpose as PaymentPurpose) ?? 'full_order_payment',
       status: paymentStatus,
       amount: Number(paymentRow?.amount ?? data.total ?? 0),
       currency: String(paymentRow?.currency ?? data.currency ?? 'VND'),
@@ -403,7 +405,6 @@ export class OrderRepository {
         }
         : null,
     };
-
     const preflight = normalizePreflightSummary(designVersionRow?.preflight_snapshot);
     const thumbnailUrl = await resolveApprovedThumbnailUrl(
       this.client,

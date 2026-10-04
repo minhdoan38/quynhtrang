@@ -97,8 +97,8 @@ export function OrderConfirmationPanel({
     }
   };
 
+  const isDeposit = order.payment?.purpose === 'checkout_deposit' || order.commercialSnapshot.paymentPolicy.kind === 'fixed_deposit';
   const formattedAmount = formatCurrencyVND(order.payment?.amount || 0);
-
   return (
     <div ref={containerRef} className="space-y-4 max-w-md mx-auto w-full">
       {/* 1. Recorded Headline Card */}
@@ -125,16 +125,15 @@ export function OrderConfirmationPanel({
           </div>
         </div>
 
-        {/* Payment status badge: Neutral/calm waiting confirmation */}
         <div className="inline-flex items-center gap-1.5 rounded-full bg-[#FAF6EE] border border-[#F2DFA0] px-3 py-1 text-xs text-[#A86E22]">
           <Clock size={14} className="shrink-0" />
           <span>
-            Thanh toán: <strong>Chờ xác nhận</strong>
+            Thanh toán: <strong>{isDeposit ? 'Chờ xác nhận cọc' : 'Chờ xác nhận'}</strong>
           </span>
         </div>
 
         <p className="text-xs text-[#666A6D] leading-relaxed">
-          Bản thiết kế đã được bảo lưu an toàn. Chúng mình sẽ liên hệ và xử lý đơn sau khi thanh toán được xác nhận.
+          {isDeposit ? 'Đơn hàng đã ghi nhận tiền cọc cần xác nhận. Phần còn lại sẽ thanh toán theo thỏa thuận.' : 'Bản thiết kế đã được bảo lưu an toàn. Chúng mình sẽ liên hệ và xử lý đơn sau khi thanh toán được xác nhận.'}
         </p>
       </div>
 

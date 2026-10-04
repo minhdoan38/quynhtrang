@@ -1,6 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { StaffIdentity } from '../domain/order.ts';
-
+import type { PaymentPurpose } from '../order-types.ts';
 export type AdminOrderMutationErrorCode =
   | 'forbidden'
   | 'not_found'
@@ -21,7 +21,7 @@ export interface AdminOrderOperationDeps {
 
 export async function confirmOrderPayment(
   deps: AdminOrderOperationDeps,
-  input: { orderId: string; expectedState: 'pending_payment' | 'payment_reported' }
+  input: { orderId: string; expectedState: 'pending_payment' | 'payment_reported'; purpose?: PaymentPurpose; paymentId?: string }
 ): Promise<AdminOrderMutationResult> {
   if (deps.staff.role !== 'admin') {
     return {
@@ -35,16 +35,19 @@ export async function confirmOrderPayment(
     return {
       ok: false,
       code: 'validation_error',
-      message: 'Mã đơn hàng không hợp lệ.',
+      message: 'Thiếu yêu cầu thanh toán cần xác nhận.',
     };
   }
 
   try {
-    const { data, error } = await deps.supabase.rpc('confirm_order_payment', {
+    const rpcParams: Record<string, unknown> = {
       p_order_id: input.orderId,
       p_expected_state: input.expectedState,
-    });
+      ...(input.purpose ? { p_purpose: input.purpose } : {}),
+      ...(input.paymentId ? { p_payment_id: input.paymentId } : {}),
+    };
 
+    const { data, error } = await deps.supabase.rpc('confirm_order_payment', rpcParams);
     if (error) {
       return {
         ok: false,

@@ -15,10 +15,13 @@ import {
   type FulfillmentResult,
 } from '../../../../lib/services/admin-fulfillment-operations.ts';
 import { createServerSupabaseClient } from '../../../../lib/supabase/server.ts';
+import type { PaymentPurpose } from '../../../../lib/order-types.ts';
 
 export async function confirmPaymentAction(input: {
   orderId: string;
   expectedState: 'pending_payment' | 'payment_reported';
+  purpose: PaymentPurpose;
+  paymentId: string;
 }): Promise<AdminOrderMutationResult> {
   try {
     const staff = await requireCurrentStaff('admin');

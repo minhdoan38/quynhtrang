@@ -34,7 +34,8 @@ export class DemoVietQrProvider implements PaymentQrProvider {
 }
 
 function buildPaymentInstructions(order: PendingOrder, provider: string): PaymentInstructions {
-  const amount = order.payment?.amount ?? 0;
+  const amount = order.commercialSnapshot.amountDueNow;
+  const purpose = order.commercialSnapshot.paymentPolicy.kind === 'fixed_deposit' ? 'checkout_deposit' : 'full_order_payment';
   const paymentReference = order.payment?.paymentReference ?? order.id;
   const encodedAccountName = encodeURIComponent(DEFAULT_BANK_DETAILS.accountName);
   const encodedReference = encodeURIComponent(paymentReference);
@@ -48,6 +49,10 @@ function buildPaymentInstructions(order: PendingOrder, provider: string): Paymen
     accountNumber: DEFAULT_BANK_DETAILS.accountNumber,
     accountName: DEFAULT_BANK_DETAILS.accountName,
     amount,
+    purpose,
+    amountDueNow: amount,
+    totalAmount: order.commercialSnapshot.total,
+    remainingAmount: order.commercialSnapshot.remainingAmount,
     currency: 'VND',
     paymentReference,
     qrPayload,

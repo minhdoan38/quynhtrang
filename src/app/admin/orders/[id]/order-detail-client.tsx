@@ -121,6 +121,8 @@ export function OrderDetailClient({
     const result = await confirmPaymentAction({
       orderId: detail.id,
       expectedState,
+      purpose: detail.payment.purpose,
+      paymentId: detail.payment.id,
     });
 
     if (result.ok) {

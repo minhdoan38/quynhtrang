@@ -37,10 +37,10 @@ test('Order has server-owned price, payment reference, and pending_payment statu
   assert.ok(order.payment, 'Order has payment snapshot');
   assert.equal(order.payment.orderId, order.id);
   assert.equal(order.payment.status, 'pending_payment');
+  assert.equal(order.payment.purpose, 'full_order_payment');
   assert.equal(order.payment.currency, 'VND');
   assert.equal(order.payment.paymentReference, order.id);
   assert.equal(typeof order.payment.amount, 'number');
-  assert.ok(order.payment.amount > 0);
 });
 
 test('createOrder is idempotent when given the same idempotency key', () => {
@@ -76,6 +76,10 @@ test('payment instructions derive from server order and keep same orderId', asyn
   assert.equal(instructions.orderId, order.id);
   assert.equal(instructions.amount, order.payment.amount);
   assert.equal(instructions.paymentReference, order.id);
+  assert.equal(instructions.purpose, 'full_order_payment');
+  assert.equal(instructions.amountDueNow, order.payment.amount);
+  assert.equal(instructions.totalAmount, order.commercialSnapshot.total);
+  assert.equal(instructions.remainingAmount, 0);
   assert.ok(instructions.bankName, 'Has receiving bank');
   assert.ok(instructions.accountNumber, 'Has account number');
   assert.ok(instructions.accountName, 'Has account name');
@@ -149,10 +153,11 @@ test('payment route enforces guest authorization', async () => {
     { params: Promise.resolve({ id: order.id }) }
   );
   assert.equal(authRes.status, 200);
-  const body = (await authRes.json()) as { instructions: unknown; order: unknown };
+  const body = (await authRes.json()) as { instructions: { purpose: string; amountDueNow: number }; order: unknown; purpose: string };
   assert.ok(body.instructions);
+  assert.equal(body.instructions.purpose, 'full_order_payment');
+  assert.equal(body.purpose, 'full_order_payment');
 });
-
 test('payment report route enforces guest authorization and sets payment_reported', async () => {
   serverOrderStore.clear();
   const design = createInitialState('notebook');

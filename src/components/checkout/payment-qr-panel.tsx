@@ -119,20 +119,19 @@ export function PaymentQrPanel({
     }
   };
 
+  const isDeposit = order.payment?.purpose === 'checkout_deposit' || order.commercialSnapshot.paymentPolicy.kind === 'fixed_deposit';
   const amountDisplay = formatCurrencyVND(order.payment?.amount || 0);
+  const totalDisplay = formatCurrencyVND(order.commercialSnapshot.total);
+  const remainingDisplay = formatCurrencyVND(order.commercialSnapshot.remainingAmount);
   const paymentRef = order.payment?.paymentReference || order.id;
-
   return (
     <div ref={containerRef} className="space-y-4 max-w-md mx-auto w-full">
       {/* Main QR Card */}
       <div className="qr-animate-target rounded-2xl border border-[#DDD6CC] bg-white p-5 sm:p-6 shadow-xs text-center space-y-4">
         <div>
           <h2 className="font-serif text-lg sm:text-xl font-bold text-[#2E3338]">
-            Quét mã để thanh toán
+            {isDeposit ? 'Quét mã để thanh toán tiền cọc' : 'Quét mã để thanh toán'}
           </h2>
-          <p className="text-xs text-[#666A6D] mt-1">
-            Mã đơn: <strong className="text-[#315F86]">#{order.id}</strong>
-          </p>
         </div>
 
         {/* QR Code Container */}
@@ -176,9 +175,15 @@ export function PaymentQrPanel({
         {/* Amount & Reference Details (Outside QR for verification) */}
         <div className="space-y-2 pt-1 border-t border-[#ECE6DC]">
           <div className="flex items-center justify-between text-xs px-1">
-            <span className="text-[#666A6D]">Số tiền thanh toán:</span>
+            <span className="text-[#666A6D]">{isDeposit ? 'Tiền cọc:' : 'Số tiền thanh toán:'}</span>
             <span className="text-base font-bold text-[#315F86]">{amountDisplay}</span>
           </div>
+          {isDeposit && (
+            <>
+              <div className="flex items-center justify-between text-xs px-1"><span>Tổng đơn:</span><span>{totalDisplay}</span></div>
+              <div className="flex items-center justify-between text-xs px-1"><span>Còn lại:</span><span>{remainingDisplay}</span></div>
+            </>
+          )}
 
           <div className="flex items-center justify-between bg-[#F8F3E8] p-2.5 rounded-xl border border-[#ECE6DC]">
             <div className="text-left">
@@ -312,6 +317,6 @@ export function PaymentQrPanel({
           <span>Tôi muốn thanh toán sau</span>
         </button>
       </div>
-    </div>
+    </div >
   );
 }

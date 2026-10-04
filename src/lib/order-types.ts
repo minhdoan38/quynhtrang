@@ -1,20 +1,28 @@
 import type { DesignState, DesignSummary, ProductId } from './product-state';
 import type { PaymentPolicy } from './domain/commercial-config.ts';
 
-export type PaymentStatus =
+export type PaymentPurpose = 'checkout_deposit' | 'full_order_payment';
+
+export type PaymentRequirementStatus =
   | 'pending_payment'
   | 'payment_reported'
   | 'paid'
   | 'payment_failed'
   | 'cancelled';
 
+export type PaymentStatus =
+  | PaymentRequirementStatus
+  | 'deposit_confirmed';
+
 export interface OrderPayment {
+  id?: string;
   orderId: string;
   provider: string;
   amount: number;
   currency: string;
   paymentReference: string;
   status: PaymentStatus;
+  purpose?: PaymentPurpose;
   customerReportedAt?: string;
   confirmedAt?: string;
   confirmedBy?: string;
@@ -33,6 +41,10 @@ export interface PaymentInstructions {
   qrPayload: string;
   qrUrl?: string;
   expiresAt?: string;
+  purpose?: PaymentPurpose;
+  amountDueNow?: number;
+  totalAmount?: number;
+  remainingAmount?: number;
 }
 
 export interface CustomerInfo {

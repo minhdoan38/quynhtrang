@@ -325,6 +325,7 @@ export async function prepareOrderFromGuestCheckout(
     },
     payment: {
       orderId: '',
+      purpose: commercialSnapshot.paymentPolicy.kind === 'fixed_deposit' ? 'checkout_deposit' : 'full_order_payment',
       provider: 'vietqr-demo',
       amount: finalAmountDueNow,
       currency: 'VND',
@@ -354,6 +355,7 @@ export async function prepareOrderFromGuestCheckout(
   try {
     await repositories.paymentRepo.create({
       orderId: order.id,
+      purpose: persistedOrder.commercialSnapshot.paymentPolicy.kind === 'fixed_deposit' ? 'checkout_deposit' : 'full_order_payment',
       provider: order.payment.provider,
       amount: finalAmountDueNow,
       currency: 'VND',

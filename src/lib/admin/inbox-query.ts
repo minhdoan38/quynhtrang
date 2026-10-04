@@ -37,6 +37,7 @@ const VALID_VIEWS: Record<InboxQueryParams['view'], true> = {
 const VALID_PAYMENTS: Record<PaymentStatus, true> = {
   pending_payment: true,
   payment_reported: true,
+  deposit_confirmed: true,
   paid: true,
   payment_failed: true,
   cancelled: true,

@@ -223,5 +223,5 @@ test('payment repository rejects when order status synchronization fails', async
 
   const paymentRepo = new PaymentRepository(failingClient as never);
   await assert.rejects(() => paymentRepo.markCustomerReported('order-1'), /orders update rejected/);
-  await assert.rejects(() => paymentRepo.confirmPayment('order-1', 'staff-1'), /orders update rejected/);
+  await assert.rejects(() => paymentRepo.confirmPayment({ orderId: 'order-1', confirmedByUserId: 'staff-1', purpose: 'full_order_payment' }), /orders update rejected/);
 });

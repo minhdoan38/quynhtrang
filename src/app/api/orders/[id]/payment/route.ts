@@ -70,7 +70,14 @@ export async function GET(
     }
 
     const instructions = await getPaymentInstructions(order);
-    return NextResponse.json({ instructions, order });
+    return NextResponse.json({
+      instructions,
+      order,
+      purpose: instructions.purpose,
+      amountDueNow: instructions.amountDueNow,
+      totalAmount: instructions.totalAmount,
+      remainingAmount: instructions.remainingAmount,
+    });
   } catch (err) {
     console.error('Lỗi lấy hướng dẫn thanh toán:', err);
     return NextResponse.json(
