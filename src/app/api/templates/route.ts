@@ -53,7 +53,8 @@ export async function GET(
     const query = url.searchParams.get('query');
     const cursor = url.searchParams.get('cursor');
     const limitParam = url.searchParams.get('limit');
-    const limit = limitParam ? parseInt(limitParam, 10) : undefined;
+    const limitInt = limitParam ? parseInt(limitParam, 10) : NaN;
+    const limit = !Number.isNaN(limitInt) ? Math.max(1, Math.min(60, limitInt)) : undefined;
 
     const target: Partial<TemplateTargetInput> = {};
     if (productId) target.productId = productId;

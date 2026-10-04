@@ -32,9 +32,11 @@ export async function GET(
     const search = url.searchParams.get('search') ?? undefined;
     const pageParam = url.searchParams.get('page');
     const pageSizeParam = url.searchParams.get('pageSize');
-    const page = pageParam ? Math.max(1, parseInt(pageParam, 10)) : undefined;
-    const pageSize = pageSizeParam
-      ? Math.max(1, Math.min(100, parseInt(pageSizeParam, 10)))
+    const pageInt = pageParam ? parseInt(pageParam, 10) : NaN;
+    const page = !Number.isNaN(pageInt) ? Math.max(1, pageInt) : undefined;
+    const pageSizeInt = pageSizeParam ? parseInt(pageSizeParam, 10) : NaN;
+    const pageSize = !Number.isNaN(pageSizeInt)
+      ? Math.max(1, Math.min(100, pageSizeInt))
       : undefined;
 
     const result = await service.listAdminTemplates({

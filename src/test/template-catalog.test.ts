@@ -924,6 +924,53 @@ describe('State 43 Task 15: Available-only catalog and current-version preview',
     assert.equal(collectedIds.length, 5, 'Should collect exactly 5 items');
     assert.equal(new Set(collectedIds).size, 5, 'All collected items should be distinct (no repeat/loop)');
   });
+
+  it('browseAvailableTemplates fallback query escapes quotes and wraps search query containing commas in quotes', async () => {
+    let orClause = '';
+    const mockSupabase = {
+      from(table: string) {
+        assert.equal(table, 'templates');
+        const builder = {
+          select(_fields: string) {
+            return builder;
+          },
+          eq(_column: string, _value: unknown) {
+            return builder;
+          },
+          is(_column: string, _value: unknown) {
+            return builder;
+          },
+          not(_column: string, _op: string, _value: unknown) {
+            return builder;
+          },
+          or(clause: string) {
+            orClause = clause;
+            return builder;
+          },
+          order(_column: string, _opts?: unknown) {
+            return builder;
+          },
+          then(resolve: (val: { data: unknown[]; error: null }) => void) {
+            resolve({ data: [], error: null });
+          },
+        };
+        return builder;
+      },
+    } as unknown as SupabaseClient;
+
+    const repo = new TemplateRepository(mockSupabase);
+    await repo.browseAvailableTemplates({ query: 'hoa, "la"' });
+    assert.equal(orClause, 'name.ilike."%hoa, ""la""%",id.ilike."%hoa, ""la""%",slug.ilike."%hoa, ""la""%"');
+  });
+
+  it('GET /api/templates handles query with commas and non-numeric limit safely', async () => {
+    const harness = createLocalCatalogFixtureHarness();
+    const req = new Request('http://localhost:3000/api/templates?productId=card&variantId=horizontal&limit=invalid&query=hoa%2C%20la');
+    const res = await getTemplatesRoute(req, { repo: harness.templateRepo });
+    assert.equal(res.status, 200);
+    const body = (await res.json()) as { items: TemplateCard[] };
+    assert.ok(Array.isArray(body.items));
+  });
 });
 
 // ponytail: in-memory mock harness for catalog browse verification → skipped: testcontainers Docker postgres instance, add when CI container runner is provisioned.

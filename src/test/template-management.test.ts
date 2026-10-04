@@ -288,6 +288,38 @@ describe('State 43 Task 5: Template Management', () => {
       assert.equal(res.ok, false);
       assert.equal(res.code, 'REVISION_CONFLICT');
     });
+
+    it('listAdminTemplates escapes quotes and wraps search query containing commas in quotes', async () => {
+      let orClause = '';
+      const mockSupabase = {
+        from(table: string) {
+          assert.equal(table, 'templates');
+          const builder = {
+            select(_fields: string, _opts?: unknown) {
+              return builder;
+            },
+            eq(_column: string, _value: unknown) {
+              return builder;
+            },
+            or(clause: string) {
+              orClause = clause;
+              return builder;
+            },
+            order(_column: string, _opts?: unknown) {
+              return builder;
+            },
+            range(_from: number, _to: number) {
+              return Promise.resolve({ data: [], count: 0, error: null });
+            },
+          };
+          return builder;
+        },
+      } as unknown as SupabaseClient;
+
+      const repo = new TemplateRepository(mockSupabase);
+      await repo.listAdminTemplates({ search: 'hoa, "la"' });
+      assert.equal(orClause, 'name.ilike."%hoa, ""la""%",id.ilike."%hoa, ""la""%"');
+    });
   });
 
   describe('TemplateManagementService', () => {
@@ -973,6 +1005,28 @@ describe('State 43 Task 5: Template Management', () => {
 
       const res = await createTemplateRoute(crossOriginReq, undefined, deps);
       assert.equal(res.status, 403);
+    });
+
+    it('GET /api/admin/content/templates handles search with commas and defaults non-numeric page and pageSize safely', async () => {
+      let capturedQuery: unknown = null;
+      const deps = createMockDeps();
+      deps.service.listAdminTemplates = async (query) => {
+        capturedQuery = query;
+        return { items: [], total: 0 };
+      };
+
+      const req = new Request('http://localhost:3000/api/admin/content/templates?page=abc&pageSize=xyz&search=hoa%2C%20la');
+      const res = await listTemplatesRoute(req, undefined, deps);
+
+      assert.equal(res.status, 200);
+      assert.deepEqual(capturedQuery, {
+        status: undefined,
+        productId: undefined,
+        categoryId: undefined,
+        search: 'hoa, la',
+        page: undefined,
+        pageSize: undefined,
+      });
     });
   });
 });

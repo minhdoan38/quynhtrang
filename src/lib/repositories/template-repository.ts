@@ -475,8 +475,8 @@ export class TemplateRepository {
     if (query.productId) q = q.eq('product_id', query.productId);
     if (query.categoryId) q = q.eq('category_id', query.categoryId);
     if (query.search && query.search.trim()) {
-      const term = query.search.trim();
-      q = q.or(`name.ilike.%${term}%,id.ilike.%${term}%`);
+      const term = query.search.trim().replace(/"/g, '""');
+      q = q.or(`name.ilike."%${term}%",id.ilike."%${term}%"`);
     }
 
     const { data, count, error } = await q
@@ -1622,8 +1622,8 @@ export class TemplateRepository {
       query = query.eq('category_id', options.categoryId);
     }
     if (options.query && options.query.trim()) {
-      const q = options.query.trim();
-      query = query.or(`name.ilike.%${q}%,id.ilike.%${q}%,slug.ilike.%${q}%`);
+      const q = options.query.trim().replace(/"/g, '""');
+      query = query.or(`name.ilike."%${q}%",id.ilike."%${q}%",slug.ilike."%${q}%"`);
     }
 
     query = query.order('sort_order', { ascending: true }).order('id', { ascending: true });
