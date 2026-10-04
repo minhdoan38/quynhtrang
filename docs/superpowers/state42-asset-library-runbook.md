@@ -63,7 +63,7 @@ Hệ thống quản lý tài nguyên thiết kế (Sticker và Phông chữ) ho�
 | Chạy kiểm định in ấn (Validation Probe) | Không | Có | Có |
 | Xuất bản sticker / phông chữ (`publish`) | Không | Có | Có |
 | Lưu trữ sticker / phông chữ (`archive`) | Không | Có | Có |
-| **Xóa vĩnh viễn bản nháp chưa từng xuất bản** | **Không** | **Không** | **Có** |
+| **Xóa vĩnh viễn bản nháp chưa từng xuất bản** | **Không** | **Không** | **Có** (Chặn nếu có tham chiếu trong mẫu thiết kế State 43 `REFERENCED_DRAFT`) |
 | Thao tác sản xuất đơn hàng / Duyệt file in | Không | Không | Có (riêng biệt) |
 
 ---
@@ -121,7 +121,7 @@ Hệ thống quản lý tài nguyên thiết kế (Sticker và Phông chữ) ho�
      - Nhấn **"Kiểm định in"** để kiểm tra tính tương thích.
      - Nhấn **"Xuất bản"** khi sticker đã đạt yêu cầu để đưa vào thư viện cho khách dùng.
      - Nhấn **"Lưu trữ"** (nhập lý do từ 3–500 ký tự) nếu muốn ngừng cung cấp cho khách mới.
-     - Quản trị viên (Admin) có thể nhấn **"Xóa nháp"** với các sticker nháp chưa từng xuất bản.
+    - Quản trị viên (Admin) có thể nhấn **"Xóa nháp"** với các sticker nháp chưa từng xuất bản (Lưu ý: Hệ thống tự động từ chối bằng lỗi `REFERENCED_DRAFT` nếu sticker đang được dùng trong bản nháp mẫu `template_drafts` hoặc phiên bản mẫu `template_version_dependencies` của State 43).
 
 2. **Quản lý Phông chữ:**
    - Mở giao diện: `/admin/content/fonts`.

@@ -118,13 +118,23 @@ test('getPublishedProducts falls back to static catalog products with variants a
   }
 });
 
-test('getPublishedTemplates returns published templates and supports productId filtering with offline fallback', async () => {
-  const allTemplates = await getPublishedTemplates();
-  assert.ok(allTemplates.length >= 10);
+test('getPublishedTemplates returns published templates and supports productId filtering', async () => {
+  const unconfigured = await getPublishedTemplates();
+  assert.deepEqual(unconfigured, []);
 
-  const cardTemplates = await getPublishedTemplates('card');
-  assert.ok(cardTemplates.length > 0);
-  assert.ok(cardTemplates.every((t) => !t.productId || t.productId === 'card'));
+  const mockRepo = {
+    listTemplates: async (productId?: string) => {
+      const all = [
+        { id: 'card-1', productId: 'card' as const, slug: 'card-1', name: 'Card 1', category: 'minimal' },
+        { id: 'wrap-1', productId: 'wrapping' as const, slug: 'wrap-1', name: 'Wrap 1', category: 'minimal' },
+      ];
+      if (!productId) return all;
+      return all.filter((t) => t.productId === productId);
+    },
+  };
+  const cardTemplates = await getPublishedTemplates('card', mockRepo as never);
+  assert.equal(cardTemplates.length, 1);
+  assert.equal(cardTemplates[0].id, 'card-1');
 });
 
 test('getPublishedTemplates throws error when configured repository fails without falling back to static templates', async () => {

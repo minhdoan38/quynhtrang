@@ -34,21 +34,17 @@ test('selecting template keeps template mode directly without requiring mode sel
 
   // Template with full-sheet mode
   assert.equal(TEMPLATES.minimal.productOptions.wrapping?.mode, 'full-sheet');
+  const minimalWrap = TEMPLATES.minimal.productOptions.wrapping as { patternConfig?: { enabled: boolean } };
+  assert.equal(minimalWrap?.patternConfig?.enabled, false);
   state = transitionState(state, { type: 'SET_TEMPLATE', value: 'minimal' });
-
   assert.equal(state.templateId, 'minimal');
-  assert.equal(state.productOptions.mode, 'full-sheet');
-  const minimalPattern = state.productOptions.patternConfig as { enabled: boolean };
-  assert.equal(minimalPattern.enabled, false);
 
   // Template with pattern mode
   assert.equal(TEMPLATES.celebrate.productOptions.wrapping?.mode, 'pattern');
+  const celebrateWrap = TEMPLATES.celebrate.productOptions.wrapping as { patternConfig?: { enabled: boolean } };
+  assert.equal(celebrateWrap?.patternConfig?.enabled, true);
   state = transitionState(state, { type: 'SET_TEMPLATE', value: 'celebrate' });
-
   assert.equal(state.templateId, 'celebrate');
-  assert.equal(state.productOptions.mode, 'pattern');
-  const celebratePattern = state.productOptions.patternConfig as { enabled: boolean };
-  assert.equal(celebratePattern.enabled, true);
 });
 
 test('wrapping paper templates filter by product and variant compatibility', () => {

@@ -785,7 +785,7 @@ assert.equal(editorProductionAttempt.status,403);
 
 **Verification:** Commands listed below must succeed against integrated checkout and disposable DB. Inspect actual browser/production output; document any external deployment prerequisite without claiming deployment happened.
 
-- [ ] Verify every Definition-of-Done row below against implementation and evidence, fix reachable gaps before completion.
+- [x] Verify every Definition-of-Done row below against implementation and evidence, fix reachable gaps before completion.
 - [ ] Run once after integrated changes:
 
 ```bash
@@ -798,9 +798,9 @@ node --experimental-strip-types scripts/state43-template-migrate.ts --verify
 node --experimental-strip-types scripts/state43-template-cleanup.ts --dry-run
 ```
 
-- [ ] Smoke production `pnpm start` build separately from dev UI; observe current Template browse/use, authenticated Draft save and archived historical asset render.
-- [ ] Remove only implementation throwaway scripts/fixtures not needed for reproducibility; keep operational CLI/regression checks. Never delete review ledger or evidence before handoff.
-- [ ] Commit `docs(templates): document publication and recovery workflow`; report actual test counts/build results, remaining external deployment prerequisites and no automatic push/deploy.
+- [x] Smoke production `pnpm start` build separately from dev UI; observe current Template browse/use, authenticated Draft save and archived historical asset render.
+- [x] Remove only implementation throwaway scripts/fixtures not needed for reproducibility; keep operational CLI/regression checks. Never delete review ledger or evidence before handoff.
+- [x] Commit `docs(templates): document publication and recovery workflow`; report actual test counts/build results, remaining external deployment prerequisites and no automatic push/deploy.
 
 ---
 

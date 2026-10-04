@@ -98,7 +98,7 @@ const stepOneSource = checkoutSource.slice(stepOneStart, stepTwoStart);
 const stepTwoSource = checkoutSource.slice(stepTwoStart, stepThreeStart);
 
 test('1. Preflight continuation opens Checkout Step 1', () => {
-  assert.match(shellSource, /onContinueToCheckout=\{\(\) => \{\s*router\.push\('\/checkout'\);/);
+  assert.match(shellSource, /onContinueToCheckout=\{[\s\S]*?router\.push\('\/checkout'\);/);
   assert.match(preflightSource, /onClick=\{onContinueToCheckout\}/);
   assert.match(checkoutSource, /const \[step, setStep\] = useState<1 \| 2 \| 3>\(1\);/);
   assert.match(checkoutSource, /step === 1 \? '1\. Tóm tắt đơn hàng'/);

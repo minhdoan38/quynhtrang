@@ -149,6 +149,63 @@ export async function runAdminSmoke(options: SmokeOptions = {}) {
           }),
         });
       });
+      await guestContext.route('**/api/templates/tpl-smoke-guest/use', async (route) => {
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({
+            kind: 'guest',
+            payload: {
+              versionId: 'ver-smoke-guest-1',
+              templateId: 'tpl-smoke-guest',
+              version: 1,
+              documentSchemaVersion: 1,
+              document: {
+                productId: 'wrapping',
+                variantId: 'default',
+                templateId: 'tpl-smoke-guest',
+                text: 'Mẫu Smoke Guest',
+                color: '#2E3338',
+                backgroundColor: '#FFFDF8',
+                quantity: 1,
+                productOptions: { mode: 'pattern' },
+                elements: [
+                  {
+                    id: 'title',
+                    type: 'text',
+                    x: 20,
+                    y: 20,
+                    width: 100,
+                    height: 20,
+                    customerLocked: true,
+                    data: { text: 'Tiêu đề khóa' },
+                  },
+                  {
+                    id: 'body',
+                    type: 'text',
+                    x: 20,
+                    y: 50,
+                    width: 100,
+                    height: 20,
+                    customerLocked: false,
+                    data: { text: 'Nội dung sửa được' },
+                  },
+                ],
+              },
+              target: {
+                productId: 'wrapping',
+                variantId: 'default',
+                mode: 'pattern',
+                shape: null,
+                geometryKey: 'wrapping:default:pattern',
+                surfaces: [{ id: 'sheet', widthMm: 500, heightMm: 700 }],
+              },
+              dependencies: [],
+            },
+            useReceipt: 'smoke-guest-use-receipt',
+          }),
+        });
+      });
 
       // 1. Guest navigates to template URL: ?template=tpl-smoke-guest
       await guestPage.goto(`${baseUrl}/?template=tpl-smoke-guest`);

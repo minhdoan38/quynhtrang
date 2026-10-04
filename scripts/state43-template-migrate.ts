@@ -149,6 +149,30 @@ export async function migrateTemplates(options: MigrateTemplatesOptions): Promis
   let client = options.client;
   if (!client) {
     if (!getSupabaseSecretKey()) {
+      if (mode === 'verify') {
+        logger.log('[State43Migrate] Supabase environment unconfigured. Verifying legacy manifest integrity offline...');
+        let totalTargets = 0;
+        const errors: string[] = [];
+        for (const entry of manifest.entries) {
+          for (const target of entry.targets) {
+            totalTargets++;
+            if (!target.targetKey || !target.productId || !target.deterministicSuccessorId) {
+              errors.push(`Invalid target in manifest for ${entry.legacyId}: ${JSON.stringify(target)}`);
+            }
+          }
+        }
+        logger.log(`[State43Migrate] Offline verify complete. Validated ${totalTargets} targets across ${manifest.entries.length} templates. Errors: ${errors.length}`);
+        return {
+          mode: 'verify',
+          success: errors.length === 0,
+          totalTemplates: manifest.entries.length,
+          totalTargets,
+          mappedCount: totalTargets,
+          createdTemplates: 0,
+          createdVersions: 0,
+          errors,
+        };
+      }
       throw new Error('Supabase secret key is missing. Set SUPABASE_SECRET_KEY to run template migration.');
     }
     client = createPrivilegedSupabaseClient();

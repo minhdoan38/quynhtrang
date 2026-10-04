@@ -235,7 +235,7 @@ test('9. Warnings allow continuation while blocking errors disable continuation'
 });
 
 test('10. Continuing from Preflight navigates to Checkout', () => {
-  assert.match(shellSource, /onContinueToCheckout=\{\(\) => \{\s*router\.push\('\/checkout'\);/);
+  assert.match(shellSource, /onContinueToCheckout=\{[\s\S]*?router\.push\('\/checkout'\);/);
   assert.match(preflightSource, /onClick=\{onContinueToCheckout\}/);
   assert.match(preflightSource, /<span>Tiếp tục đặt in<\/span>/);
   assert.match(checkoutSource, /export default function CheckoutPage/);

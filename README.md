@@ -31,7 +31,7 @@ pnpm build
 Chi tiết về biến môi trường, thứ tự triển khai SQL, phân quyền tài khoản quản trị viên và cơ chế lưu trữ được tài liệu hóa tại:
 [State 37 Supabase Runbook](docs/superpowers/state37-supabase-runbook.md).
 
-### Supabase Migrations & Testing (State 37, 38, 39, 40, 41 & 42)
+### Supabase Migrations & Testing (State 37, 38, 39, 40, 41, 42 & 43)
 ```sh
 # Triển khai migrations
 psql "$SUPABASE_DB_URL" -v ON_ERROR_STOP=1 -f supabase/migrations/0001_state37_core.sql
@@ -41,18 +41,28 @@ psql "$SUPABASE_DB_URL" -v ON_ERROR_STOP=1 -f supabase/migrations/0004_state39_d
 psql "$SUPABASE_DB_URL" -v ON_ERROR_STOP=1 -f supabase/migrations/0005_state40_fulfillment_operations.sql
 psql "$SUPABASE_DB_URL" -v ON_ERROR_STOP=1 -f supabase/migrations/0006_state41_account_migration.sql
 psql "$SUPABASE_DB_URL" -v ON_ERROR_STOP=1 -f supabase/migrations/0007_state42_asset_library.sql
+psql "$SUPABASE_DB_URL" -v ON_ERROR_STOP=1 -f supabase/migrations/0008_state43_template_management.sql
+psql "$SUPABASE_DB_URL" -v ON_ERROR_STOP=1 -f supabase/migrations/0009_state43_template_catalog_cutover.sql
 # Nạp dữ liệu seed
 psql "$SUPABASE_DB_URL" -v ON_ERROR_STOP=1 -f supabase/seed.sql
 psql "$SUPABASE_DB_URL" -v ON_ERROR_STOP=1 -f supabase/seed_state39.sql
 psql "$SUPABASE_DB_URL" -v ON_ERROR_STOP=1 -f supabase/seed_state40.sql
 
-# Chạy kiểm thử RLS, atomic operations, immutability, fulfillment & account migration
+# Chạy kiểm thử RLS, atomic operations, immutability, fulfillment, account migration & template management
 psql "$SUPABASE_DB_URL" -v ON_ERROR_STOP=1 -f supabase/tests/state37_rls.sql
 psql "$SUPABASE_DB_URL" -v ON_ERROR_STOP=1 -f supabase/tests/state38_order_operations.sql
 psql "$SUPABASE_DB_URL" -v ON_ERROR_STOP=1 -f supabase/tests/state39_design_revisions.sql
 psql "$SUPABASE_DB_URL" -v ON_ERROR_STOP=1 -f supabase/tests/state40_fulfillment_operations.sql
 psql "$SUPABASE_DB_URL" -v ON_ERROR_STOP=1 -f supabase/tests/state41_account_migration.sql
 psql "$SUPABASE_DB_URL" -v ON_ERROR_STOP=1 -f supabase/tests/state42_asset_library.sql
+psql "$SUPABASE_DB_URL" -v ON_ERROR_STOP=1 -f supabase/tests/state43_template_management.sql
+
+# Vận hành tác vụ nền & công cụ kiểm tra State 43 (Template Management & Publishing)
+node --experimental-strip-types scripts/state43-template-smoke.ts --scenario all --base-url http://localhost:3000 --artifacts-dir .superpowers/state43-evidence
+node --experimental-strip-types scripts/state43-template-migrate.ts --inventory
+node --experimental-strip-types scripts/state43-template-migrate.ts --verify
+node --experimental-strip-types scripts/state43-template-cleanup.ts --dry-run
+
 # Vận hành tác vụ nền & công cụ kiểm tra State 42
 node --experimental-strip-types scripts/state42-library-smoke.ts
 node --experimental-strip-types scripts/state42-library-migrate.ts --dry-run
@@ -66,6 +76,10 @@ node --experimental-strip-types scripts/state39-asset-gc.ts --dry-run
 ### State 42 Asset Library Runbook
 Chi tiết về vòng đời tài nguyên (draft/published/archived), bảo mật lưu trữ riêng tư, quy trình kiểm định in ấn và vận hành thư viện nội dung:
 [State 42 Asset Library Runbook](docs/superpowers/state42-asset-library-runbook.md).
+
+### State 43 Admin Template Management Runbook
+Chi tiết về mô hình phân tầng Template/Draft/Version, khóa thành phần (customerLocked), trường giữ chỗ (placeholders), môi trường thử nghiệm cách ly (Customer Preview sandbox), quy trình xuất bản nguyên tử (atomic publish), độc lập dự án khách hàng và quy trình khắc phục sự cố:
+[State 43 Template Management Runbook](docs/superpowers/state43-template-management-runbook.md).
 
 Mở <http://localhost:3000/> trên trình duyệt.
 
