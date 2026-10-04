@@ -9,7 +9,9 @@ import {
   getPublishedProducts,
   getPublishedTemplates,
   ALL_PRODUCT_SLUGS,
+  CATALOG_PRODUCTS,
 } from '../lib/product-catalog.ts';
+import { resolveProductDefinition } from '../lib/product-definition-registry.ts';
 import { getCompatibleTemplates } from '../lib/product-state.ts';
 
 test('resolves canonical and alternate slugs to ProductId', () => {
@@ -147,4 +149,17 @@ test('getPublishedTemplates throws error when configured repository fails withou
     () => getPublishedTemplates('card', failingRepo as never),
     /db failure/,
   );
+});
+
+test('every catalog product variant maps to a code-owned product definition', () => {
+  for (const catalogProduct of Object.values(CATALOG_PRODUCTS)) {
+    for (const variant of catalogProduct.variants) {
+      const definition = resolveProductDefinition(catalogProduct.id, variant.id);
+      assert.ok(definition, `Missing definition for ${catalogProduct.id}:${variant.id}`);
+      assert.equal(definition.definitionKey, `${catalogProduct.id}:${variant.id}`);
+      assert.equal(definition.productId, catalogProduct.id);
+      assert.equal(definition.variantId, variant.id);
+      assert.equal(definition.familyLabel, catalogProduct.name);
+    }
+  }
 });

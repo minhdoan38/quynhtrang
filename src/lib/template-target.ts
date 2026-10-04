@@ -463,8 +463,8 @@ export function getTemplateAvailability(
   };
 }
 
-export function listAllSupportedTargetKeys(): string[] {
-  const targets: TemplateTarget[] = [
+export function listAllSupportedTargets(): TemplateTarget[] {
+  return [
     createTemplateTarget({ productId: 'card', variantId: 'horizontal', mode: null, shape: null }),
     createTemplateTarget({ productId: 'card', variantId: 'vertical', mode: null, shape: null }),
     createTemplateTarget({ productId: 'wrapping', variantId: 'a1', mode: 'pattern', shape: null }),
@@ -480,6 +480,14 @@ export function listAllSupportedTargetKeys(): string[] {
     createTemplateTarget({ productId: 'sticker', variantId: 'fixed-shape', mode: null, shape: 'oval' }),
     createTemplateTarget({ productId: 'sticker', variantId: 'fixed-shape', mode: null, shape: 'rounded-rectangle' }),
   ];
+}
 
-  return targets.map((t) => t.geometryKey);
+export function listSupportedTargetKeysFor(productId: string, variantId: string): string[] {
+  return listAllSupportedTargets()
+    .filter((t) => t.productId === productId && t.variantId === variantId)
+    .map((t) => t.geometryKey);
+}
+
+export function listAllSupportedTargetKeys(): string[] {
+  return listAllSupportedTargets().map((t) => t.geometryKey);
 }

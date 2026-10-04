@@ -19,6 +19,7 @@ import {
   type CanvasElement,
   type TextElementData,
 } from '../lib/product-state.ts';
+import { resolveProductDefinition } from '../lib/product-definition-registry.ts';
 
 test('creates the default wrapping-paper design', () => {
   const state: DesignState = createInitialState();
@@ -612,3 +613,15 @@ function stateWithTwoTextElements(): DesignState {
   const second = createTextElement({ id: 'text-2', preset: 'body', text: 'Hai' });
   return { ...createInitialState('card'), text: 'Một', elements: [first, second] };
 }
+
+test('every static product and variant maps to a code-owned product definition', () => {
+  for (const [productId, product] of Object.entries(PRODUCTS)) {
+    for (const variant of product.variants) {
+      const definition = resolveProductDefinition(productId, variant.id);
+      assert.ok(definition, `Missing definition for ${productId}:${variant.id}`);
+      assert.equal(definition.definitionKey, `${productId}:${variant.id}`);
+      assert.equal(definition.productId, productId);
+      assert.equal(definition.variantId, variant.id);
+    }
+  }
+});
