@@ -657,6 +657,25 @@ export function CustomizerShell({ context, initialSearchParams }: CustomizerShel
         saveRecentProject(state, currentProjectId ?? undefined);
       }
 
+      if (templateId === 'blank') {
+        const prod = (state.productId && state.productId in PRODUCTS) ? state.productId : 'wrapping';
+        let initial = createInitialState(prod);
+        if (state.variantId) {
+          initial = transitionState(initial, { type: 'SET_VARIANT', value: state.variantId });
+        }
+        initial = transitionState(initial, { type: 'SET_TEMPLATE', value: 'blank' });
+        const reqId = crypto.randomUUID();
+        const newProjId = `proj_${Date.now()}_${reqId.slice(0, 8)}`;
+        if (!context || capabilities.allowLocalStorage) {
+          saveRecentProject(initial, newProjId);
+          setRecentProjects(getRecentProjects());
+          setCurrentProjectId(newProjId);
+        }
+        resetHistory(initial);
+        setView('editor');
+        showToast('Đã chuyển về mẫu trống.');
+        return;
+      }
       try {
         const requestId = crypto.randomUUID();
         let expectedVersionId = versionId;
@@ -2528,10 +2547,10 @@ export function CustomizerShell({ context, initialSearchParams }: CustomizerShel
         fontFamily={currentFontFamily}
         textAlign={currentTextAlign}
         onSelectTemplate={(key) => {
-          executeAction(
-            { type: 'SET_TEMPLATE', value: key },
-            { type: 'apply-template', label: 'Áp dụng mẫu', affectedIds: [] }
-          );
+          void handleApplyTemplate(key);
+        }}
+        onApplyTemplate={(key: string, versionId?: string | null) => {
+          void handleApplyTemplate(key, versionId);
         }}
         onOpenTemplateBrowser={() => {
           setTemplateReturnView('editor');

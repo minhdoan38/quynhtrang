@@ -5,12 +5,14 @@ import { Button } from '@/components/ui/button';
 
 interface TemplateChooserProps {
   templateId: string | null;
-  onSelectTemplate: (id: string) => void;
+  onApplyTemplate: (templateId: string, versionId?: string | null) => void;
+  onSelectTemplate?: (id: string) => void;
   onOpenTemplateBrowser?: () => void;
 }
 
 export function TemplateChooser({
   templateId,
+  onApplyTemplate,
   onSelectTemplate,
   onOpenTemplateBrowser,
 }: TemplateChooserProps) {
@@ -42,7 +44,13 @@ export function TemplateChooser({
           size="sm"
           data-action="select-template"
           data-value="blank"
-          onClick={() => onSelectTemplate('blank')}
+          onClick={() => {
+            if (onApplyTemplate) {
+              onApplyTemplate('blank');
+            } else if (onSelectTemplate) {
+              onSelectTemplate('blank');
+            }
+          }}
           className="text-xs font-medium"
         >
           Mẫu trống

@@ -1259,9 +1259,18 @@ export function transitionState(
   }
 
   case 'SET_TEMPLATE': {
+   const isBlank = !action.value || action.value === 'blank';
    return {
     ...state,
     templateId: action.value,
+    sourceTemplate: isBlank
+     ? undefined
+     : state.sourceTemplate?.templateId === action.value
+      ? state.sourceTemplate
+      : {
+       templateId: action.value,
+       templateVersionId: state.sourceTemplate?.templateVersionId ?? '',
+      },
    };
   }
 

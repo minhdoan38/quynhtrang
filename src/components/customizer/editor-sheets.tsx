@@ -25,7 +25,8 @@ import {
   CheckSquare,
   Shield,
 } from 'lucide-react';
-import { TEMPLATES, type ProductId, type CanvasElement, type CardSurface } from '@/lib/product-state';
+import { type ProductId, type CanvasElement, type CardSurface } from '@/lib/product-state';
+import { TemplateChooser } from './template-chooser';
 import { AddContentSheet } from './add-content-sheet';
 import { ImageSourceChooser } from './image-source-chooser';
 import { LayersSheetContent } from './layers-sheet-content';
@@ -92,6 +93,7 @@ interface EditorSheetsProps {
   fontFamily: string;
   textAlign?: 'left' | 'center' | 'right';
   onSelectTemplate: (tplId: string) => void;
+  onApplyTemplate?: (templateId: string, versionId?: string | null) => void;
   onOpenTemplateBrowser: () => void;
   onAddText: (preset?: TextStylePreset) => void;
   onUploadImageClick: (source?: ImageSourceType, context?: ImageSourceContext) => void;
@@ -181,6 +183,7 @@ export function EditorSheets({
   fontFamily,
   textAlign = 'center',
   onSelectTemplate,
+  onApplyTemplate,
   onOpenTemplateBrowser,
   onAddText,
   onUploadImageClick,
@@ -326,40 +329,21 @@ export function EditorSheets({
                 Chọn mẫu thiết kế
               </DrawerTitle>
             </DrawerHeader>
-            <div className="grid grid-cols-3 gap-2.5 pt-1">
-              {['blank', 'minimal', 'celebrate'].map((key) => {
-                const tpl = TEMPLATES[key];
-                if (!tpl) return null;
-                const isSelected = templateId === key;
-                return (
-                  <button
-                    key={key}
-                    type="button"
-                    onClick={() => {
-                      onSelectTemplate(key);
-                      onClose();
-                    }}
-                    className={`flex flex-col items-center justify-center p-3 rounded-xl border text-center transition-all ${isSelected
-                      ? 'border-[#315F86] bg-[#DCEBF4]/40 font-semibold'
-                      : 'border-[#ECE6DC] bg-white hover:bg-[#F8F3E8]'
-                      }`}
-                  >
-                    <span className="text-xs">{tpl.name}</span>
-                  </button>
-                );
-              })}
-            </div>
-            <button
-              type="button"
-              onClick={() => {
+            <TemplateChooser
+              templateId={templateId}
+              onApplyTemplate={(id, versionId) => {
+                if (onApplyTemplate) {
+                  onApplyTemplate(id, versionId);
+                } else {
+                  onSelectTemplate(id);
+                }
+                onClose();
+              }}
+              onOpenTemplateBrowser={() => {
                 onClose();
                 onOpenTemplateBrowser();
               }}
-              className="w-full flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl border border-[#315F86] text-[#315F86] bg-white hover:bg-[#DCEBF4]/30 text-xs font-semibold transition-all"
-            >
-              <Sparkles className="w-4 h-4" />
-              <span>Duyệt tất cả mẫu có sẵn</span>
-            </button>
+            />
           </div>
         )}
 

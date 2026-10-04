@@ -24,19 +24,14 @@ begin
   end if;
 
   -- 1.2 If legacy catalog rows exist, verify full legacy mapping in template_legacy_targets
-  select count(*) into v_unmapped_count
+  select count(distinct t.id) into v_unmapped_count
   from public.templates t
-  where t.id in (
-    'blank', 'minimal', 'celebrate', 'card-h-birthday', 'card-h-cute',
-    'card-h-love', 'card-thanks', 'card-v-floral', 'wrapping-a1-cute',
-    'wrapping-a1-floral', 'wrapping-a2-minimal', 'wrapping-birthday-balloons',
-    'sticker-diecut-love', 'sticker-cute-pack', 'sticker-cozy-coffee',
-    'notebook-floral', 'notebook-minimal'
-  )
-  and not exists (
-    select 1 from public.template_legacy_targets tlt
-    where tlt.legacy_id = t.id
-  );
+  join public.template_versions tv on tv.template_id = t.id
+  where (tv.document_schema_version = 0 or tv.document_schema_version is null)
+    and not exists (
+      select 1 from public.template_legacy_targets tlt
+      where tlt.legacy_id = t.id
+    );
 
   if v_unmapped_count > 0 then
     raise exception 'Migration 0009 verification gate failed: % legacy templates lack entries in template_legacy_targets', v_unmapped_count;
@@ -58,11 +53,15 @@ alter table public.templates add constraint templates_active_target_check
     )
   );
 
--- 4. Revoke raw legacy public SELECT policies
+-- 4. Retain read policy for published templates on anon and authenticated; protect raw drafts and versions
 drop policy if exists "Read published templates or staff drafts" on public.templates;
-create policy "Staff read templates"
+drop policy if exists "Allow read published templates" on public.templates;
+create policy "Allow read published templates"
   on public.templates for select
-  using (public.is_staff('editor'));
+  to anon, authenticated
+  using (status = 'published' or public.is_staff('editor'));
+
+grant select on table public.templates to anon, authenticated;
 
 drop policy if exists "Read published template versions or staff" on public.template_versions;
 create policy "Staff read template versions"
@@ -74,9 +73,8 @@ create policy "Staff read template version dependencies"
   on public.template_version_dependencies for select
   using (public.is_staff('editor'));
 
--- Revoke direct customer SELECT grants from anon on raw tables
+-- Revoke direct customer SELECT grants from anon on internal raw tables
 revoke select on table
-  public.templates,
   public.template_versions,
   public.template_version_dependencies
 from anon;
