@@ -1,4 +1,5 @@
 import type { DesignState, DesignSummary, ProductId } from './product-state';
+import type { PaymentPolicy } from './domain/commercial-config.ts';
 
 export type PaymentStatus =
   | 'pending_payment'
@@ -79,11 +80,16 @@ export interface PendingOrder {
   };
   approvedDesignVersionId: string;
   preflightRevision: string;
+  readonly commercialConfigVersionId?: string;
+  readonly paymentPolicy?: PaymentPolicy;
+  readonly depositAmount?: number;
+  readonly amountDueNow?: number;
+  readonly remainingAmount?: number;
+  readonly appliedTierMinimumQuantity?: number;
   createdAt: string;
   snapshot: ApprovedDesignSnapshot;
   payment: OrderPayment;
 }
-
 export interface ApprovedDesignSnapshot {
   id: string;
   design: DesignState;

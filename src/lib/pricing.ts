@@ -1,4 +1,19 @@
 import { PRODUCTS } from './product-state.ts';
+import { formatCurrencyVND } from './domain/commercial-config.ts';
+export { formatCurrencyVND } from './domain/commercial-config.ts';
+export {
+  calculatePrice,
+  validateCommercialConfig,
+  validateQuantity,
+} from './domain/commercial-config.ts';
+export type {
+  CatalogStatus,
+  CommercialConfigVersion,
+  CommercialVariantRule,
+  PaymentPolicy,
+  PriceCalculation,
+  VolumeTier,
+} from './domain/commercial-config.ts';
 
 export interface PriceQuote {
   productId: string;
@@ -19,12 +34,6 @@ const DEFAULT_PRICES: Readonly<Record<string, number>> = {
   notebook: 49000,
 };
 
-export function formatCurrencyVND(amount: number): string {
-  const integer = Math.trunc(amount);
-  const sign = integer < 0 ? '-' : '';
-  const digits = Math.abs(integer).toString().replace(/\B(?=(\d{3})+(?!\d))/g, '.');
-  return `${sign}${digits}đ`;
-}
 
 export function calculatePriceQuote(params: {
   productId: string;
