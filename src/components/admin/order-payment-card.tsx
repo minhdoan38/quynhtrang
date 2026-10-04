@@ -49,7 +49,7 @@ export function OrderPaymentCard({
           <CreditCard className="w-5 h-5 text-neutral-500" />
           <h3 className="text-base font-semibold text-neutral-900">Thông tin thanh toán</h3>
         </div>
-        <OrderStatusChip type="payment" status={presentation.statusLabel} purpose={payment.purpose} />
+        <OrderStatusChip type="payment" status={payment.status} purpose={payment.purpose} />
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 py-2 border-y border-neutral-100">
