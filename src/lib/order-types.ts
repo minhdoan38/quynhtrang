@@ -80,6 +80,8 @@ export interface PendingOrder {
   };
   approvedDesignVersionId: string;
   preflightRevision: string;
+  readonly priceQuoteId?: string;
+  readonly quoteExpiresAt?: string;
   readonly commercialConfigVersionId?: string;
   readonly paymentPolicy?: PaymentPolicy;
   readonly depositAmount?: number;
@@ -113,4 +115,13 @@ export interface CheckoutDraft {
   orderId?: string;
   status: 'editing' | 'promoting' | 'creating-order' | 'ready-for-payment' | 'failed';
   updatedAt: string;
+  priceQuoteId?: string;
+  commercialConfigVersionId?: string;
+  quoteExpiresAt?: string;
+  unitPrice?: number;
+  totalAmount?: number;
+  amountDueNow?: number;
+  remainingAmount?: number;
+  currency?: 'VND';
+  paymentPolicy?: PaymentPolicy;
 }

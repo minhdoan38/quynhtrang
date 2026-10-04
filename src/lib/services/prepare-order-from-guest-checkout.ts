@@ -3,9 +3,11 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 
 import { promoteDesignAssets } from '../asset-store.ts';
 import type { CreatePendingOrderInput } from '../domain/order.ts';
+import type { PaymentPolicy } from '../domain/commercial-config.ts';
 import type { CustomerInfo, PaymentInstructions, PendingOrder } from '../order-types.ts';
 import { getPaymentInstructions } from '../payment-qr-provider.ts';
 import { calculatePriceQuote } from '../pricing.ts';
+import type { AdminCatalogRepository } from '../repositories/admin-catalog-repository.ts';
 import { getDesignSummary, type DesignState } from '../product-state.ts';
 import { resolveLegacyReferences } from './library-dependencies.ts';
 import { AssetRepository } from '../repositories/asset-repository.ts';
@@ -27,6 +29,7 @@ export interface PrepareOrderInput {
   preflightSnapshot?: Record<string, unknown> | null;
   guestAccessSeed?: string;
   authenticatedUserId?: string;
+  priceQuoteId?: string;
 }
 
 export interface PreparedOrderResult {
@@ -50,6 +53,7 @@ export interface PrepareOrderOptions {
   designVersionRepo?: DesignVersionRepo;
   orderEventRepo?: OrderEventRepo;
   paymentRepo?: PaymentRepo;
+  catalogRepo?: Pick<AdminCatalogRepository, 'getProduct' | 'getProductById' | 'getVariant' | 'getCommercialVersion' | 'getPriceQuote'>;
 }
 
 export class OrderPreparationError extends Error {
@@ -86,6 +90,7 @@ function createRepositories(options: PrepareOrderOptions) {
       designVersionRepo: options.designVersionRepo,
       orderEventRepo: options.orderEventRepo,
       paymentRepo: options.paymentRepo,
+      catalogRepo: options.catalogRepo,
     };
   }
 
@@ -97,6 +102,7 @@ function createRepositories(options: PrepareOrderOptions) {
     designVersionRepo: options.designVersionRepo ?? new DesignVersionRepository(client),
     orderEventRepo: options.orderEventRepo ?? new OrderEventRepository(client),
     paymentRepo: options.paymentRepo ?? new PaymentRepository(client),
+    catalogRepo: options.catalogRepo,
   };
 }
 
@@ -150,14 +156,72 @@ export async function prepareOrderFromGuestCheckout(
       return candidate.generated !== true && candidate.data?.generated !== true && candidate.data?.patternGenerated !== true;
     });
   }
+  if (repositories.catalogRepo) {
+    const prod = (await repositories.catalogRepo.getProductById?.(immutableDesign.productId)) ?? repositories.catalogRepo.getProduct(immutableDesign.productId);
+    if (prod && prod.status !== 'active') {
+      throw new OrderPreparationError('Sản phẩm đã ngừng kinh doanh.', 400);
+    }
+    const vr = repositories.catalogRepo.getVariant(immutableDesign.variantId);
+    if (vr && (vr.status !== 'active' || vr.productId !== immutableDesign.productId)) {
+      throw new OrderPreparationError('Biến thể sản phẩm đã ngừng kinh doanh.', 400);
+    }
+  }
 
-  const quote = calculatePriceQuote({
-    productId: immutableDesign.productId,
-    variantId: immutableDesign.variantId,
-    quantity: immutableDesign.quantity,
-    productOptions: immutableDesign.productOptions,
-  });
-  const summary = getDesignSummary({ ...immutableDesign, quantity: quote.quantity });
+  let finalUnitPrice: number;
+  let finalSubtotal: number;
+  let finalTotal: number;
+  let finalAmountDueNow: number;
+  let finalRemainingAmount: number;
+  let resolvedPriceQuoteId: string | undefined;
+  let resolvedQuoteExpiresAt: string | undefined;
+  let resolvedCommercialConfigVersionId: string | undefined;
+  let resolvedPaymentPolicy: PaymentPolicy | undefined;
+  let resolvedDepositAmount: number | undefined;
+  let resolvedAppliedTierMinimumQuantity: number | undefined;
+
+  if (input.priceQuoteId && repositories.catalogRepo) {
+    const serverQuote = repositories.catalogRepo.getPriceQuote(input.priceQuoteId);
+    if (!serverQuote) {
+      throw new OrderPreparationError('Báo giá không tồn tại.', 400);
+    }
+    if (new Date(serverQuote.expiresAt).getTime() <= Date.now()) {
+      throw new OrderPreparationError('Giá sản phẩm vừa được cập nhật.', 400);
+    }
+    const quoteProd = repositories.catalogRepo.getProduct(serverQuote.productId);
+    if (!quoteProd || quoteProd.status !== 'active') {
+      throw new OrderPreparationError('Sản phẩm đã ngừng kinh doanh.', 400);
+    }
+    const quoteVariant = repositories.catalogRepo.getVariant(serverQuote.variantId);
+    if (!quoteVariant || quoteVariant.productId !== serverQuote.productId || quoteVariant.status !== 'active') {
+      throw new OrderPreparationError('Biến thể sản phẩm đã ngừng kinh doanh.', 400);
+    }
+
+    finalUnitPrice = serverQuote.calculation.unitPrice;
+    finalSubtotal = serverQuote.calculation.totalAmount;
+    finalTotal = serverQuote.calculation.totalAmount;
+    finalAmountDueNow = serverQuote.calculation.amountDueNow;
+    finalRemainingAmount = serverQuote.calculation.remainingAmount;
+    resolvedPriceQuoteId = serverQuote.id;
+    resolvedQuoteExpiresAt = serverQuote.expiresAt;
+    resolvedCommercialConfigVersionId = serverQuote.commercialConfigVersionId;
+    resolvedPaymentPolicy = serverQuote.calculation.paymentPolicy;
+    resolvedDepositAmount = serverQuote.calculation.isDeposit ? serverQuote.calculation.amountDueNow : undefined;
+    resolvedAppliedTierMinimumQuantity = serverQuote.calculation.appliedTierMinimumQuantity;
+  } else {
+    const legacyQuote = calculatePriceQuote({
+      productId: immutableDesign.productId,
+      variantId: immutableDesign.variantId,
+      quantity: immutableDesign.quantity,
+      productOptions: immutableDesign.productOptions,
+    });
+    finalUnitPrice = legacyQuote.unitPrice;
+    finalSubtotal = legacyQuote.subtotal;
+    finalTotal = legacyQuote.subtotal;
+    finalAmountDueNow = legacyQuote.subtotal;
+    finalRemainingAmount = 0;
+  }
+
+  const summary = getDesignSummary({ ...immutableDesign, quantity: immutableDesign.quantity });
   const version = await repositories.designVersionRepo.createVersion({
     projectId: project.id,
     versionNumber: 1,
@@ -166,9 +230,9 @@ export async function prepareOrderFromGuestCheckout(
     productSnapshot: {
       productId: immutableDesign.productId,
       variantId: immutableDesign.variantId,
-      quantity: quote.quantity,
-      unitPrice: quote.unitPrice,
-      subtotal: quote.subtotal,
+      quantity: immutableDesign.quantity,
+      unitPrice: finalUnitPrice,
+      subtotal: finalSubtotal,
     },
     preflightSnapshot: structuredClone(input.preflightSnapshot ?? {}),
     preflightRevision: input.preflightRevision.trim(),
@@ -181,10 +245,18 @@ export async function prepareOrderFromGuestCheckout(
     idempotencyKey: input.idempotencyKey.trim(),
     productId: immutableDesign.productId,
     variantId: immutableDesign.variantId,
-    quantity: quote.quantity,
-    unitPrice: quote.unitPrice,
-    subtotal: quote.subtotal,
-    total: quote.subtotal,
+    quantity: immutableDesign.quantity,
+    unitPrice: finalUnitPrice,
+    subtotal: finalSubtotal,
+    total: finalTotal,
+    priceQuoteId: resolvedPriceQuoteId,
+    quoteExpiresAt: resolvedQuoteExpiresAt,
+    commercialConfigVersionId: resolvedCommercialConfigVersionId,
+    paymentPolicy: resolvedPaymentPolicy,
+    depositAmount: resolvedDepositAmount,
+    amountDueNow: finalAmountDueNow,
+    remainingAmount: finalRemainingAmount,
+    appliedTierMinimumQuantity: resolvedAppliedTierMinimumQuantity,
     currency: 'VND',
     customer: structuredClone(input.customer),
     projectId: project.id,
@@ -202,7 +274,7 @@ export async function prepareOrderFromGuestCheckout(
     payment: {
       orderId: '',
       provider: 'vietqr-demo',
-      amount: quote.subtotal,
+      amount: finalAmountDueNow,
       currency: 'VND',
       paymentReference,
       status: 'pending_payment',
@@ -215,7 +287,7 @@ export async function prepareOrderFromGuestCheckout(
       ...order.payment,
       orderId: order.id,
       paymentReference,
-      amount: quote.subtotal,
+      amount: finalAmountDueNow,
       status: 'pending_payment',
     },
   };
@@ -224,7 +296,7 @@ export async function prepareOrderFromGuestCheckout(
     await repositories.paymentRepo.create({
       orderId: order.id,
       provider: order.payment.provider,
-      amount: quote.subtotal,
+      amount: finalAmountDueNow,
       currency: 'VND',
       reference: paymentReference,
       qrPayload: paymentData.qrPayload,

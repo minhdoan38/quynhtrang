@@ -7,12 +7,26 @@ import {
   getDesignSummary,
   PRODUCTS,
 } from '@/lib/product-state';
+import { formatCurrencyVND } from '@/lib/domain/commercial-config';
 import { DesignCanvas } from '@/components/customizer/design-canvas';
 
 export interface OrderSummaryCardProps {
   design: DesignState;
   onEditDesign: () => void;
   onOpenPreview?: () => void;
+  productName?: string;
+  variantName?: string;
+  priceQuote?: {
+    formattedUnitPrice?: string;
+    formattedSubtotal?: string;
+    calculation?: {
+      unitPrice: number;
+      totalAmount: number;
+      amountDueNow?: number;
+      remainingAmount?: number;
+      isDeposit?: boolean;
+    };
+  } | null;
 }
 
 export function getFriendlyProductName(design: DesignState): string {
@@ -78,12 +92,21 @@ export function OrderSummaryCard({
   design,
   onEditDesign,
   onOpenPreview,
+  productName: configuredProductName,
+  variantName: configuredVariantName,
+  priceQuote,
 }: OrderSummaryCardProps): React.JSX.Element {
   const summary = getDesignSummary(design);
-  const productName = getFriendlyProductName(design);
-  const variantText = getFriendlyVariant(design);
+  const productName = configuredProductName ?? getFriendlyProductName(design);
+  const variantText = configuredVariantName ?? getFriendlyVariant(design);
   const shapeClass = getThumbnailShapeClass(design);
-
+  const calculation = priceQuote?.calculation;
+  const isDeposit = calculation?.isDeposit === true;
+  const unitPriceText = calculation
+    ? `${formatCurrencyVND(calculation.unitPrice)} / sản phẩm`
+    : priceQuote?.formattedUnitPrice
+      ? `${priceQuote.formattedUnitPrice} / sản phẩm`
+      : summary.priceLabel;
   const handleThumbnailClick = () => {
     if (onOpenPreview) {
       onOpenPreview();
@@ -154,8 +177,25 @@ export function OrderSummaryCard({
         <div className="mt-1 flex items-center gap-2 text-xs text-[#666A6D]">
           <span>Số lượng: {summary.quantity}</span>
           <span>•</span>
-          <span className="font-medium text-[#2E3338]">{summary.priceLabel}</span>
+          <span className="font-medium text-[#2E3338]">{unitPriceText}</span>
         </div>
+
+        {isDeposit && calculation && (
+          <div className="mt-2 w-full pt-2 border-t border-[#DDD6CC]/60 space-y-1 text-xs">
+            <div className="flex justify-between text-[#666A6D]">
+              <span>Tổng đơn:</span>
+              <span className="font-semibold text-[#2E3338]">{formatCurrencyVND(calculation.totalAmount)}</span>
+            </div>
+            <div className="flex justify-between text-[#315F86]">
+              <span>Thanh toán trước:</span>
+              <span className="font-bold">{formatCurrencyVND(calculation.amountDueNow ?? calculation.totalAmount)}</span>
+            </div>
+            <div className="flex justify-between text-[#666A6D]">
+              <span>Còn lại:</span>
+              <span>{formatCurrencyVND(calculation.remainingAmount ?? 0)}</span>
+            </div>
+          </div>
+        )}
 
         {/* Edit design action */}
         <button

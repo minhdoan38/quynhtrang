@@ -1,4 +1,5 @@
 import type { CustomerInfo, OrderPayment, PaymentStatus, PendingOrder } from '../order-types.ts';
+import type { PaymentPolicy } from './commercial-config.ts';
 export type { PaymentStatus } from '../order-types.ts';
 import type { ProductId } from '../product-state.ts';
 
@@ -386,6 +387,14 @@ export interface CreatePendingOrderInput {
   preflightRevision?: string;
   designSnapshot: PendingOrder['snapshot'];
   payment: OrderPayment;
+  priceQuoteId?: string;
+  quoteExpiresAt?: string;
+  commercialConfigVersionId?: string;
+  paymentPolicy?: PaymentPolicy;
+  depositAmount?: number;
+  amountDueNow?: number;
+  remainingAmount?: number;
+  appliedTierMinimumQuantity?: number;
 }
 
 export interface ApprovedDesignVersionSummary {

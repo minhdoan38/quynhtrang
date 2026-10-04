@@ -6,7 +6,8 @@ import { Minus, Plus } from 'lucide-react';
 export interface QuantityStepperProps {
   quantity: number;
   min?: number;
-  max?: number;
+  max?: number | null;
+  step?: number;
   onChange: (quantity: number) => void;
 }
 
@@ -14,6 +15,7 @@ export function QuantityStepper({
   quantity,
   min = 1,
   max = 999,
+  step = 1,
   onChange,
 }: QuantityStepperProps): React.JSX.Element {
   const [inputValue, setInputValue] = useState(String(quantity));
@@ -23,7 +25,10 @@ export function QuantityStepper({
     setInputValue(String(quantity));
   }, [quantity]);
 
+  const effectiveMax = max ?? 999;
   const minimumError = `Số lượng tối thiểu là ${min} bản.`;
+  const maximumError = `Số lượng tối đa là ${effectiveMax} bản.`;
+  const stepError = `Số lượng phải theo bước ${step} (bắt đầu từ ${min} bản).`;
 
   const handleInputChange = (value: string) => {
     setInputValue(value);
@@ -34,8 +39,18 @@ export function QuantityStepper({
     }
 
     const parsed = Number.parseInt(value, 10);
-    if (!Number.isSafeInteger(parsed) || parsed < min || parsed > max) {
+    if (!Number.isSafeInteger(parsed) || parsed < min) {
       setError(minimumError);
+      return;
+    }
+
+    if (parsed > effectiveMax) {
+      setError(maximumError);
+      return;
+    }
+
+    if (step > 1 && (parsed - min) % step !== 0) {
+      setError(stepError);
       return;
     }
 
@@ -53,7 +68,7 @@ export function QuantityStepper({
           type="button"
           aria-label="Giảm số lượng"
           disabled={quantity <= min}
-          onClick={() => onChange(Math.max(min, quantity - 1))}
+          onClick={() => onChange(Math.max(min, quantity - step))}
           className="min-w-[44px] min-h-[44px] w-11 h-11 rounded-xl border border-[#DDD6CC] bg-white flex items-center justify-center text-[#2E3338] disabled:opacity-30 disabled:pointer-events-none hover:bg-[#F8F3E8] transition-colors"
         >
           <Minus size={16} aria-hidden="true" />
@@ -72,8 +87,8 @@ export function QuantityStepper({
         <button
           type="button"
           aria-label="Tăng số lượng"
-          disabled={quantity >= max}
-          onClick={() => onChange(Math.min(max, quantity + 1))}
+          disabled={quantity >= effectiveMax}
+          onClick={() => onChange(Math.min(effectiveMax, quantity + step))}
           className="min-w-[44px] min-h-[44px] w-11 h-11 rounded-xl border border-[#DDD6CC] bg-white flex items-center justify-center text-[#2E3338] disabled:opacity-30 disabled:pointer-events-none hover:bg-[#F8F3E8] transition-colors"
         >
           <Plus size={16} aria-hidden="true" />

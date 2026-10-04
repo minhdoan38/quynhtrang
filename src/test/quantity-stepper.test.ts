@@ -16,16 +16,16 @@ function props(overrides: Partial<QuantityStepperProps> = {}): QuantityStepperPr
   };
 }
 
-test('minus button decrements quantity without crossing min', () => {
-  const contract = props({ quantity: 5, min: 1 });
-  assert.equal(Math.max(contract.min ?? 1, contract.quantity - 1), 4);
-  assert.match(componentSource, /onClick=\{\(\) => onChange\(Math\.max\(min, quantity - 1\)\)\}/);
+test('minus button decrements quantity by step without crossing min', () => {
+  const contract = props({ quantity: 15, min: 10, step: 5 });
+  assert.equal(Math.max(contract.min ?? 1, contract.quantity - (contract.step ?? 1)), 10);
+  assert.match(componentSource, /onClick=\{\(\) => onChange\(Math\.max\(min, quantity - step\)\)\}/);
 });
 
-test('plus button increments quantity without crossing max', () => {
-  const contract = props({ quantity: 5, max: 999 });
-  assert.equal(Math.min(contract.max ?? 999, contract.quantity + 1), 6);
-  assert.match(componentSource, /onClick=\{\(\) => onChange\(Math\.min\(max, quantity \+ 1\)\)\}/);
+test('plus button increments quantity by step without crossing max', () => {
+  const contract = props({ quantity: 15, max: 20, step: 5 });
+  assert.equal(Math.min(contract.max ?? 999, contract.quantity + (contract.step ?? 1)), 20);
+  assert.match(componentSource, /onClick=\{\(\) => onChange\(Math\.min\(effectiveMax, quantity \+ step\)\)\}/);
 });
 
 test('minus button is disabled at default minimum quantity', () => {
@@ -34,10 +34,10 @@ test('minus button is disabled at default minimum quantity', () => {
   assert.match(componentSource, /disabled=\{quantity <= min\}/);
 });
 
-test('plus button is disabled at default maximum quantity', () => {
+test('plus button is disabled at maximum quantity', () => {
   const contract = props({ quantity: 999 });
   assert.equal(contract.quantity >= (contract.max ?? 999), true);
-  assert.match(componentSource, /disabled=\{quantity >= max\}/);
+  assert.match(componentSource, /disabled=\{quantity >= effectiveMax\}/);
 });
 
 test('input handles direct numeric typing and displays error for invalid input', () => {
@@ -46,6 +46,8 @@ test('input handles direct numeric typing and displays error for invalid input',
   assert.match(componentSource, /const parsed = Number\.parseInt\(value, 10\)/);
   assert.match(componentSource, /onChange\(parsed\)/);
   assert.match(componentSource, /Số lượng tối thiểu là \$\{min\} bản\./);
+  assert.match(componentSource, /Số lượng tối đa là \$\{effectiveMax\} bản\./);
+  assert.match(componentSource, /Số lượng phải theo bước \$\{step\} \(bắt đầu từ \$\{min\} bản\)\./);
   assert.ok(componentSource.includes('{error && <p className="text-xs text-[#B3535D]">{error}</p>}'));
 });
 

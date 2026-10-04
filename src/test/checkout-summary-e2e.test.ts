@@ -142,10 +142,10 @@ test('3. Step 1 displays meaningful variant labels for common products', () => {
 
 test('4. Quantity stepper changes quantity through clamped increment and decrement handlers', () => {
   assert.match(quantityStepperSource, /aria-label="Giảm số lượng"/);
-  assert.match(quantityStepperSource, /onClick=\{\(\) => onChange\(Math\.max\(min, quantity - 1\)\)\}/);
+  assert.match(quantityStepperSource, /onClick=\{\(\) => onChange\(Math\.max\(min, quantity - step\)\)\}/);
   assert.match(quantityStepperSource, /aria-label="Tăng số lượng"/);
-  assert.match(quantityStepperSource, /onClick=\{\(\) => onChange\(Math\.min\(max, quantity \+ 1\)\)\}/);
-  assert.match(checkoutSource, /<QuantityStepper quantity=\{design\.quantity\} onChange=\{handleUpdateQuantity\}/);
+  assert.match(quantityStepperSource, /onClick=\{\(\) => onChange\(Math\.min\(effectiveMax, quantity \+ step\)\)\}/);
+  assert.match(checkoutSource, /<QuantityStepper\s+quantity=\{design\.quantity\}\s+onChange=\{handleUpdateQuantity\}/);
 
   // Type check stepper props
   let currentQty = 1;
@@ -180,7 +180,8 @@ test('5. Quantity changes recalculate and format live subtotal', () => {
 
 test('6. Direct numeric quantity entry rejects invalid values and clamps boundaries', () => {
   assert.match(quantityStepperSource, /if \(!\/\^\\d\+\$\//);
-  assert.match(quantityStepperSource, /parsed < min \|\| parsed > max/);
+  assert.match(quantityStepperSource, /parsed < min/);
+  assert.match(quantityStepperSource, /parsed > effectiveMax/);
   assert.equal(normalizeQuantity('0'), 1);
   assert.equal(normalizeQuantity('1000'), 999);
   assert.equal(normalizeQuantity('12.9'), 12);
@@ -230,6 +231,24 @@ test('10. Step 1 creates no history entry or server order', () => {
   // Order generation only triggered on customer info form submit
   assert.match(checkoutSource, /const handleSubmitCustomerInfo = async \(e: React\.FormEvent\) => \{[\s\S]*fetch\('\/api\/orders'/);
   // History pushState only happens when advancing past Step 1
-  assert.match(checkoutSource, /const advanceToStep = \(nextStep: 2 \| 3\) => \{[\s\S]*window\.history\.pushState\(\{ checkoutStep: nextStep \}, ''\);/);
+  assert.match(checkoutSource, /const advanceToStep = (?:async\s*)?\(nextStep: 2 \| 3\) => \{[\s\S]*window\.history\.pushState\(\{ checkoutStep: nextStep \}, ''\);/);
   assert.match(checkoutSource, /onClick=\{\(\) => advanceToStep\(2\)\}/);
+});
+
+test('11. Deposit summary displays Tổng đơn, Thanh toán trước, Còn lại; full payment does not show fake deposit row', () => {
+  // Step 1 summary box supports deposit breakdown
+  assert.match(stepOneSource, /serverQuote\?\.calculation\?\.isDeposit \? \(/);
+  assert.match(stepOneSource, /Tổng đơn/);
+  assert.match(stepOneSource, /Thanh toán trước/);
+  assert.match(stepOneSource, /Còn lại/);
+  // Order summary card supports quote-backed breakdown
+  assert.match(orderCardSource, /isDeposit && calculation &&/);
+  assert.match(orderCardSource, /Tổng đơn:/);
+  assert.match(orderCardSource, /Thanh toán trước:/);
+  assert.match(orderCardSource, /Còn lại:/);
+});
+
+test('12. Order creation consumes server price quote without relying on client money', () => {
+  assert.match(checkoutSource, /priceQuoteId:\s*serverQuote\?\.id\s*\?\?\s*draft\.priceQuoteId/);
+  assert.doesNotMatch(checkoutSource, /body:\s*JSON\.stringify\(\{[^}]*total:\s*priceQuote/);
 });

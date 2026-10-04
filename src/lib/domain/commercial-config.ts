@@ -25,6 +25,8 @@ export type CommercialConfigVersion = {
  paymentPolicy: PaymentPolicy;
  variantRules: readonly CommercialVariantRule[];
 };
+export const PRICE_QUOTE_TTL_MS = 30 * 60 * 1000;
+
 
 export type PriceCalculation = {
  commercialConfigVersionId: string;

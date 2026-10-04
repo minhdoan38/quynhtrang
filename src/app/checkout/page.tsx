@@ -16,11 +16,14 @@ import { getFriendlyProductName } from '@/components/checkout/order-summary-card
 import { QuantityStepper } from '@/components/checkout/quantity-stepper';
 import { CustomerInformationForm } from '@/components/checkout/customer-information-form';
 import { calculatePriceQuote } from '@/lib/pricing';
+import { formatCurrencyVND } from '@/lib/domain/commercial-config';
 import type { CustomerInfo, PendingOrder } from '@/lib/order-types';
+import type { PriceQuote } from '@/lib/services/price-quote-service';
 import {
   createCheckoutDraft,
   loadCheckoutDraft,
   saveCheckoutDraft,
+  attachQuoteToDraft,
 } from '@/lib/checkout-draft';
 import { validateCustomerInfo } from '@/lib/customer-info';
 import { PaymentQrPanel } from '@/components/checkout/payment-qr-panel';
@@ -57,7 +60,9 @@ export default function CheckoutPage() {
   const [step, setStep] = useState<1 | 2 | 3>(1);
   const [state36Mode, setState36Mode] = useState<'payment' | 'confirmation'>('payment');
   const [staleRevisionWarning, setStaleRevisionWarning] = useState(false);
-
+  const [serverQuote, setServerQuote] = useState<PriceQuote | null>(null);
+  const [quoteNotice, setQuoteNotice] = useState<string | null>(null);
+  const [quoteRule, setQuoteRule] = useState<{ minimumQuantity: number; quantityStep: number; maximumQuantity: number | null } | null>(null);
   // Step-aware browser Back synchronization
   useEffect(() => {
     const onPopState = () => {
@@ -99,6 +104,7 @@ export default function CheckoutPage() {
     }
 
     const existingDraft = loadCheckoutDraft();
+    let currentDraft = existingDraft;
     if (existingDraft) {
       if (existingDraft.customer) {
         setCustomer(existingDraft.customer);
@@ -107,8 +113,43 @@ export default function CheckoutPage() {
         setStaleRevisionWarning(true);
       }
     } else {
-      saveCheckoutDraft(createCheckoutDraft(nextDesign));
+      currentDraft = createCheckoutDraft(nextDesign);
+      saveCheckoutDraft(currentDraft);
     }
+
+    const fetchInitialQuote = async () => {
+      try {
+        const res = await fetch('/api/quotes', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            productId: nextDesign.productId,
+            variantId: nextDesign.variantId,
+            quantity: nextDesign.quantity,
+            idempotencyKey: currentDraft?.idempotencyKey,
+            quoteId: currentDraft?.priceQuoteId,
+          }),
+        });
+        if (res.ok) {
+          const data = await res.json();
+          if (data?.quote) {
+            setServerQuote(data.quote);
+            if (data.rule) {
+              setQuoteRule(data.rule);
+            }
+            if (currentDraft) {
+              saveCheckoutDraft(attachQuoteToDraft(currentDraft, data.quote));
+            }
+            if (data.refreshed) {
+              setQuoteNotice('Giá sản phẩm vừa được cập nhật.');
+            }
+          }
+        }
+      } catch {
+        // Fallback to local pricing
+      }
+    };
+    void fetchInitialQuote();
 
     setIsLoaded(true);
   }, []);
@@ -240,13 +281,46 @@ export default function CheckoutPage() {
     router.push('/?view=editor');
   };
 
-  const advanceToStep = (nextStep: 2 | 3) => {
+  const advanceToStep = async (nextStep: 2 | 3) => {
+    if (nextStep === 2) {
+      try {
+        const draft = loadCheckoutDraft();
+        const res = await fetch('/api/quotes', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            productId: design.productId,
+            variantId: design.variantId,
+            quantity: design.quantity,
+            idempotencyKey: draft?.idempotencyKey,
+            quoteId: serverQuote?.id,
+          }),
+        });
+        if (res.ok) {
+          const data = await res.json();
+          if (data?.quote) {
+            const priceChanged = serverQuote && (serverQuote.calculation.totalAmount !== data.quote.calculation.totalAmount || serverQuote.commercialConfigVersionId !== data.quote.commercialConfigVersionId);
+            setServerQuote(data.quote);
+            if (data.rule) {
+              setQuoteRule(data.rule);
+            }
+            if (draft) {
+              saveCheckoutDraft(attachQuoteToDraft(draft, data.quote));
+            }
+            if (data.refreshed || priceChanged) {
+              setQuoteNotice('Giá sản phẩm vừa được cập nhật.');
+            }
+          }
+        }
+      } catch {
+        // Continue to Step 2
+      }
+    }
     if (typeof window !== 'undefined') {
       window.history.pushState({ checkoutStep: nextStep }, '');
     }
     setStep(nextStep);
   };
-
   const handleSubmitCustomerInfo = async (e: React.FormEvent) => {
     if (e && typeof e === 'object' && 'preventDefault' in e && typeof e.preventDefault === 'function') {
       e.preventDefault();
@@ -286,6 +360,7 @@ export default function CheckoutPage() {
             designRevision: draft.designRevision,
             preflightRevision: draft.preflightRevision ?? 'rev-0',
             preflightAcknowledged: draft.preflightAcknowledged ?? true,
+            priceQuoteId: serverQuote?.id ?? draft.priceQuoteId,
           }),
         });
         const data = await res.json().catch(() => ({}));
@@ -368,19 +443,60 @@ export default function CheckoutPage() {
                     : `/products/${design.productId}`
                 )
               }
+              priceQuote={serverQuote ? {
+                formattedUnitPrice: formatCurrencyVND(serverQuote.calculation.unitPrice),
+                formattedSubtotal: formatCurrencyVND(serverQuote.calculation.totalAmount),
+                calculation: serverQuote.calculation,
+              } : priceQuote}
             />
 
-            <QuantityStepper quantity={design.quantity} onChange={handleUpdateQuantity} />
+            {quoteNotice && (
+              <div className="rounded-xl border border-[#315F86]/30 bg-[#F0F5FA] p-3 text-xs text-[#315F86] flex items-center justify-between gap-2 shadow-2xs">
+                <span>{quoteNotice}</span>
+                <button
+                  type="button"
+                  onClick={() => setQuoteNotice(null)}
+                  className="text-xs font-semibold underline text-[#315F86]"
+                >
+                  Đóng
+                </button>
+              </div>
+            )}
+
+            <QuantityStepper
+              quantity={design.quantity}
+              onChange={handleUpdateQuantity}
+              min={quoteRule?.minimumQuantity ?? 1}
+              max={quoteRule?.maximumQuantity ?? 999}
+              step={quoteRule?.quantityStep ?? 1}
+            />
 
             <div className="rounded-2xl border border-[#DDD6CC] bg-[#F8F3E8]/60 p-4 space-y-2 text-xs">
-              <div className="flex justify-between text-[#666A6D]">
-                <span>Tạm tính ({design.quantity} bản):</span>
-                <span className="font-semibold text-[#2E3338]">{priceQuote.formattedSubtotal}</span>
-              </div>
+              {serverQuote?.calculation?.isDeposit ? (
+                <>
+                  <div className="flex justify-between text-[#666A6D]">
+                    <span>Tổng đơn ({design.quantity} bản):</span>
+                    <span className="font-semibold text-[#2E3338]">{formatCurrencyVND(serverQuote.calculation.totalAmount)}</span>
+                  </div>
+                  <div className="flex justify-between text-[#315F86]">
+                    <span>Thanh toán trước:</span>
+                    <span className="font-bold">{formatCurrencyVND(serverQuote.calculation.amountDueNow)}</span>
+                  </div>
+                  <div className="flex justify-between text-[#666A6D]">
+                    <span>Còn lại:</span>
+                    <span className="font-semibold text-[#2E3338]">{formatCurrencyVND(serverQuote.calculation.remainingAmount)}</span>
+                  </div>
+                </>
+              ) : (
+                <div className="flex justify-between text-[#666A6D]">
+                  <span>Tạm tính ({design.quantity} bản):</span>
+                  <span className="font-semibold text-[#2E3338]">{priceQuote.formattedSubtotal}</span>
+                </div>
+              )}
               <div className="flex justify-between text-[#666A6D]">
                 <span>Đơn giá:</span>
                 <span className="font-semibold text-[#2E3338]">
-                  {priceQuote.formattedUnitPrice} / sản phẩm
+                  {serverQuote ? formatCurrencyVND(serverQuote.calculation.unitPrice) : priceQuote.formattedUnitPrice} / sản phẩm
                 </span>
               </div>
               <div className="flex justify-between text-[#666A6D]">

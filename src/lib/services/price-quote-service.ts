@@ -1,7 +1,26 @@
 import { createHash, randomUUID } from 'node:crypto';
 import type { PriceCalculation } from '../domain/commercial-config.ts';
-import { calculatePrice } from '../domain/commercial-config.ts';
+import { calculatePrice, PRICE_QUOTE_TTL_MS } from '../domain/commercial-config.ts';
 import type { AdminCatalogRepository } from '../repositories/admin-catalog-repository.ts';
+
+export { PRICE_QUOTE_TTL_MS };
+
+export interface QuoteSummaryLabels {
+  totalLabel: string;
+  amountDueNowLabel?: string;
+  remainingAmountLabel?: string;
+  unitPriceLabel: string;
+}
+
+export function getQuoteSummaryLabels(calculation: PriceCalculation): QuoteSummaryLabels {
+  const isDeposit = calculation.paymentPolicy.kind !== 'full_payment' && calculation.amountDueNow < calculation.totalAmount;
+  return {
+    totalLabel: isDeposit ? 'Tổng đơn' : 'Tạm tính',
+    amountDueNowLabel: isDeposit ? 'Thanh toán trước' : undefined,
+    remainingAmountLabel: isDeposit ? 'Còn lại' : undefined,
+    unitPriceLabel: 'Đơn giá',
+  };
+}
 
 export interface CreatePriceQuoteInput {
   productId: string;
@@ -9,6 +28,7 @@ export interface CreatePriceQuoteInput {
   quantity: number;
   checkoutKey: string;
   clientProvidedPrice?: number;
+  accessContext?: string;
 }
 
 export interface PriceQuote {
@@ -17,13 +37,15 @@ export interface PriceQuote {
   variantId: string;
   commercialConfigVersionId: string;
   quantity: number;
-  calculation: PriceCalculation;
+  calculation: PriceCalculation & {
+    isDeposit: boolean;
+    appliedTierMinimumQuantity: number;
+  };
+  summaryLabels?: QuoteSummaryLabels;
   checkoutKeyHash: string;
   expiresAt: string;
   createdAt: string;
 }
-
-export const PRICE_QUOTE_TTL_MS = 30 * 60 * 1000;
 
 interface QuoteDeps {
   repo: AdminCatalogRepository;
@@ -44,17 +66,72 @@ export async function createPriceQuote(input: CreatePriceQuoteInput, deps: Quote
   } catch (error) {
     throw new Error(`INVALID_QUANTITY: ${error instanceof Error ? error.message : String(error)}`);
   }
+  const isDeposit = calculation.paymentPolicy.kind !== 'full_payment' && calculation.amountDueNow < calculation.totalAmount;
+  const enrichedCalculation = {
+    ...calculation,
+    isDeposit,
+    appliedTierMinimumQuantity: calculation.appliedTier.minimumQuantity,
+  };
   const createdAt = new Date();
+  const hashPayload = [input.checkoutKey, input.accessContext].filter(Boolean).join(':');
   const quote: PriceQuote = {
     id: randomUUID(),
     productId: input.productId,
     variantId: input.variantId,
     commercialConfigVersionId: config.id,
     quantity: input.quantity,
-    calculation,
-    checkoutKeyHash: createHash('sha256').update(input.checkoutKey).digest('hex'),
+    calculation: enrichedCalculation,
+    summaryLabels: getQuoteSummaryLabels(calculation),
+    checkoutKeyHash: createHash('sha256').update(hashPayload).digest('hex'),
     createdAt: createdAt.toISOString(),
     expiresAt: new Date(createdAt.getTime() + PRICE_QUOTE_TTL_MS).toISOString(),
   };
   return deps.repo.saveQuote(quote);
+}
+
+export interface VerifyQuoteResult {
+  valid: boolean;
+  code?: 'VALID' | 'QUOTE_NOT_FOUND' | 'QUOTE_EXPIRED' | 'PRODUCT_NOT_SELLABLE' | 'VARIANT_NOT_SELLABLE';
+  quote?: PriceQuote;
+}
+
+export async function verifyPriceQuote(
+  quoteId: string,
+  deps: QuoteDeps
+): Promise<VerifyQuoteResult> {
+  const quote = deps.repo.getPriceQuote(quoteId);
+  if (!quote) {
+    return { valid: false, code: 'QUOTE_NOT_FOUND' };
+  }
+  const product = deps.repo.getProduct(quote.productId);
+  if (!product || product.status !== 'active') {
+    return { valid: false, code: 'PRODUCT_NOT_SELLABLE', quote };
+  }
+  const variant = deps.repo.getVariant(quote.variantId);
+  if (!variant || variant.productId !== quote.productId || variant.status !== 'active') {
+    return { valid: false, code: 'VARIANT_NOT_SELLABLE', quote };
+  }
+  if (new Date(quote.expiresAt).getTime() <= Date.now()) {
+    return { valid: false, code: 'QUOTE_EXPIRED', quote };
+  }
+  return { valid: true, code: 'VALID', quote };
+}
+
+export async function refreshPriceQuote(
+  quoteId: string,
+  checkoutKey: string,
+  deps: QuoteDeps
+): Promise<{ quote: PriceQuote; previousVersionId: string }> {
+  const oldQuote = deps.repo.getPriceQuote(quoteId);
+  if (!oldQuote) throw new Error('QUOTE_NOT_FOUND');
+  const newQuote = await createPriceQuote(
+    {
+      productId: oldQuote.productId,
+      variantId: oldQuote.variantId,
+      quantity: oldQuote.quantity,
+      checkoutKey,
+    },
+    deps
+  );
+  return { quote: newQuote, previousVersionId: oldQuote.commercialConfigVersionId };
 }

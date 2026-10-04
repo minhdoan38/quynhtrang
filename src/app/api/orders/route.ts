@@ -13,7 +13,8 @@ import {
 } from '../../../lib/services/prepare-order-from-guest-checkout.ts';
 import { getSupabaseSecretKey } from '../../../lib/supabase/config.ts';
 import { createServerSupabaseClient } from '../../../lib/supabase/server.ts';
-
+import { AdminCatalogRepository } from '../../../lib/repositories/admin-catalog-repository.ts';
+import { getSharedCatalogRepositoryForTest } from '../../../lib/repositories/price-quote-repository.ts';
 export interface CreateOrderRequestBody {
   idempotencyKey: string;
   design: DesignState;
@@ -21,6 +22,7 @@ export interface CreateOrderRequestBody {
   designRevision?: string;
   preflightRevision?: string;
   preflightAcknowledged?: boolean;
+  priceQuoteId?: string;
 }
 export interface CreateOrderResponseBody {
   order: PendingOrder;
@@ -62,10 +64,11 @@ export async function POST(request: Request) {
     );
     let prepared;
     let authenticatedUserId: string | undefined;
+    let supabaseClient = null;
     if (hasSupabaseEnvironment) {
       try {
-        const supabase = await createServerSupabaseClient();
-        const { data: authData } = await supabase.auth.getUser();
+        supabaseClient = await createServerSupabaseClient();
+        const { data: authData } = await supabaseClient.auth.getUser();
         authenticatedUserId = authData?.user?.id;
       } catch {
         // Guest user
@@ -82,8 +85,17 @@ export async function POST(request: Request) {
           preflightRevision: body.preflightRevision ?? '',
           preflightAcknowledged: body.preflightAcknowledged === true,
           authenticatedUserId,
+          priceQuoteId: body.priceQuoteId,
         },
-        hasSupabaseEnvironment ? undefined : createServerOrderPreparationOptions(),
+        hasSupabaseEnvironment && supabaseClient
+          ? {
+            supabaseClient,
+            catalogRepo: new AdminCatalogRepository(supabaseClient),
+          }
+          : {
+            ...createServerOrderPreparationOptions(),
+            catalogRepo: getSharedCatalogRepositoryForTest() ?? undefined,
+          },
       );
     } catch (error) {
       if (error instanceof OrderPreparationError) {
