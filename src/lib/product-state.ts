@@ -1269,7 +1269,7 @@ export function transitionState(
       ? state.sourceTemplate
       : {
        templateId: action.value,
-       templateVersionId: state.sourceTemplate?.templateVersionId ?? '',
+       templateVersionId: '',
       },
    };
   }

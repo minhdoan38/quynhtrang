@@ -83,6 +83,47 @@ test('updates templateId provenance without static dictionary mutations', () => 
   assert.equal(blank.templateId, 'blank');
 });
 
+test('SET_TEMPLATE resets sourceTemplate.templateVersionId when switching to a different template', () => {
+  const initial = createInitialState('wrapping');
+  const withTemplate = {
+    ...initial,
+    templateId: 'celebrate',
+    sourceTemplate: {
+      templateId: 'celebrate',
+      templateVersionId: 'ver-uuid-1234',
+    },
+  };
+
+  // Re-selecting the same template preserves templateVersionId
+  const same = transitionState(withTemplate, {
+    type: 'SET_TEMPLATE',
+    value: 'celebrate',
+  });
+  assert.deepEqual(same.sourceTemplate, {
+    templateId: 'celebrate',
+    templateVersionId: 'ver-uuid-1234',
+  });
+
+  // Switching to a different template resets templateVersionId to empty string
+  const changed = transitionState(withTemplate, {
+    type: 'SET_TEMPLATE',
+    value: 'minimal',
+  });
+  assert.equal(changed.templateId, 'minimal');
+  assert.deepEqual(changed.sourceTemplate, {
+    templateId: 'minimal',
+    templateVersionId: '',
+  });
+
+  // Switching to blank clears sourceTemplate to undefined
+  const blank = transitionState(changed, {
+    type: 'SET_TEMPLATE',
+    value: 'blank',
+  });
+  assert.equal(blank.templateId, 'blank');
+  assert.equal(blank.sourceTemplate, undefined);
+});
+
 test('filters templates compatible with selected product and variant', () => {
   // Card horizontal should get horizontal templates and generic templates, but NOT vertical templates or wrapping templates
   const cardHorizontal = getCompatibleTemplates({
