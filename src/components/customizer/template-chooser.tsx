@@ -8,6 +8,8 @@ interface TemplateChooserProps {
   onApplyTemplate: (templateId: string, versionId?: string | null) => void;
   onSelectTemplate?: (id: string) => void;
   onOpenTemplateBrowser?: () => void;
+  isAvailable?: boolean;
+  availableTemplates?: string[];
 }
 
 export function TemplateChooser({
@@ -15,6 +17,8 @@ export function TemplateChooser({
   onApplyTemplate,
   onSelectTemplate,
   onOpenTemplateBrowser,
+  isAvailable,
+  availableTemplates,
 }: TemplateChooserProps) {
   const isBlankSelected = !templateId || templateId === 'blank';
 
@@ -56,8 +60,8 @@ export function TemplateChooser({
           Mẫu trống
         </Button>
 
-        {/* If a dynamic template is currently selected from the browser */}
-        {templateId && templateId !== 'blank' && (
+        {/* If a dynamic template is currently selected and available */}
+        {templateId && templateId !== 'blank' && (isAvailable !== false) && (!availableTemplates || availableTemplates.includes(templateId)) && (
           <Button
             type="button"
             variant="default"

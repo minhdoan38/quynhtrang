@@ -334,10 +334,17 @@ export function TemplateLibrary({ userRole: _userRole }: TemplateLibraryProps) {
     }
     if (t.status === 'published') {
       if (t.blockers && t.blockers.length > 0) {
+        const blocker = t.blockers[0];
+        let reason = 'Cần cập nhật';
+        if (blocker.code === 'PRODUCT_UNAVAILABLE') {
+          reason = 'Sản phẩm đã lưu trữ';
+        } else if (blocker.code === 'VARIANT_UNAVAILABLE') {
+          reason = 'Biến thể không khả dụng';
+        }
         return (
-          <Badge className="bg-amber-100 text-amber-800 border-amber-300 flex items-center gap-1">
+          <Badge className="bg-amber-100 text-amber-800 border-amber-300 flex items-center gap-1" title={blocker.message}>
             <AlertTriangle className="w-3 h-3 text-amber-600" />
-            <span>Cần cập nhật</span>
+            <span>{reason}</span>
           </Badge>
         );
       }
@@ -568,6 +575,12 @@ export function TemplateLibrary({ userRole: _userRole }: TemplateLibraryProps) {
                   </h3>
                   <p className="text-[11px] text-stone-500 mt-0.5">{getExactTargetLabel(tmpl)}</p>
                 </div>
+                {tmpl.blockers && tmpl.blockers.length > 0 && (
+                  <div className="mt-1 text-[11px] text-amber-700 bg-amber-50 border border-amber-200/70 rounded px-1.5 py-0.5 flex items-center gap-1">
+                    <AlertTriangle className="w-3 h-3 text-amber-600 shrink-0" />
+                    <span className="line-clamp-1">{tmpl.blockers[0].message || 'Cần cập nhật'}</span>
+                  </div>
+                )}
 
                 <div className="pt-2 border-t border-stone-100 flex items-center justify-between text-[10px] text-stone-400">
                   <span>Phiên bản #{tmpl.revision}</span>

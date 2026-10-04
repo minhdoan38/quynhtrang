@@ -24,7 +24,7 @@ export interface TemplateValidationOptions {
 }
 
 export function getTemplateAvailability(
-  template: Pick<TemplateRecord, 'id' | 'status' | 'archivedAt' | 'currentPublishedVersionId' | 'target'>,
+  template: Pick<TemplateRecord, 'id' | 'status' | 'archivedAt' | 'currentPublishedVersionId' | 'target'> & Partial<Pick<TemplateRecord, 'productId' | 'variantId'>>,
   version?: Pick<TemplateVersionPayload, 'versionId' | 'target' | 'dependencies' | 'document'> | null,
   dependencies?: TemplateAvailabilityDependencies,
 ): TemplateAvailability {
@@ -110,6 +110,59 @@ export function getTemplateAvailability(
           message: `Phụ thuộc chưa được xuất bản: ${dep.id}`,
         });
       }
+    }
+  }
+
+  // Product & Variant availability checks
+  const targetProdId = template.productId ?? template.target?.productId ?? version?.target?.productId;
+  const targetVarId = template.variantId ?? template.target?.variantId ?? version?.target?.variantId;
+
+  if (targetProdId) {
+    const lookup = dependencies?.lookup;
+    let prodMeta: DependencyMetadataItem | undefined;
+    if (lookup instanceof Map) {
+      prodMeta = lookup.get(`product:${targetProdId}`) ?? lookup.get(targetProdId);
+    } else if (lookup && typeof lookup === 'object') {
+      const rec = lookup as Record<string, DependencyMetadataItem>;
+      prodMeta = rec[`product:${targetProdId}`] ?? rec[targetProdId];
+    }
+    if (dependencies?.productStatus === 'archived' || prodMeta?.status === 'archived' || dependencies?.isProductSellable === false) {
+      blockers.push({
+        code: 'PRODUCT_UNAVAILABLE',
+        kind: 'product',
+        id: targetProdId,
+        message: 'Sản phẩm mục tiêu đã bị lưu trữ.',
+      });
+    }
+  }
+
+  if (targetVarId) {
+    const lookup = dependencies?.lookup;
+    let varMeta: DependencyMetadataItem | undefined;
+    if (lookup instanceof Map) {
+      varMeta = lookup.get(`variant:${targetVarId}`) ?? lookup.get(targetVarId);
+    } else if (lookup && typeof lookup === 'object') {
+      const rec = lookup as Record<string, DependencyMetadataItem>;
+      varMeta = rec[`variant:${targetVarId}`] ?? rec[targetVarId];
+    }
+    if (
+      dependencies?.variantStatus === 'archived' ||
+      varMeta?.status === 'archived' ||
+      dependencies?.isVariantSellable === false
+    ) {
+      blockers.push({
+        code: 'VARIANT_UNAVAILABLE',
+        kind: 'variant',
+        id: targetVarId,
+        message: 'Biến thể sản phẩm không còn khả dụng hoặc đã bị lưu trữ.',
+      });
+    } else if (dependencies?.hasDefinition === false) {
+      blockers.push({
+        code: 'VARIANT_UNAVAILABLE',
+        kind: 'variant',
+        id: targetVarId,
+        message: 'Biến thể sản phẩm không có định nghĩa hợp lệ trong hệ thống.',
+      });
     }
   }
 

@@ -149,22 +149,6 @@ export async function cloneTemplateIntoProject(
     }
   }
 
-  const actorUser = actor as { userId?: string } | null;
-  if (actorUser?.userId) {
-    const cloudResult = await repo.cloneTemplateIntoProject(actorUser.userId, {
-      ...input,
-      templateId: template ? template.id : input.templateId.trim(),
-      expectedVersionId: input.expectedVersionId.trim(),
-    });
-
-    return {
-      kind: 'cloud',
-      projectId: cloudResult.projectId,
-      revision: cloudResult.revision,
-      document: cloudResult.document,
-    };
-  }
-
   if (!template || template.status !== 'published' || template.archivedAt) {
     throw new TemplateServiceError('TEMPLATE_UNAVAILABLE', 'Mẫu này hiện không còn khả dụng.', 409);
   }
@@ -180,6 +164,25 @@ export async function cloneTemplateIntoProject(
     throw new TemplateServiceError('TEMPLATE_UNAVAILABLE', 'Mẫu này hiện không còn khả dụng.', 409, {
       blockers: availability.blockers,
     });
+  }
+
+  let actorUserId: string | null = null;
+  if (actor && typeof actor === 'object' && 'userId' in actor && typeof actor.userId === 'string') {
+    actorUserId = actor.userId;
+  }
+  if (actorUserId) {
+    const cloudResult = await repo.cloneTemplateIntoProject(actorUserId, {
+      ...input,
+      templateId: template ? template.id : input.templateId.trim(),
+      expectedVersionId: input.expectedVersionId.trim(),
+    });
+
+    return {
+      kind: 'cloud',
+      projectId: cloudResult.projectId,
+      revision: cloudResult.revision,
+      document: cloudResult.document,
+    };
   }
 
   const version = await repo.getVersion(input.expectedVersionId.trim());

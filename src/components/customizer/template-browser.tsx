@@ -45,7 +45,7 @@ export function TemplateBrowser({
   const [isLoadingPreview, setIsLoadingPreview] = useState(false);
 
   const {
-    items: templates,
+    items: rawTemplates,
     isLoading,
     error,
     reload,
@@ -56,6 +56,14 @@ export function TemplateBrowser({
     query: searchQuery,
   });
 
+  const templates = rawTemplates.filter((item) => {
+    if (item.status && item.status !== 'published') return false;
+    if (item && typeof item === 'object') {
+      if ('available' in item && item.available === false) return false;
+      if ('blockers' in item && Array.isArray(item.blockers) && item.blockers.length > 0) return false;
+    }
+    return true;
+  });
   const handleBack = useCallback(() => {
     if (previewItem !== null) {
       setPreviewItem(null);

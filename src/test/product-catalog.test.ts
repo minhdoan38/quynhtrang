@@ -7,6 +7,7 @@ import {
   getCanonicalSlug,
   getAllCatalogProducts,
   getPublishedProducts,
+  getPublishedProductBySlug,
   getPublishedTemplates,
   ALL_PRODUCT_SLUGS,
   CATALOG_PRODUCTS,
@@ -162,4 +163,18 @@ test('every catalog product variant maps to a code-owned product definition', ()
       assert.equal(definition.familyLabel, catalogProduct.name);
     }
   }
+});
+
+test('getPublishedProductBySlug consumes sellable browse data while preserving canonical slugs', async () => {
+  const product = await getPublishedProductBySlug('card');
+  assert.ok(product);
+  assert.equal(product.id, 'card');
+  assert.equal(getCanonicalSlug('card'), 'card');
+
+  const alt = await getPublishedProductBySlug('greeting-card');
+  assert.ok(alt);
+  assert.equal(alt.id, 'card');
+
+  const missing = await getPublishedProductBySlug('nonexistent-slug');
+  assert.equal(missing, null);
 });

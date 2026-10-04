@@ -17,6 +17,7 @@ import {
   type SourceProjectDetail,
   type TemplateAssetRecord,
   type TemplateAvailability,
+  type TemplateAvailabilityBlocker,
   type TemplateCard,
   type TemplateDraftRecord,
   type TemplateErrorCode,
@@ -34,6 +35,7 @@ import {
   type UseTemplateInput,
 } from '../domain/template.ts';
 import { readDesignDocument } from '../design-document.ts';
+import { resolveProductDefinition, resolveProductDefinitionKey } from '../product-definition-registry.ts';
 
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -1499,6 +1501,122 @@ export class TemplateRepository {
     return result;
   }
 
+  async resolveProductVariantAvailability(
+    productId?: string | null,
+    variantId?: string | null,
+  ): Promise<{ available: boolean; blocker?: TemplateAvailabilityBlocker }> {
+    if (!productId) return { available: true };
+
+    // 1. Missing code definition check
+    if (variantId) {
+      const codeDef = resolveProductDefinition(productId, variantId);
+      if (!codeDef) {
+        return {
+          available: false,
+          blocker: {
+            code: 'VARIANT_UNAVAILABLE',
+            kind: 'variant',
+            id: variantId,
+            message: 'Biến thể sản phẩm không có định nghĩa hợp lệ trong hệ thống.',
+          },
+        };
+      }
+    }
+
+    if (!this.client) return { available: true };
+
+    try {
+      // 2. Product database status check
+      const { data: rawProd, error: prodErr } = await this.client
+        .from('products')
+        .select('id, status, active, current_commercial_config_version_id')
+        .eq('id', productId)
+        .maybeSingle();
+
+      if (!prodErr && rawProd && typeof rawProd === 'object') {
+        const prod = rawProd as Record<string, unknown>;
+        const prodStatus = typeof prod.status === 'string' ? prod.status : (prod.active ? 'active' : 'draft');
+        if (prodStatus === 'archived' || (prod.active === false && prodStatus !== 'active')) {
+          return {
+            available: false,
+            blocker: {
+              code: 'PRODUCT_UNAVAILABLE',
+              kind: 'product',
+              id: productId,
+              message: 'Sản phẩm mục tiêu đã bị lưu trữ.',
+            },
+          };
+        }
+
+        // 3. Variant database status & sellability check
+        if (variantId) {
+          const { data: rawVar, error: varErr } = await this.client
+            .from('product_variants')
+            .select('id, status, active, definition_key')
+            .eq('product_id', productId)
+            .eq('id', variantId)
+            .maybeSingle();
+
+          if (!varErr && rawVar && typeof rawVar === 'object') {
+            const variant = rawVar as Record<string, unknown>;
+            const varStatus = typeof variant.status === 'string' ? variant.status : (variant.active ? 'active' : 'draft');
+            if (varStatus === 'archived' || (variant.active === false && varStatus !== 'active')) {
+              return {
+                available: false,
+                blocker: {
+                  code: 'VARIANT_UNAVAILABLE',
+                  kind: 'variant',
+                  id: variantId,
+                  message: 'Biến thể mục tiêu đã bị lưu trữ.',
+                },
+              };
+            }
+
+            if (typeof variant.definition_key === 'string') {
+              const def = resolveProductDefinitionKey(variant.definition_key);
+              if (!def) {
+                return {
+                  available: false,
+                  blocker: {
+                    code: 'VARIANT_UNAVAILABLE',
+                    kind: 'variant',
+                    id: variantId,
+                    message: 'Biến thể sản phẩm có mã định nghĩa không hợp lệ.',
+                  },
+                };
+              }
+            }
+
+            // Commercial rules check if product has commercial config version
+            if (typeof prod.current_commercial_config_version_id === 'string') {
+              const { data: rules, error: rulesErr } = await this.client
+                .from('commercial_variant_rules')
+                .select('id')
+                .eq('version_id', prod.current_commercial_config_version_id)
+                .eq('variant_id', variantId);
+
+              if (!rulesErr && Array.isArray(rules) && rules.length === 0) {
+                return {
+                  available: false,
+                  blocker: {
+                    code: 'VARIANT_UNAVAILABLE',
+                    kind: 'variant',
+                    id: variantId,
+                    message: 'Biến thể chưa có cấu hình thương mại hợp lệ.',
+                  },
+                };
+              }
+            }
+          }
+        }
+      }
+    } catch {
+      // Fallback safely on error
+    }
+
+    return { available: true };
+  }
+
   async getTemplateAvailability(templateId: string): Promise<TemplateAvailability> {
     const { data, error } = await this.client.rpc('get_template_availability', {
       p_template_id: templateId,
@@ -1511,7 +1629,22 @@ export class TemplateRepository {
       throw new Error('Không nhận được dữ liệu tính khả dụng');
     }
 
-    return data as TemplateAvailability;
+    const avail = data as TemplateAvailability;
+    const blockers = [...(avail.blockers || [])];
+
+    // Check Product / Variant availability
+    const tmpl = await this.getTemplate(templateId);
+    if (tmpl) {
+      const prodAvail = await this.resolveProductVariantAvailability(tmpl.productId, tmpl.variantId);
+      if (!prodAvail.available && prodAvail.blocker) {
+        blockers.push(prodAvail.blocker);
+      }
+    }
+
+    return {
+      available: blockers.length === 0,
+      blockers,
+    };
   }
 
   async browseAvailableTemplates(
@@ -1548,8 +1681,17 @@ export class TemplateRepository {
       }
 
       if (Array.isArray(data)) {
-        const hasNext = data.length > limit;
-        const pageRows = hasNext ? data.slice(0, limit) : data;
+        const candidateRows = data as Array<DatabaseTemplateRow & { thumbnail_path?: string | null }>;
+        const validRows: Array<DatabaseTemplateRow & { thumbnail_path?: string | null }> = [];
+        for (const row of candidateRows) {
+          const avail = await this.resolveProductVariantAvailability(row.product_id, row.variant_id);
+          if (avail.available) {
+            validRows.push(row);
+          }
+        }
+
+        const hasNext = validRows.length > limit;
+        const pageRows = hasNext ? validRows.slice(0, limit) : validRows;
         const nextCursor = hasNext ? encodeTemplateCursor(pageRows[pageRows.length - 1]) : null;
 
         const items: TemplateCard[] = pageRows.map((row: DatabaseTemplateRow & { thumbnail_path?: string | null }) => {

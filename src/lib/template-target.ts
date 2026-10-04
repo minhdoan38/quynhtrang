@@ -457,6 +457,45 @@ export function getTemplateAvailability(
     }
   }
 
+  // Product & Variant availability checks
+  const targetProdId = resolvedTmplTarget?.productId ?? template.productId ?? template.target?.productId;
+  const targetVarId = resolvedTmplTarget?.variantId ?? template.variantId ?? template.target?.variantId;
+
+  if (targetProdId) {
+    const prodMeta = getDepMeta('product', targetProdId);
+    if (dependencies?.productStatus === 'archived' || prodMeta?.status === 'archived' || dependencies?.isProductSellable === false) {
+      blockers.push({
+        code: 'PRODUCT_UNAVAILABLE',
+        kind: 'product',
+        id: targetProdId,
+        message: 'Sản phẩm mục tiêu đã bị lưu trữ.',
+      });
+    }
+  }
+
+  if (targetVarId) {
+    const varMeta = getDepMeta('variant', targetVarId);
+    if (
+      dependencies?.variantStatus === 'archived' ||
+      varMeta?.status === 'archived' ||
+      dependencies?.isVariantSellable === false
+    ) {
+      blockers.push({
+        code: 'VARIANT_UNAVAILABLE',
+        kind: 'variant',
+        id: targetVarId,
+        message: 'Biến thể sản phẩm không còn khả dụng hoặc đã bị lưu trữ.',
+      });
+    } else if (dependencies?.hasDefinition === false) {
+      blockers.push({
+        code: 'VARIANT_UNAVAILABLE',
+        kind: 'variant',
+        id: targetVarId,
+        message: 'Biến thể sản phẩm không có định nghĩa hợp lệ trong hệ thống.',
+      });
+    }
+  }
+
   return {
     available: blockers.length === 0,
     blockers,

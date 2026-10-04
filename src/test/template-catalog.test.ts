@@ -971,6 +971,33 @@ describe('State 43 Task 15: Available-only catalog and current-version preview',
     const body = (await res.json()) as { items: TemplateCard[] };
     assert.ok(Array.isArray(body.items));
   });
+
+  it('gating archived product or variant marks template unavailable with explicit blocker', async () => {
+    const harness = createLocalCatalogFixtureHarness();
+    const tmplId = 'tmpl-archived-target-test';
+    const verId = '11111111-2222-3333-4444-555555555555';
+    harness.templates.set(tmplId, {
+      id: tmplId,
+      name: 'Mẫu sản phẩm lưu trữ',
+      status: 'published',
+      product_id: 'card',
+      variant_id: 'nonexistent-variant',
+      current_published_version_id: verId,
+      created_at: '2026-10-04T00:00:00Z',
+      updated_at: '2026-10-04T00:00:00Z',
+    });
+    harness.versions.set(verId, {
+      id: verId,
+      template_id: tmplId,
+      version: 1,
+      design_document: {},
+      created_at: '2026-10-04T00:00:00Z',
+    });
+
+    const avail = await harness.templateRepo.getTemplateAvailability(tmplId);
+    assert.equal(avail.available, false);
+    assert.ok(avail.blockers.some((b) => b.code === 'VARIANT_UNAVAILABLE'));
+  });
 });
 
 // ponytail: in-memory mock harness for catalog browse verification → skipped: testcontainers Docker postgres instance, add when CI container runner is provisioned.

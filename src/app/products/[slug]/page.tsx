@@ -1,6 +1,6 @@
 import type { Metadata } from 'next';
 import { notFound } from 'next/navigation';
-import { getCatalogProductBySlug, ALL_PRODUCT_SLUGS } from '@/lib/product-catalog';
+import { getPublishedProductBySlug, ALL_PRODUCT_SLUGS } from '@/lib/product-catalog';
 import { ProductDetailCatalogView } from '@/components/products/product-detail-catalog-view';
 
 interface ProductDetailPageProps {
@@ -13,7 +13,7 @@ export async function generateStaticParams() {
 
 export async function generateMetadata(props: ProductDetailPageProps): Promise<Metadata> {
   const { slug } = await props.params;
-  const product = getCatalogProductBySlug(slug);
+  const product = await getPublishedProductBySlug(slug);
   if (!product) {
     return {
       title: 'Không tìm thấy sản phẩm · Quỳnh Trang',
@@ -27,7 +27,7 @@ export async function generateMetadata(props: ProductDetailPageProps): Promise<M
 
 export default async function ProductDetailPage(props: ProductDetailPageProps) {
   const { slug } = await props.params;
-  const product = getCatalogProductBySlug(slug);
+  const product = await getPublishedProductBySlug(slug);
   if (!product) {
     notFound();
   }

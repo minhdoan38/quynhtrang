@@ -86,7 +86,7 @@ export function ProductDetailCatalogView({ product }: ProductDetailCatalogViewPr
 
   // 3. Database catalog hook
   const {
-    items: templates,
+    items: rawTemplates,
     isLoading,
     error,
     reload,
@@ -95,6 +95,20 @@ export function ProductDetailCatalogView({ product }: ProductDetailCatalogViewPr
     variantId: selectedVariantId !== 'all' ? selectedVariantId : undefined,
     categoryId: selectedCategory === 'all' ? undefined : selectedCategory,
     query: searchQuery,
+  });
+
+  const sellableVariants = product.variants.filter((v) => {
+    if ('status' in v && v.status !== 'active') return false;
+    return true;
+  });
+
+  const templates = rawTemplates.filter((item) => {
+    if (item.status && item.status !== 'published') return false;
+    if (item && typeof item === 'object') {
+      if ('available' in item && item.available === false) return false;
+      if ('blockers' in item && Array.isArray(item.blockers) && item.blockers.length > 0) return false;
+    }
+    return true;
   });
 
   useGSAP(
@@ -116,14 +130,16 @@ export function ProductDetailCatalogView({ product }: ProductDetailCatalogViewPr
   );
 
   const startWithBlank = () => {
+    const defaultVariant = sellableVariants[0]?.id ?? product.variants[0]?.id ?? 'default';
     const targetVariant =
-      selectedVariantId !== 'all' ? selectedVariantId : product.variants[0].id;
+      selectedVariantId !== 'all' ? selectedVariantId : defaultVariant;
     router.push(`/?product=${product.id}&variant=${targetVariant}&template=blank&view=editor`);
   };
 
   const applyTemplate = (templateId: string) => {
+    const defaultVariant = sellableVariants[0]?.id ?? product.variants[0]?.id ?? 'default';
     const targetVariant =
-      selectedVariantId !== 'all' ? selectedVariantId : product.variants[0].id;
+      selectedVariantId !== 'all' ? selectedVariantId : defaultVariant;
     router.push(
       `/?product=${product.id}&variant=${targetVariant}&template=${templateId}&view=editor`,
     );
@@ -160,7 +176,7 @@ export function ProductDetailCatalogView({ product }: ProductDetailCatalogViewPr
 
       <main className="mx-auto max-w-4xl px-4 pt-4 sm:pt-6 space-y-4">
         {/* 2. Variant Filter: using shadcn ToggleGroup */}
-        {product.variants.length > 1 && (
+        {sellableVariants.length > 1 && (
           <div className="space-y-1.5">
             <div className="overflow-x-auto pb-1 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
               <ToggleGroup
@@ -174,7 +190,7 @@ export function ProductDetailCatalogView({ product }: ProductDetailCatalogViewPr
                 <ToggleGroupItem value="all" size="sm">
                   Tất cả
                 </ToggleGroupItem>
-                {product.variants.map((v) => (
+                {sellableVariants.map((v) => (
                   <ToggleGroupItem key={v.id} value={v.id} size="sm">
                     {VARIANT_FILTER_LABELS[v.id] || v.name}
                   </ToggleGroupItem>
@@ -223,8 +239,8 @@ export function ProductDetailCatalogView({ product }: ProductDetailCatalogViewPr
                   onClick={() => setSelectedCategory(cat.id)}
                   aria-pressed={isSelected}
                   className={`inline-flex h-8 shrink-0 items-center justify-center rounded-full px-3 text-xs font-medium transition-all select-none ${isSelected
-                      ? 'border border-[#315F86] bg-[#DCEBF4] font-semibold text-[#315F86] shadow-2xs'
-                      : 'border border-[#DED7CD] bg-white text-[#343338] hover:bg-[#F8F1E5]'
+                    ? 'border border-[#315F86] bg-[#DCEBF4] font-semibold text-[#315F86] shadow-2xs'
+                    : 'border border-[#DED7CD] bg-white text-[#343338] hover:bg-[#F8F1E5]'
                     }`}
                 >
                   {cat.label}

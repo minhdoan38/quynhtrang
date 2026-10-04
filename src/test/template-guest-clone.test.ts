@@ -365,6 +365,42 @@ test('cloneTemplateIntoProject throws TEMPLATE_UNAVAILABLE when dependencies are
   );
 });
 
+test('cloneTemplateIntoProject throws TEMPLATE_UNAVAILABLE when variant or product is archived', async () => {
+  const mockRepo = createMockRepo({
+    availability: {
+      available: false,
+      blockers: [{ code: 'VARIANT_UNAVAILABLE', kind: 'variant', message: 'Biến thể đã bị lưu trữ' }],
+    },
+  });
+
+  await assert.rejects(
+    async () => {
+      await cloneTemplateIntoProject(
+        null,
+        {
+          templateId: 'tpl-sample-01',
+          expectedVersionId: 'ver-uuid-1111',
+          target: { productId: 'wrapping', variantId: 'default', mode: 'pattern', shape: null },
+          requestId: 'req-archived-variant-1',
+        },
+        { repo: mockRepo as unknown as TemplateRepository },
+      );
+    },
+    (err: unknown) => {
+      const serviceError = err as TemplateServiceError;
+      assert.equal(serviceError.code, 'TEMPLATE_UNAVAILABLE');
+      assert.equal(serviceError.status, 409);
+      if (serviceError.details && typeof serviceError.details === 'object' && 'blockers' in serviceError.details) {
+        const blockers = serviceError.details.blockers;
+        if (Array.isArray(blockers)) {
+          assert.ok(blockers.some((b) => typeof b === 'object' && b && 'code' in b && b.code === 'VARIANT_UNAVAILABLE'));
+        }
+      }
+      return true;
+    },
+  );
+});
+
 // 8. API Route POST /api/templates/[id]/use handling
 test('API route /api/templates/[id]/use responds with 200 for guest clone and 409 on conflicts', async () => {
   const mockRepo = createMockRepo();

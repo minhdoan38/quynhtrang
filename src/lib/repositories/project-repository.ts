@@ -1,7 +1,11 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 
 import type { DesignState, ProductId } from '../product-state.ts';
-
+import {
+  resolveProductDefinition,
+  resolveProductDefinitionKey,
+  type ProductDefinitionCapabilities,
+} from '../product-definition-registry.ts';
 export interface ProjectRecord {
   id: string;
   ownerUserId?: string | null;
@@ -112,6 +116,81 @@ export class ProjectRepository {
     }
 
     return this.mapRow(data);
+  }
+
+  async resolveHistoricalProductVariant(
+    productId: string,
+    variantId?: string | null,
+  ): Promise<{
+    ok: boolean;
+    productId: string;
+    variantId: string | null;
+    definition: ProductDefinitionCapabilities | null;
+    product: Record<string, unknown> | null;
+    variant: Record<string, unknown> | null;
+    code?: string;
+    message?: string;
+  }> {
+    if (!productId) {
+      return {
+        ok: false,
+        productId: '',
+        variantId: variantId ?? null,
+        definition: null,
+        product: null,
+        variant: null,
+        code: 'INVALID_PRODUCT',
+        message: 'Mã sản phẩm không hợp lệ',
+      };
+    }
+
+    // Historical resolution ignores active / archived status
+    let productRow: Record<string, unknown> | null = null;
+    let variantRow: Record<string, unknown> | null = null;
+
+    if (this.client) {
+      const prodRes = await this.client.from('products').select('*').eq('id', productId).maybeSingle();
+      if (prodRes && prodRes.data && typeof prodRes.data === 'object') {
+        productRow = prodRes.data as Record<string, unknown>;
+      }
+      if (variantId) {
+        const varRes = await this.client.from('product_variants').select('*').eq('product_id', productId).eq('id', variantId).maybeSingle();
+        if (varRes && varRes.data && typeof varRes.data === 'object') {
+          variantRow = varRes.data as Record<string, unknown>;
+        }
+      }
+    }
+
+    // Validate code registry key
+    let definition: ProductDefinitionCapabilities | null = null;
+    if (variantRow && typeof variantRow.definition_key === 'string') {
+      definition = resolveProductDefinitionKey(variantRow.definition_key);
+    }
+    if (!definition && variantId) {
+      definition = resolveProductDefinition(productId, variantId);
+    }
+
+    if (variantId && !definition) {
+      return {
+        ok: false,
+        productId,
+        variantId: variantId ?? null,
+        definition: null,
+        product: productRow,
+        variant: variantRow,
+        code: 'MISSING_CODE_DEFINITION',
+        message: 'Biến thể không có định nghĩa hợp lệ trong hệ thống',
+      };
+    }
+
+    return {
+      ok: true,
+      productId,
+      variantId: variantId ?? null,
+      definition,
+      product: productRow,
+      variant: variantRow,
+    };
   }
 
   private mapRow(row: unknown): ProjectRecord {

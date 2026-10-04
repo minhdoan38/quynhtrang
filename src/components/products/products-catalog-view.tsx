@@ -118,9 +118,9 @@ function ProductCardItem({ product }: { product: CatalogProduct }) {
   );
 }
 
-export function ProductsCatalogView() {
+export function ProductsCatalogView({ products: initialProducts }: { products?: CatalogProduct[] } = {}) {
   const containerRef = useRef<HTMLDivElement>(null);
-  const products = getAllCatalogProducts();
+  const products = initialProducts ?? getAllCatalogProducts();
 
   useGSAP(
     () => {

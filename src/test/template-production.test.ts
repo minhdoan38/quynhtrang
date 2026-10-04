@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { createHash, randomUUID } from 'node:crypto';
 import { describe, it } from 'node:test';
 import sharp from 'sharp';
+import type { SupabaseClient } from '@supabase/supabase-js';
 
 import { isTemplateAssetPath, type AssetPromotionRepository } from '../lib/asset-store.ts';
 import { canMutateElement, validateRevisionReason } from '../lib/domain/design-revision.ts';
@@ -453,5 +454,26 @@ describe('State 43 Task 19: Template Production Integration', () => {
     assert.equal(metadata.height, 1748);
     assert.equal(metadata.format, 'png');
     assert.equal(metadata.channels, 4);
+  });
+
+  it('existing order for archived product/variant proceeds through production lifecycle using frozen snapshot', async () => {
+    const orderId = 'order-archived-product-1';
+    const mockClient = {
+      rpc: async (fn: string, args: Record<string, unknown>) => {
+        if (fn === 'start_order_production') {
+          return { data: { ok: true, value: { orderId: String(args.p_order_id), fulfillmentStatus: 'in_production' } }, error: null };
+        }
+        return { data: null, error: new Error('Unknown RPC') };
+      },
+    } as unknown as SupabaseClient;
+
+    const result = await startProductionInternal(
+      { orderId, requestId: 'req-archived-prod-start' },
+      mockClient,
+    );
+    assert.equal(result.ok, true);
+    if (result.ok) {
+      assert.equal(result.value.fulfillmentStatus, 'in_production');
+    }
   });
 });

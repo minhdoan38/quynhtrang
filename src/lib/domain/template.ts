@@ -301,6 +301,11 @@ export interface DependencyMetadataItem {
 export interface TemplateAvailabilityDependencies {
   lookup?: ReadonlyMap<string, DependencyMetadataItem> | Record<string, DependencyMetadataItem>;
   assetManifestHealthy?: boolean;
+  productStatus?: string;
+  variantStatus?: string;
+  isProductSellable?: boolean;
+  isVariantSellable?: boolean;
+  hasDefinition?: boolean;
 }
 
 export type TemplateErrorCode =

@@ -265,6 +265,15 @@ export function getCatalogProductBySlug(slug: string): CatalogProduct | null {
   return getCatalogProduct(productId);
 }
 
+export async function getPublishedProductBySlug(
+  slug: string,
+  repository?: CatalogRepository,
+): Promise<CatalogProduct | null> {
+  const products = await getPublishedProducts(repository);
+  const resolvedId = resolveProductIdFromSlug(slug);
+  return products.find((p) => p.slug === slug || (resolvedId && p.id === resolvedId)) ?? null;
+}
+
 export function getAllCatalogProducts(): CatalogProduct[] {
   return [
     CATALOG_PRODUCTS.wrapping,
