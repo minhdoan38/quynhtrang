@@ -1,21 +1,28 @@
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 import type { DesignStatus, FulfillmentStatus, PaymentStatus } from '@/lib/domain/order';
+import type { PaymentPurpose } from '@/lib/order-types';
 
 interface OrderStatusChipProps {
   type: 'payment' | 'design' | 'fulfillment';
   status: PaymentStatus | DesignStatus | FulfillmentStatus | string;
   className?: string;
+  purpose?: PaymentPurpose;
 }
 
-export function OrderStatusChip({ type, status, className }: OrderStatusChipProps) {
+export function OrderStatusChip({ type, status, className, purpose }: OrderStatusChipProps) {
   let label = status;
   let variantClass = 'bg-neutral-100 text-neutral-800 border-neutral-200';
 
   if (type === 'payment') {
     switch (status) {
       case 'paid':
-        label = 'Đã thanh toán';
+        label = purpose === 'checkout_deposit' ? 'Đã xác nhận cọc' : 'Đã thanh toán';
+        variantClass = 'bg-emerald-50 text-emerald-800 border-emerald-200';
+        break;
+      case 'deposit_confirmed':
+      case 'Đã xác nhận cọc':
+        label = 'Đã xác nhận cọc';
         variantClass = 'bg-emerald-50 text-emerald-800 border-emerald-200';
         break;
       case 'payment_reported':
@@ -23,15 +30,16 @@ export function OrderStatusChip({ type, status, className }: OrderStatusChipProp
         variantClass = 'bg-amber-50 text-amber-800 border-amber-200';
         break;
       case 'pending_payment':
-        label = 'Chờ thanh toán';
+        label = purpose === 'checkout_deposit' ? 'Chờ đặt cọc' : 'Chờ thanh toán';
         variantClass = 'bg-neutral-100 text-neutral-700 border-neutral-200';
+        break;
+      case 'payment_failed':
+        label = 'Thanh toán lỗi';
+        variantClass = 'bg-rose-50 text-rose-800 border-rose-200';
         break;
       case 'cancelled':
         label = 'Đã hủy';
         variantClass = 'bg-rose-50 text-rose-800 border-rose-200';
-        break;
-      default:
-        label = status;
         break;
     }
   } else if (type === 'design') {

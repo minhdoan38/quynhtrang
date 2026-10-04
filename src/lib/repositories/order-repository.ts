@@ -1,3 +1,4 @@
+import type { PaymentPolicy } from '../domain/commercial-config.ts';
 import type { PaymentPurpose } from '../order-types.ts';
 import type { SupabaseClient } from '@supabase/supabase-js';
 
@@ -186,7 +187,7 @@ export class OrderRepository {
       dbQuery = dbQuery.eq('payment_status', 'pending_payment');
     } else if (query.view === 'production') {
       dbQuery = dbQuery
-        .eq('payment_status', 'paid')
+        .in('payment_status', ['paid', 'deposit_confirmed'])
         .eq('design_status', 'approved')
         .eq('fulfillment_status', 'ready_for_production');
     }
@@ -286,7 +287,7 @@ export class OrderRepository {
       this.client
         .from('orders')
         .select('*', { count: 'exact', head: true })
-        .eq('payment_status', 'paid')
+        .in('payment_status', ['paid', 'deposit_confirmed'])
         .eq('design_status', 'approved')
         .eq('fulfillment_status', 'ready_for_production'),
     ]);
@@ -449,11 +450,17 @@ export class OrderRepository {
       shippingAddress: String(data.shipping_address ?? ''),
     };
 
+    const paymentPolicy = (data.payment_policy && typeof data.payment_policy === 'object')
+      ? (data.payment_policy as PaymentPolicy)
+      : undefined;
+
     const operationalState: OrderOperationalState = {
       paymentStatus: payment.status,
       designStatus: normalizeDesignStatus(data.design_status),
       fulfillmentStatus: normalizeFulfillmentStatus(data.fulfillment_status),
       activeHold,
+      paymentPolicy,
+      paymentPurpose: payment.purpose,
     };
 
     const nextAction = resolveOrderNextAction(operationalState);
@@ -497,6 +504,10 @@ export class OrderRepository {
       customer,
       delivery,
       activeHold,
+      paymentPolicy,
+      depositAmount: typeof data.deposit_amount === 'number' ? data.deposit_amount : null,
+      amountDueNow: typeof data.amount_due_now === 'number' ? data.amount_due_now : undefined,
+      remainingAmount: typeof data.remaining_amount === 'number' ? data.remaining_amount : undefined,
       nextAction,
       recentEvents,
       nextEventCursor,

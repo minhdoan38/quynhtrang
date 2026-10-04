@@ -127,6 +127,11 @@ export function OrderDetail({
           <OrderPaymentCard
             orderCode={detail.publicOrderCode}
             payment={detail.payment}
+            paymentPolicy={detail.paymentPolicy}
+            depositAmount={detail.depositAmount}
+            amountDueNow={detail.amountDueNow}
+            remainingAmount={detail.remainingAmount}
+            total={detail.product.total}
             canConfirmPayment={canMutate}
             isSubmitting={isSubmitting}
             onConfirmIntent={onConfirmPaymentIntent}

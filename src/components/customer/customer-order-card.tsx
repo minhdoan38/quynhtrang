@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { Package, Clock, ArrowRight } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { getCustomerFacingStatusText } from '@/lib/domain/order.ts';
+import type { PaymentPolicy } from '@/lib/domain/commercial-config.ts';
 
 export { getCustomerFacingStatusText };
 
@@ -19,6 +20,21 @@ export interface CustomerOrderItem {
   created_at: string;
   customer_status: string;
   customer_approved_design_version_id: string;
+  payment_status?: string;
+  payment_policy?: PaymentPolicy;
+  deposit_amount?: number | null;
+  amount_due_now?: number;
+  remaining_amount?: number;
+  payment_summary?: {
+    payment_status: string;
+    purpose: string;
+    is_deposit: boolean;
+    is_confirmed: boolean;
+    is_fully_paid: boolean;
+    amount_due_now: number;
+    remaining_amount: number;
+    status_label: string;
+  };
 }
 
 export function CustomerOrderCard({ order }: { order: CustomerOrderItem }) {
@@ -27,6 +43,17 @@ export function CustomerOrderCard({ order }: { order: CustomerOrderItem }) {
   const variantName = order.variant_snapshot?.name || '';
   const dateFormatted = new Date(order.created_at).toLocaleDateString('vi-VN');
 
+  const isDeposit = order.payment_summary?.is_deposit ?? (
+    order.payment_policy?.kind === 'fixed_deposit' ||
+    order.payment_status === 'deposit_confirmed' ||
+    (typeof order.deposit_amount === 'number' && order.deposit_amount < order.total)
+  );
+
+  const paymentLabel = order.payment_summary?.status_label ?? (
+    isDeposit
+      ? (order.payment_status === 'deposit_confirmed' ? 'Đã xác nhận cọc' : 'Chờ đặt cọc')
+      : (order.payment_status === 'paid' ? 'Đã thanh toán' : 'Chờ thanh toán')
+  );
   let statusBadgeStyle = 'bg-neutral-100 text-neutral-800 border-neutral-200';
   if (order.customer_status === 'waiting_payment') {
     statusBadgeStyle = 'bg-amber-50 text-amber-900 border-amber-200';
@@ -67,6 +94,9 @@ export function CustomerOrderCard({ order }: { order: CustomerOrderItem }) {
           <p className="font-bold text-sm text-[#315F86]">
             {Number(order.total).toLocaleString('vi-VN')} {order.currency || 'đ'}
           </p>
+          <span className="text-[11px] text-[#666A6D] block">
+            {paymentLabel}
+          </span>
         </div>
       </div>
 

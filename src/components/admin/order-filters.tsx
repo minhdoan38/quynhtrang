@@ -38,8 +38,8 @@ const PAYMENT_OPTIONS: Array<{ value: PaymentStatus | 'all'; label: string }> = 
   { value: 'all', label: 'Tất cả thanh toán' },
   { value: 'pending_payment', label: 'Chờ thanh toán' },
   { value: 'payment_reported', label: 'Khách báo đã chuyển' },
+  { value: 'deposit_confirmed', label: 'Đã xác nhận cọc' },
   { value: 'paid', label: 'Đã thanh toán' },
-  { value: 'payment_failed', label: 'Thanh toán lỗi' },
   { value: 'cancelled', label: 'Đã hủy' },
 ];
 

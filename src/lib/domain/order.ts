@@ -1,6 +1,7 @@
 import type { CustomerInfo, OrderPayment, PaymentPurpose, PaymentStatus, PendingOrder } from '../order-types.ts';
 import type { PaymentPolicy } from './commercial-config.ts';
 export type { PaymentStatus } from '../order-types.ts';
+import { isPaymentSatisfiedForProduction, type OrderWithPaymentSnapshot } from './payment-presentation.ts';
 import type { ProductId } from '../product-state.ts';
 
 export type StaffRole = 'admin' | 'editor';
@@ -26,6 +27,8 @@ export interface OrderOperationalState {
   designStatus: DesignStatus;
   fulfillmentStatus: FulfillmentStatus;
   activeHold: ActiveOrderHold | null;
+  paymentPolicy?: PaymentPolicy;
+  paymentPurpose?: PaymentPurpose;
 }
 export type CustomerFacingOrderStatus =
   | 'waiting_payment'
@@ -146,6 +149,10 @@ export interface AdminOrderDetail {
   customer: { fullName: string; phone: string };
   delivery: { shippingAddress: string };
   activeHold: ActiveOrderHold | null;
+  paymentPolicy?: PaymentPolicy;
+  depositAmount?: number | null;
+  amountDueNow?: number;
+  remainingAmount?: number;
   nextAction: OrderNextAction;
   recentEvents: OrderActivityItem[];
   nextEventCursor: string | null;
@@ -156,12 +163,24 @@ export interface EventPage {
   nextCursor: string | null;
 }
 
-export function assertProductionStartEligible(order: OrderOperationalState & { productionDesignVersionId?: string | null }): void {
+export function assertProductionStartEligible(
+  order: OrderOperationalState & {
+    productionDesignVersionId?: string | null;
+    paymentPolicy?: PaymentPolicy;
+    payment?: { purpose?: PaymentPurpose; status?: PaymentStatus };
+  }
+): void {
   if (order.activeHold) {
     throw new Error('Đơn hàng đang tạm giữ, không thể bắt đầu sản xuất');
   }
-  if (order.paymentStatus !== 'paid') {
-    throw new Error('Đơn hàng chưa thanh toán, không thể bắt đầu sản xuất');
+  if (!isPaymentSatisfiedForProduction(order)) {
+    const isDeposit = order.paymentPolicy?.kind === 'fixed_deposit' ||
+      order.payment?.purpose === 'checkout_deposit' ||
+      order.paymentStatus === 'deposit_confirmed';
+    if (isDeposit) {
+      throw new Error('Tiền cọc chưa được xác nhận');
+    }
+    throw new Error('Thanh toán chưa được xác nhận (Đơn hàng chưa thanh toán, không thể bắt đầu sản xuất)');
   }
   if (order.designStatus !== 'approved') {
     throw new Error('Thiết kế chưa được duyệt, không thể bắt đầu sản xuất');
@@ -413,6 +432,7 @@ export interface PaymentSummary {
   amount: number;
   currency: string;
   reference: string;
+  purpose?: PaymentPurpose;
   qrPayload?: string | null;
   status: string;
   customerReportedAt?: string | null;
@@ -442,6 +462,10 @@ export interface OrderInboxRow {
   total: number;
   currency: string;
   paymentStatus: string;
+  paymentPolicy?: PaymentPolicy;
+  depositAmount?: number | null;
+  amountDueNow?: number;
+  remainingAmount?: number;
   designStatus: DesignStatus;
   fulfillmentStatus: FulfillmentStatus;
   attentionReasons: AttentionReason[];
@@ -471,7 +495,8 @@ export interface OrderListQuery {
 export function deriveAttentionReasons(
   paymentStatus: string,
   designStatus: DesignStatus,
-  fulfillmentStatus: FulfillmentStatus
+  fulfillmentStatus: FulfillmentStatus,
+  orderContext?: OrderWithPaymentSnapshot
 ): AttentionReason[] {
   if (paymentStatus === 'cancelled' || fulfillmentStatus === 'cancelled' || fulfillmentStatus === 'completed') {
     return [];
@@ -491,7 +516,11 @@ export function deriveAttentionReasons(
     reasons.push('DESIGN_CHANGES');
   }
 
-  if (paymentStatus === 'paid' && designStatus === 'approved' && fulfillmentStatus === 'ready_for_production') {
+  const isSatisfied = orderContext
+    ? isPaymentSatisfiedForProduction(orderContext)
+    : (paymentStatus === 'paid' || paymentStatus === 'deposit_confirmed');
+
+  if (isSatisfied && designStatus === 'approved' && fulfillmentStatus === 'ready_for_production') {
     reasons.push('READY_FOR_PRODUCTION');
   }
 
@@ -516,6 +545,10 @@ interface RawDatabaseOrderJoin {
   customer_phone: string;
   shipping_address?: string | null;
   payment_status: string;
+  payment_policy?: PaymentPolicy | Record<string, unknown> | null;
+  deposit_amount?: number | null;
+  amount_due_now?: number | null;
+  remaining_amount?: number | null;
   design_status: string;
   fulfillment_status: string;
   created_at: string;
@@ -583,12 +616,23 @@ export function mapOrderInboxRow(raw: RawDatabaseOrderJoin): OrderInboxRow {
     total: Number(raw.total),
     currency: raw.currency || 'VND',
     paymentStatus: raw.payment_status,
+    paymentPolicy: (raw.payment_policy && typeof raw.payment_policy === 'object') ? (raw.payment_policy as PaymentPolicy) : undefined,
+    depositAmount: typeof raw.deposit_amount === 'number' ? raw.deposit_amount : null,
+    amountDueNow: typeof raw.amount_due_now === 'number' ? raw.amount_due_now : undefined,
+    remainingAmount: typeof raw.remaining_amount === 'number' ? raw.remaining_amount : undefined,
     designStatus: normalizeDesignStatus(raw.design_status),
     fulfillmentStatus: normalizeFulfillmentStatus(raw.fulfillment_status),
     attentionReasons: deriveAttentionReasons(
       raw.payment_status,
       normalizeDesignStatus(raw.design_status),
-      normalizeFulfillmentStatus(raw.fulfillment_status)
+      normalizeFulfillmentStatus(raw.fulfillment_status),
+      {
+        paymentStatus: raw.payment_status,
+        paymentPolicy: (raw.payment_policy && typeof raw.payment_policy === 'object') ? (raw.payment_policy as PaymentPolicy) : undefined,
+        depositAmount: typeof raw.deposit_amount === 'number' ? raw.deposit_amount : null,
+        amountDueNow: typeof raw.amount_due_now === 'number' ? raw.amount_due_now : undefined,
+        remainingAmount: typeof raw.remaining_amount === 'number' ? raw.remaining_amount : undefined,
+      }
     ),
     approvedDesignVersion: designVersionRow
       ? {
@@ -602,6 +646,7 @@ export function mapOrderInboxRow(raw: RawDatabaseOrderJoin): OrderInboxRow {
     payment: paymentRow
       ? {
         id: String(paymentRow.id),
+        purpose: (paymentRow.purpose && typeof paymentRow.purpose === 'string') ? (paymentRow.purpose as PaymentPurpose) : 'full_order_payment',
         provider: String(paymentRow.provider ?? ''),
         amount: Number(paymentRow.amount ?? 0),
         currency: String(paymentRow.currency ?? 'VND'),

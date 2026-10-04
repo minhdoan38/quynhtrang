@@ -2,7 +2,7 @@ import type {
   OrderNextAction,
   OrderOperationalState,
 } from '../domain/order.ts';
-
+import { isPaymentSatisfiedForProduction } from '../domain/payment-presentation.ts';
 export function resolveOrderNextAction(state: OrderOperationalState): OrderNextAction {
   // 1. Active hold → release_hold, regardless of other states.
   if (state.activeHold) {
@@ -45,16 +45,22 @@ export function resolveOrderNextAction(state: OrderOperationalState): OrderNextA
     };
   }
 
+  const isDeposit = state.paymentPolicy?.kind === 'fixed_deposit' ||
+    state.paymentPurpose === 'checkout_deposit' ||
+    state.paymentStatus === 'deposit_confirmed';
+
   // 4. payment_reported → verify_payment (Khách báo đã chuyển khoản)
   if (state.paymentStatus === 'payment_reported') {
     return {
       kind: 'verify_payment',
       eyebrow: 'CẦN XỬ LÝ',
       title: 'Khách báo đã chuyển khoản',
-      description: 'Kiểm tra tài khoản và xác nhận thanh toán để tiếp tục xử lý đơn.',
+      description: isDeposit
+        ? 'Kiểm tra tài khoản và xác nhận tiền cọc để tiếp tục xử lý đơn.'
+        : 'Kiểm tra tài khoản và xác nhận thanh toán để tiếp tục xử lý đơn.',
       intent: 'attention',
       cta: {
-        label: 'Xác nhận thanh toán',
+        label: isDeposit ? 'Xác nhận cọc' : 'Xác nhận thanh toán',
         type: 'confirm_payment',
       },
     };
@@ -65,15 +71,19 @@ export function resolveOrderNextAction(state: OrderOperationalState): OrderNextA
     return {
       kind: 'wait_for_payment',
       eyebrow: 'ĐANG CHỜ',
-      title: 'Đang chờ khách thanh toán',
-      description: 'Chờ khách hoàn tất thanh toán chuyển khoản trước khi chuyển qua duyệt thiết kế.',
+      title: isDeposit ? 'Đang chờ khách đặt cọc' : 'Đang chờ khách thanh toán',
+      description: isDeposit
+        ? 'Chờ khách hoàn tất đặt cọc chuyển khoản trước khi chuyển qua duyệt thiết kế.'
+        : 'Chờ khách hoàn tất thanh toán chuyển khoản trước khi chuyển qua duyệt thiết kế.',
       intent: 'waiting',
       cta: null,
     };
   }
 
-  // 6. paid + in_production → production_in_progress
-  if (state.paymentStatus === 'paid' && state.fulfillmentStatus === 'in_production') {
+  const isPaidSatisfied = isPaymentSatisfiedForProduction(state);
+
+  // 6. payment satisfied + in_production → production_in_progress
+  if (isPaidSatisfied && state.fulfillmentStatus === 'in_production') {
     return {
       kind: 'production_in_progress',
       eyebrow: 'TRẠNG THÁI',
@@ -87,13 +97,15 @@ export function resolveOrderNextAction(state: OrderOperationalState): OrderNextA
     };
   }
 
-  // 7. paid + design awaiting_review or ready → review_design
-  if (state.paymentStatus === 'paid' && (state.designStatus === 'awaiting_review' || state.designStatus === 'ready')) {
+  // 7. payment satisfied + design awaiting_review or ready → review_design
+  if (isPaidSatisfied && (state.designStatus === 'awaiting_review' || state.designStatus === 'ready')) {
     return {
       kind: 'review_design',
       eyebrow: 'CẦN XỬ LÝ',
       title: 'Cần duyệt thiết kế',
-      description: 'Khách đã thanh toán. Kiểm tra và duyệt file in của đơn hàng.',
+      description: isDeposit
+        ? 'Đã xác nhận cọc. Kiểm tra và duyệt file in của đơn hàng.'
+        : 'Khách đã thanh toán. Kiểm tra và duyệt file in của đơn hàng.',
       intent: 'attention',
       cta: {
         label: 'Kiểm tra thiết kế',
@@ -102,8 +114,8 @@ export function resolveOrderNextAction(state: OrderOperationalState): OrderNextA
     };
   }
 
-  // 8. paid + design editing → continue_design_edit
-  if (state.paymentStatus === 'paid' && state.designStatus === 'editing') {
+  // 8. payment satisfied + design editing → continue_design_edit
+  if (isPaidSatisfied && state.designStatus === 'editing') {
     return {
       kind: 'continue_design_edit',
       eyebrow: 'CẦN XỬ LÝ',
@@ -117,8 +129,8 @@ export function resolveOrderNextAction(state: OrderOperationalState): OrderNextA
     };
   }
 
-  // 8b. paid + design needs_changes → resolve_design_changes
-  if (state.paymentStatus === 'paid' && state.designStatus === 'needs_changes') {
+  // 8b. payment satisfied + design needs_changes → resolve_design_changes
+  if (isPaidSatisfied && state.designStatus === 'needs_changes') {
     return {
       kind: 'resolve_design_changes',
       eyebrow: 'CẦN XỬ LÝ',
@@ -132,9 +144,9 @@ export function resolveOrderNextAction(state: OrderOperationalState): OrderNextA
     };
   }
 
-  // 9. paid + design approved + fulfillment unprocessed or ready_for_production → ready_for_production
+  // 9. payment satisfied + design approved + fulfillment unprocessed or ready_for_production → ready_for_production
   if (
-    state.paymentStatus === 'paid' &&
+    isPaidSatisfied &&
     state.designStatus === 'approved' &&
     (state.fulfillmentStatus === 'unprocessed' || state.fulfillmentStatus === 'ready_for_production')
   ) {
@@ -142,7 +154,9 @@ export function resolveOrderNextAction(state: OrderOperationalState): OrderNextA
       kind: 'ready_for_production',
       eyebrow: 'SẴN SÀNG',
       title: 'Sẵn sàng sản xuất',
-      description: 'Đã nhận thanh toán và thiết kế đã duyệt. Sẵn sàng đưa vào xưởng in.',
+      description: isDeposit
+        ? 'Đã xác nhận cọc và thiết kế đã duyệt. Sẵn sàng đưa vào xưởng in.'
+        : 'Đã nhận thanh toán và thiết kế đã duyệt. Sẵn sàng đưa vào xưởng in.',
       intent: 'ready',
       cta: {
         label: 'Bắt đầu sản xuất',

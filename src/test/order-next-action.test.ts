@@ -112,6 +112,31 @@ describe('resolveOrderNextAction', () => {
       createState({ paymentStatus: 'payment_failed' }),
       'none',
     ],
+    [
+      'deposit confirmed approved is production ready with ready_for_production fulfillment',
+      createState({ paymentStatus: 'deposit_confirmed', designStatus: 'approved', fulfillmentStatus: 'ready_for_production' }),
+      'ready_for_production',
+    ],
+    [
+      'deposit confirmed awaiting review opens design review',
+      createState({ paymentStatus: 'deposit_confirmed', designStatus: 'awaiting_review' }),
+      'review_design',
+    ],
+    [
+      'deposit confirmed in production reflects production in progress',
+      createState({ paymentStatus: 'deposit_confirmed', designStatus: 'approved', fulfillmentStatus: 'in_production' }),
+      'production_in_progress',
+    ],
+    [
+      'deposit confirmed needs changes requires resolving changes',
+      createState({ paymentStatus: 'deposit_confirmed', designStatus: 'needs_changes' }),
+      'resolve_design_changes',
+    ],
+    [
+      'deposit confirmed editing resumes active design edit',
+      createState({ paymentStatus: 'deposit_confirmed', designStatus: 'editing' }),
+      'continue_design_edit',
+    ],
   ];
 
   for (const [description, state, expectedKind] of cases) {
@@ -139,6 +164,16 @@ describe('resolveOrderNextAction', () => {
     const holdResult = resolveOrderNextAction(createState({ activeHold: mockHold }));
     assert.equal(holdResult.kind, 'release_hold');
     assert.equal(holdResult.cta?.type, 'release_hold');
+
+    const depositReported = resolveOrderNextAction(createState({
+      paymentStatus: 'payment_reported',
+      paymentPolicy: { kind: 'fixed_deposit', depositAmount: 50000 },
+    }));
+    assert.equal(depositReported.kind, 'verify_payment');
+    assert.deepEqual(depositReported.cta, {
+      label: 'Xác nhận cọc',
+      type: 'confirm_payment',
+    });
 
     const paymentResult = resolveOrderNextAction(createState({ paymentStatus: 'payment_reported' }));
     assert.equal(paymentResult.kind, 'verify_payment');

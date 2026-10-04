@@ -6,6 +6,7 @@ import { ArrowLeft, Package, MapPin, Calendar } from 'lucide-react';
 import { DesignCanvas } from '@/components/customizer/design-canvas';
 import { getCustomerFacingStatusText } from '@/lib/domain/order.ts';
 import type { DesignState } from '@/lib/product-state.ts';
+import type { PaymentPolicy } from '@/lib/domain/commercial-config.ts';
 
 export interface CustomerOrderDetailData {
   id: string;
@@ -17,6 +18,21 @@ export interface CustomerOrderDetailData {
   recipient_name: string;
   shipping_address: string;
   customer_status: string;
+  payment_status?: string;
+  payment_policy?: PaymentPolicy;
+  deposit_amount?: number | null;
+  amount_due_now?: number;
+  remaining_amount?: number;
+  payment_summary?: {
+    payment_status: string;
+    purpose: string;
+    is_deposit: boolean;
+    is_confirmed: boolean;
+    is_fully_paid: boolean;
+    amount_due_now: number;
+    remaining_amount: number;
+    status_label: string;
+  };
   approved_design: {
     version_id: string;
     document: DesignState;
@@ -27,6 +43,20 @@ export function CustomerOrderDetailView({ order }: { order: CustomerOrderDetailD
   const statusText = getCustomerFacingStatusText(order.customer_status);
   const doc = order.approved_design.document;
 
+  const isDeposit = order.payment_summary?.is_deposit ?? (
+    order.payment_policy?.kind === 'fixed_deposit' ||
+    order.payment_status === 'deposit_confirmed' ||
+    (typeof order.deposit_amount === 'number' && order.deposit_amount < order.total)
+  );
+
+  const paymentLabel = order.payment_summary?.status_label ?? (
+    isDeposit
+      ? (order.payment_status === 'deposit_confirmed' ? 'Đã xác nhận cọc' : 'Chờ đặt cọc')
+      : (order.payment_status === 'paid' ? 'Đã thanh toán' : 'Chờ thanh toán')
+  );
+
+  const depositAmount = order.payment_summary?.amount_due_now ?? order.deposit_amount ?? order.amount_due_now ?? 0;
+  const remainingAmount = order.payment_summary?.remaining_amount ?? order.remaining_amount ?? (order.total > depositAmount ? order.total - depositAmount : 0);
   return (
     <div className="max-w-3xl mx-auto w-full px-4 sm:px-6 py-6 space-y-6 select-none">
       <Link
@@ -67,11 +97,37 @@ export function CustomerOrderDetailView({ order }: { order: CustomerOrderDetailD
           </div>
         </div>
 
-        <div className="pt-2 border-t border-[#ECE6DC] flex items-center justify-between text-xs font-semibold">
-          <span className="text-[#666A6D]">Số lượng: {order.quantity} sản phẩm</span>
-          <span className="text-[#315F86] text-base font-bold">
-            Tổng cộng: {Number(order.total).toLocaleString('vi-VN')} {order.currency || 'đ'}
-          </span>
+        <div className="pt-2 border-t border-[#ECE6DC] space-y-2 text-xs">
+          <div className="flex items-center justify-between font-semibold">
+            <span className="text-[#666A6D]">Số lượng: {order.quantity} sản phẩm</span>
+            <span className="text-[#315F86] text-base font-bold">
+              Tổng cộng: {Number(order.total).toLocaleString('vi-VN')} {order.currency || 'đ'}
+            </span>
+          </div>
+
+          <div className="flex items-center justify-between text-[#666A6D] pt-1 border-t border-[#ECE6DC]/60">
+            <span>Trạng thái thanh toán:</span>
+            <span className="font-semibold text-[#2E3338]">{paymentLabel}</span>
+          </div>
+
+          {isDeposit && (
+            <>
+              <div className="flex items-center justify-between text-[#666A6D]">
+                <span>Tiền cọc:</span>
+                <span className="font-medium text-[#2E3338]">
+                  {Number(depositAmount).toLocaleString('vi-VN')} {order.currency || 'đ'}
+                </span>
+              </div>
+              {remainingAmount > 0 && (
+                <div className="flex items-center justify-between text-[#666A6D]">
+                  <span>Số tiền còn lại:</span>
+                  <span className="font-medium text-[#2E3338]">
+                    {Number(remainingAmount).toLocaleString('vi-VN')} {order.currency || 'đ'}
+                  </span>
+                </div>
+              )}
+            </>
+          )}
         </div>
       </div>
 

@@ -106,7 +106,7 @@ export function OrderRow({ order, currentQuery, className }: OrderRowProps) {
 
         {/* Status Chips & Attention Badges */}
         <div className="flex flex-wrap items-center gap-1.5 pt-1">
-          <OrderStatusChip type="payment" status={order.paymentStatus} />
+          <OrderStatusChip type="payment" status={order.paymentStatus} purpose={order.payment?.purpose} />
           <OrderStatusChip type="design" status={order.designStatus} />
           <OrderStatusChip type="fulfillment" status={order.fulfillmentStatus} />
 
@@ -174,7 +174,7 @@ export function OrderRow({ order, currentQuery, className }: OrderRowProps) {
         <div className="col-span-3 flex items-center justify-between gap-2 min-w-0">
           <div className="flex flex-col gap-1 min-w-0">
             <div className="flex flex-wrap items-center gap-1">
-              <OrderStatusChip type="payment" status={order.paymentStatus} />
+              <OrderStatusChip type="payment" status={order.paymentStatus} purpose={order.payment?.purpose} />
               <OrderStatusChip type="design" status={order.designStatus} />
               <OrderStatusChip type="fulfillment" status={order.fulfillmentStatus} />
             </div>
