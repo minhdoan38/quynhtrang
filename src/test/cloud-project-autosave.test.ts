@@ -66,3 +66,51 @@ test('saveCustomerProjectRevision redacts database errors and does not leak Post
   assert.equal(result.userMessage, 'Lỗi lưu trữ đám mây');
   assert.doesNotMatch(JSON.stringify(result), /duplicate key|unique constraint|customer_projects_pkey/i);
 });
+
+test('saveCustomerProjectRevision retains network message and code for network failures', async () => {
+  const mockSupabase = {
+    rpc: async () => ({
+      data: null,
+      error: new TypeError('fetch failed'),
+    }),
+  };
+
+  const result = await saveCustomerProjectRevision(
+    'project_123',
+    1,
+    createInitialState('card'),
+    mockSupabase as never,
+  );
+
+  assert.equal(result.conflict, false);
+  assert.equal(result.code, 'NETWORK_ERROR');
+  assert.equal(result.safeMessageKey, 'reliability.network_error');
+  assert.equal(result.retryable, true);
+  assert.equal(result.retryPolicy, 'retryable');
+  assert.equal(result.userMessage, 'Mất kết nối. Hãy kiểm tra mạng và thử lại.');
+  assert.doesNotMatch(result.userMessage || '', /Lỗi lưu trữ đám mây/);
+});
+
+test('saveCustomerProjectRevision sanitizes PostgREST and Postgres errors to cloud storage error copy', async () => {
+  const mockSupabase = {
+    rpc: async () => ({
+      data: null,
+      error: {
+        code: 'PGRST204',
+        message: 'relation "public.customer_projects" does not exist',
+      },
+    }),
+  };
+
+  const result = await saveCustomerProjectRevision(
+    'project_123',
+    1,
+    createInitialState('card'),
+    mockSupabase as never,
+  );
+
+  assert.equal(result.conflict, false);
+  assert.equal(result.code, 'UNEXPECTED_ERROR');
+  assert.equal(result.userMessage, 'Lỗi lưu trữ đám mây');
+  assert.doesNotMatch(JSON.stringify(result), /PGRST204|public\.customer_projects|relation/i);
+});

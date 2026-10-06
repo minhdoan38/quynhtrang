@@ -135,14 +135,16 @@ export async function saveCustomerProjectRevision(
     const rawCode = errorRecord && 'code' in errorRecord && typeof errorRecord.code === 'string'
       ? errorRecord.code.trim()
       : '';
+    const rawMsg = error.message?.trim() || '';
+    const isNetworkError = /fetch|network|failed to fetch|timeout|abort/i.test(rawMsg);
     const isPostgresCode = /^[0-9A-Z]{5}$/.test(rawCode);
-    const isDomainCode = /^[A-Z][A-Z0-9_]{2,49}$/.test(error.message?.trim() || '') && !isPostgresCode;
-    const isDbError =
-      isPostgresCode ||
-      !isDomainCode ||
-      /(?:syntax error|relation|column|duplicate key|unique constraint|foreign key|check constraint|null value|pgrst|postgrest|pg_|42[a-z0-9]{3}|23[a-z0-9]{3})/i.test(
-        error.message || '',
+    const isPostgrestCode = /^PGRST\d+$/i.test(rawCode);
+    const hasDbMessagePattern =
+      /(?:syntax error|relation|column|violates|duplicate key|unique constraint|foreign key|null value in column|check constraint|table|schema|pgrst|postgrest|pg_|42[a-z0-9]{3}|23[a-z0-9]{3})/i.test(
+        rawMsg,
       );
+    const isDbError = !isNetworkError && (isPostgresCode || isPostgrestCode || hasDbMessagePattern);
+    // ponytail: safe default copy over raw DB text; add more granular DB codes if client recovery flows demand it.
     const safeErr = toSafeOperationError(error, {
       operation: 'cloudProjectAutosave',
       defaultMessage: isDbError ? 'Lỗi lưu trữ đám mây' : error.message,
