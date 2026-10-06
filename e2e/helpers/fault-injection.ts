@@ -18,12 +18,12 @@ export interface PageRouteLike {
     url: string | RegExp,
     handler: (route: RouteLike) => Promise<void> | void,
     options?: { times?: number },
-  ): Promise<void>;
+  ): Promise<void> | Promise<unknown>;
   unroute?(
     url: string | RegExp,
     handler?: (route: RouteLike) => Promise<void> | void,
-  ): Promise<void>;
-  addInitScript?(script: string | { content?: string }): Promise<void>;
+  ): Promise<void> | Promise<unknown>;
+  addInitScript?(script: string | { content?: string }): Promise<void> | Promise<unknown>;
   evaluate?<R>(pageFunction: () => R): Promise<R>;
 }
 
@@ -120,6 +120,46 @@ export async function simulateStorageQuotaFailure(
       };
       if (window.Storage) {
         window.Storage.prototype.setItem = () => throwQuota();
+      }
+    });
+  }
+}
+
+export async function simulateStorageWriteFailure(
+  page: PageRouteLike,
+  target: 'all' | 'localStorage' | 'sessionStorage' | 'indexedDB' = 'all',
+  errorName = 'QuotaExceededError',
+): Promise<void> {
+  const scriptContent = `(() => {
+    const throwFailure = () => {
+      throw new DOMException('Storage write operation failed.', '${errorName}');
+    };
+    if (('${target}' === 'all' || '${target}' === 'localStorage') && window.Storage) {
+      window.Storage.prototype.setItem = function() {
+        throwFailure();
+      };
+    }
+    if (('${target}' === 'all' || '${target}' === 'sessionStorage') && window.sessionStorage) {
+      window.sessionStorage.setItem = function() {
+        throwFailure();
+      };
+    }
+    if (('${target}' === 'all' || '${target}' === 'indexedDB') && window.indexedDB) {
+      window.indexedDB.open = function() {
+        throwFailure();
+      };
+    }
+  })();`;
+
+  if (page.addInitScript) {
+    await page.addInitScript(scriptContent);
+  } else if (page.evaluate) {
+    await page.evaluate(() => {
+      const throwFailure = () => {
+        throw new DOMException('Storage write operation failed.', 'QuotaExceededError');
+      };
+      if (window.Storage) {
+        window.Storage.prototype.setItem = () => throwFailure();
       }
     });
   }

@@ -15,6 +15,7 @@ import {
   simulateNetworkDelay,
   simulateOffline,
   simulateRouteFailure,
+  simulateStorageWriteFailure,
 } from '../../e2e/helpers/fault-injection.ts';
 import { simulateCommittedResponseDrop } from '../../e2e/helpers/unknown-outcome.ts';
 
@@ -52,7 +53,11 @@ class FakeRoute {
 
 class FakePage {
   registered?: RegisteredRoute;
+  readonly initScripts: string[] = [];
 
+  async addInitScript(script: string | { content?: string }): Promise<void> {
+    this.initScripts.push(typeof script === 'string' ? script : (script.content ?? ''));
+  }
   async route(
     _pattern: string | RegExp,
     handler: RegisteredRoute['handler'],
@@ -193,5 +198,12 @@ describe('State 45 network fault contracts', () => {
 
     assert.deepEqual(events, ['fetch', 'verify', 'abort']);
     assert.equal(page.registered?.options?.times, 1);
+  });
+
+  it('injects storage write failure script into page', async () => {
+    const page = new FakePage();
+    await simulateStorageWriteFailure(page, 'localStorage', 'QuotaExceededError');
+    assert.ok(page.initScripts.length > 0);
+    assert.match(page.initScripts[0] as string, /QuotaExceededError/);
   });
 });

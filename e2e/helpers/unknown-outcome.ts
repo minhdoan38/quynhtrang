@@ -8,7 +8,7 @@ export interface DroppablePageRouteLike {
     url: string | RegExp,
     handler: (route: DroppableRouteLike) => Promise<void> | void,
     options?: { times?: number },
-  ): Promise<void>;
+  ): Promise<void> | Promise<unknown>;
 }
 
 export interface UnknownOutcomeOptions {
