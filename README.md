@@ -19,19 +19,25 @@ pnpm install
 # Khởi chạy development server
 pnpm dev
 
-# Typecheck & Tests
+# Lint, Typecheck & Tests
+pnpm run lint
 pnpm run typecheck
 pnpm test
 
-# Build production
-pnpm build
+# Build production & Release Gate
+pnpm run build
+pnpm run gate
+
+# Playwright Golden & Mobile Smoke E2E
+pnpm run test:e2e
+pnpm run test:smoke
 ```
 
 ### Supabase Runbook & Operations
 Chi tiết về biến môi trường, thứ tự triển khai SQL, phân quyền tài khoản quản trị viên và cơ chế lưu trữ được tài liệu hóa tại:
 [State 37 Supabase Runbook](docs/superpowers/state37-supabase-runbook.md).
 
-### Supabase Migrations & Testing (State 37, 38, 39, 40, 41, 42, 43 & 44)
+### Supabase Migrations & Testing (State 37–45 Release Hardening)
 ```sh
 # Triển khai migrations
 psql "$SUPABASE_DB_URL" -v ON_ERROR_STOP=1 -f supabase/migrations/0001_state37_core.sql
@@ -50,6 +56,10 @@ psql "$SUPABASE_DB_URL" -v ON_ERROR_STOP=1 -f supabase/migrations/0015_state44_c
 psql "$SUPABASE_DB_URL" -v ON_ERROR_STOP=1 -f supabase/migrations/0016_state44_admin_catalog_ui.sql
 psql "$SUPABASE_DB_URL" -v ON_ERROR_STOP=1 -f supabase/migrations/0017_state44_payment_purposes.sql
 psql "$SUPABASE_DB_URL" -v ON_ERROR_STOP=1 -f supabase/migrations/0018_state44_payment_readiness_cutover.sql
+psql "$SUPABASE_DB_URL" -v ON_ERROR_STOP=1 -f supabase/migrations/0019_state45_order_recovery.sql # nếu có
+psql "$SUPABASE_DB_URL" -v ON_ERROR_STOP=1 -f supabase/migrations/0020_state45_fulfillment_render_recovery.sql
+psql "$SUPABASE_DB_URL" -v ON_ERROR_STOP=1 -f supabase/migrations/0021_state45_publish_replay.sql
+psql "$SUPABASE_DB_URL" -v ON_ERROR_STOP=1 -f supabase/migrations/0022_state45_integrity_constraints.sql
 # Nạp dữ liệu seed
 psql "$SUPABASE_DB_URL" -v ON_ERROR_STOP=1 -f supabase/seed.sql
 psql "$SUPABASE_DB_URL" -v ON_ERROR_STOP=1 -f supabase/seed_state39.sql
@@ -70,7 +80,16 @@ psql "$SUPABASE_DB_URL" -v ON_ERROR_STOP=1 -f supabase/tests/state44_catalog_ope
 psql "$SUPABASE_DB_URL" -v ON_ERROR_STOP=1 -f supabase/tests/state44_admin_catalog_ui.sql
 psql "$SUPABASE_DB_URL" -v ON_ERROR_STOP=1 -f supabase/tests/state44_payment_purposes.sql
 psql "$SUPABASE_DB_URL" -v ON_ERROR_STOP=1 -f supabase/tests/state44_payment_readiness.sql
+psql "$SUPABASE_DB_URL" -v ON_ERROR_STOP=1 -f supabase/tests/state45_integrity.sql
+psql "$SUPABASE_DB_URL" -v ON_ERROR_STOP=1 -f supabase/tests/state45_security.sql
 
+# Kiểm thử tự động State 45 (Invariants, Reliability Contracts, Fault Injection, Production Smoke & Release Gate)
+node --test --experimental-strip-types src/test/state45-*.test.ts
+node --experimental-strip-types scripts/state45-production-smoke.ts
+pnpm run test:e2e
+pnpm run test:smoke
+pnpm run gate
+```
 # Kiểm thử tự động State 44 (Catalog Lifecycle, Commercial Versions, Concurrency, RBAC & Regression)
 node --test --experimental-strip-types src/test/state44-lifecycle.test.ts src/test/state44-commercial-version.test.ts src/test/state44-concurrency.test.ts src/test/state44-rbac.test.ts src/test/state44-regression.test.ts
 
