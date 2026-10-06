@@ -95,7 +95,7 @@ export async function startOrderProduction(params: {
   expectedFulfillmentStatus?: string;
   requestId: string;
 }): Promise<FulfillmentResult<{ orderId: string; fulfillmentStatus: 'in_production' }>> {
-  await requireCurrentStaff();
+  await requireCurrentStaff('admin');
   const supabase = await createServerSupabaseClient();
   return startProductionInternal(params, supabase);
 }
@@ -105,7 +105,7 @@ export async function completeOrderProduction(params: {
   expectedFulfillmentStatus?: string;
   requestId: string;
 }): Promise<FulfillmentResult<{ orderId: string; fulfillmentStatus: 'completed' }>> {
-  await requireCurrentStaff();
+  await requireCurrentStaff('admin');
   const supabase = await createServerSupabaseClient();
   return completeProductionInternal(params, supabase);
 }

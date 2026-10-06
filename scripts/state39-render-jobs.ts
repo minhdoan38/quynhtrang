@@ -1,3 +1,5 @@
+import { randomUUID } from 'node:crypto';
+import type { SupabaseClient } from '@supabase/supabase-js';
 import type { DesignState } from '../src/lib/product-state.ts';
 import { renderDocument } from '../src/lib/services/document-renderer.ts';
 import { createPrivilegedSupabaseClient } from '../src/lib/supabase/admin.ts';
@@ -8,55 +10,57 @@ interface RenderJobRow {
   order_id: string;
   attempts: number;
 }
+function delay(ms: number): Promise<void> {
+  const { promise, resolve } = Promise.withResolvers<void>();
+  setTimeout(resolve, ms);
+  return promise;
+}
 
-export async function processRenderJobs(options: { once?: boolean } = {}) {
-  const supabase = createPrivilegedSupabaseClient();
+
+export interface ProcessRenderJobsOptions {
+  once?: boolean;
+  workerId?: string;
+  leaseSeconds?: number;
+  client?: SupabaseClient;
+}
+export async function processRenderJobs(options: ProcessRenderJobsOptions = {}) {
+  const supabase = options.client ?? createPrivilegedSupabaseClient();
   const once = options.once ?? false;
+  const workerId = options.workerId ?? `worker-${process.pid}-${randomUUID()}`;
+  const leaseSeconds = options.leaseSeconds ?? 300;
 
-  console.log('[RenderWorker] Starting render jobs processing...');
+  console.log(`[RenderWorker] Starting render jobs processing (worker=${workerId})...`);
 
   do {
-    // Claim a pending job
-    const { data: jobs, error: fetchError } = await supabase
-      .from('design_render_jobs')
-      .select('id, version_id, order_id, attempts')
-      .in('status', ['pending', 'failed'])
-      .lte('next_attempt_at', new Date().toISOString())
-      .lt('attempts', 3)
-      .limit(5);
+    // Atomically claim next eligible job using SKIP LOCKED and lease fencing
+    const { data: claimedData, error: fetchError } = await supabase.rpc('claim_next_render_job', {
+      p_worker_id: workerId,
+      p_lease_seconds: leaseSeconds,
+    });
 
     if (fetchError) {
       console.error('[RenderWorker] Failed to query render jobs:', fetchError.message);
       if (once) break;
-      await new Promise((r) => setTimeout(r, 5000));
+      await delay(5000);
       continue;
     }
 
-    if (!jobs || jobs.length === 0) {
+    const jobs: RenderJobRow[] = Array.isArray(claimedData)
+      ? (claimedData as RenderJobRow[])
+      : claimedData
+        ? [claimedData as RenderJobRow]
+        : [];
+
+    if (jobs.length === 0) {
       if (once) {
         console.log('[RenderWorker] No pending jobs. Exiting (--once).');
         break;
       }
-      await new Promise((r) => setTimeout(r, 5000));
+      await delay(5000);
       continue;
     }
 
-    for (const job of jobs as RenderJobRow[]) {
-      // Mark running
-      const { error: claimError } = await supabase
-        .from('design_render_jobs')
-        .update({
-          status: 'running',
-          attempts: job.attempts + 1,
-          claim_expires_at: new Date(Date.now() + 5 * 60 * 1000).toISOString(),
-          updated_at: new Date().toISOString(),
-        })
-        .eq('id', job.id);
-
-      if (claimError) {
-        continue;
-      }
-
+    for (const job of jobs) {
       try {
         const { data: version, error: versionError } = await supabase
           .from('design_versions')
@@ -78,28 +82,48 @@ export async function processRenderJobs(options: { once?: boolean } = {}) {
             upsert: true,
           });
 
-        // Record in design_version_renders
-        await supabase
+        // Record in design_version_renders with idempotent upsert
+        const { error: recordError } = await supabase
           .from('design_version_renders')
-          .insert({
-            version_id: job.version_id,
-            storage_path: storagePath,
-            checksum: rendered.sha256,
-            created_at: new Date().toISOString(),
-          })
-          .select()
-          .maybeSingle();
+          .upsert(
+            {
+              version_id: job.version_id,
+              storage_path: storagePath,
+              checksum: rendered.sha256,
+            },
+            { onConflict: 'version_id' }
+          );
 
-        // Mark completed
+        if (recordError) {
+          throw new Error(`Failed to record render: ${recordError.message}`);
+        }
+
+        // Update authoritative thumbnail pointer on design_versions
         await supabase
+          .from('design_versions')
+          .update({
+            approved_thumbnail_path: storagePath,
+          })
+          .eq('id', job.version_id);
+
+        // Mark completed fenced by workerId and claimed attempt token
+        const { data: updatedJob } = await supabase
           .from('design_render_jobs')
           .update({
             status: 'completed',
             updated_at: new Date().toISOString(),
           })
-          .eq('id', job.id);
+          .eq('id', job.id)
+          .eq('claimed_by', workerId)
+          .eq('attempts', job.attempts)
+          .select()
+          .maybeSingle();
 
-        console.log(`[RenderWorker] Rendered version ${job.version_id} -> ${storagePath}`);
+        if (!updatedJob) {
+          console.warn(`[RenderWorker] Job ${job.id} lease expired or reclaimed by another worker.`);
+        } else {
+          console.log(`[RenderWorker] Rendered version ${job.version_id} -> ${storagePath}`);
+        }
       } catch (err: unknown) {
         const errorMsg = err instanceof Error ? err.message : 'Unknown render error';
         console.error(`[RenderWorker] Job ${job.id} failed:`, errorMsg);
@@ -111,7 +135,9 @@ export async function processRenderJobs(options: { once?: boolean } = {}) {
             next_attempt_at: new Date(Date.now() + 60 * 1000).toISOString(),
             updated_at: new Date().toISOString(),
           })
-          .eq('id', job.id);
+          .eq('id', job.id)
+          .eq('claimed_by', workerId)
+          .eq('attempts', job.attempts);
       }
     }
   } while (!once);
