@@ -82,6 +82,32 @@ begin
     set draft_id = v_dup.keeper_id
     where draft_id = v_dup.id;
 
+    delete from public.template_drafts
+    where id = v_dup.id
+      and not exists (
+        select 1
+        from public.template_validation_runs
+        where draft_id = v_dup.id
+      );
+
+    insert into public.templates (id, name, status)
+    select concat('quarantined-draft-', v_dup.id::text), 'Quarantined', 'archived'
+    where exists (
+      select 1
+      from public.template_validation_runs
+      where draft_id = v_dup.id
+    )
+    on conflict do nothing;
+
+    update public.template_drafts
+    set template_id = concat('quarantined-draft-', v_dup.id::text),
+        based_on_version_id = null
+    where id = v_dup.id
+      and exists (
+        select 1
+        from public.template_validation_runs
+        where draft_id = v_dup.id
+      );
   end loop;
 
   -- 3. Deduplicate product commercial drafts: keep newest, delete duplicate.
