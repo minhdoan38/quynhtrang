@@ -270,6 +270,9 @@ export function createServerOrderPreparationOptions(): PrepareOrderOptions {
           updatedAt: now,
         };
       },
+      async deleteById(_id: string) {
+        // in-memory project cleanup no-op
+      },
     },
     assetRepo: {
       async promoteAsset(input: PromoteAssetInput) {

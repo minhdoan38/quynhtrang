@@ -374,7 +374,11 @@ export default function CheckoutPage() {
         }
         saveCheckoutDraft({
           ...draft,
-          customer: normalizedCustomer,
+          customer: {
+            fullName: '',
+            phone: '',
+            shippingAddress: '',
+          },
           orderId: data.order.id,
           status: 'ready-for-payment',
           updatedAt: new Date().toISOString(),

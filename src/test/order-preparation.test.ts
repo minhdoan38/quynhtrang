@@ -183,13 +183,10 @@ test('prepares project, private assets, immutable approved version, order, payme
   assert.equal((deps.records.versions[0]?.designDocument as DesignState).image?.src, '/api/assets/asset-1');
 });
 
-test('same idempotency key returns original order and payment instructions without duplicate writes', async () => {
+test('same idempotency key and identical payload returns original order and payment instructions', async () => {
   const deps = createDependencies();
   const first = await prepareOrderFromGuestCheckout(validInput(), deps.options);
-  const second = await prepareOrderFromGuestCheckout(
-    validInput({ ...createInitialState('card'), quantity: 99, text: 'changed retry' }),
-    deps.options,
-  );
+  const second = await prepareOrderFromGuestCheckout(validInput(), deps.options);
 
   assert.equal(second.order.id, first.order.id);
   assert.equal(second.paymentData.paymentReference, first.paymentData.paymentReference);
@@ -197,6 +194,19 @@ test('same idempotency key returns original order and payment instructions witho
   assert.deepEqual(
     Object.fromEntries(Object.entries(deps.records).map(([key, records]) => [key, records.length])),
     { projects: 1, assets: 0, versions: 1, orders: 1, payments: 1, guestAccess: 1, events: 1 },
+  );
+});
+
+test('same idempotency key with different payload rejects with conflict 409', async () => {
+  const deps = createDependencies();
+  await prepareOrderFromGuestCheckout(validInput(), deps.options);
+  await assert.rejects(
+    () =>
+      prepareOrderFromGuestCheckout(
+        validInput({ ...createInitialState('card'), quantity: 99, text: 'changed retry' }),
+        deps.options,
+      ),
+    (error: unknown) => error instanceof OrderPreparationError && error.status === 409,
   );
 });
 
@@ -223,17 +233,30 @@ test('rejects design and preflight revision mismatch with status 400', async () 
   assert.equal(deps.records.orders.length, 0);
 });
 
-test('deletes a newly created order when a required post-order record fails', async () => {
+test('deletes a newly created order, project, and promoted assets when a required post-order record fails', async () => {
   const deps = createDependencies();
   const options = deps.options as unknown as {
     orderRepo: { deleteById(id: string): Promise<void> };
+    projectRepo: { deleteById?(id: string): Promise<void> };
+    assetRepo: { deleteById?(id: string): Promise<void> };
     orderEventRepo: { append(input: Record<string, unknown>): Promise<unknown> };
   } & Record<string, unknown>;
-  const deleted: string[] = [];
+  const deletedOrders: string[] = [];
+  const deletedProjects: string[] = [];
   options.orderRepo.deleteById = async (id: string) => {
-    deleted.push(id);
+    deletedOrders.push(id);
     const index = deps.records.orders.findIndex((order) => order.id === id);
     if (index >= 0) deps.records.orders.splice(index, 1);
+  };
+  options.projectRepo.deleteById = async (id: string) => {
+    deletedProjects.push(id);
+    const index = deps.records.projects.findIndex((p: unknown) => {
+      if (p && typeof p === 'object' && 'id' in p) {
+        return p.id === id;
+      }
+      return false;
+    });
+    if (index >= 0) deps.records.projects.splice(index, 1);
   };
   options.orderEventRepo.append = async () => {
     throw new Error('event insert failed');
@@ -243,6 +266,8 @@ test('deletes a newly created order when a required post-order record fails', as
     () => prepareOrderFromGuestCheckout(validInput(), options as never),
     /event insert failed/,
   );
-  assert.deepEqual(deleted, ['order-1']);
+  assert.deepEqual(deletedOrders, ['order-1']);
+  assert.deepEqual(deletedProjects, ['project-1']);
   assert.equal(deps.records.orders.length, 0);
+  assert.equal(deps.records.projects.length, 0);
 });

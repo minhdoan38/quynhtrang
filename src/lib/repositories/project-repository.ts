@@ -79,6 +79,12 @@ export class ProjectRepository {
     if (error || !data) return null;
     return this.mapRow(data);
   }
+  async deleteById(id: string): Promise<void> {
+    const { error } = await this.client.from('projects').delete().eq('id', id);
+    if (error) {
+      await this.client.from('projects').update({ status: 'archived' }).eq('id', id);
+    }
+  }
 
   async getByOwnerAndCloneRequestKey(ownerUserId: string, cloneRequestKey: string): Promise<ProjectRecord | null> {
     const { data, error } = await this.client

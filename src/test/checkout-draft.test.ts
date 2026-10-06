@@ -9,8 +9,8 @@ import {
   saveCheckoutDraft,
   attachQuoteToDraft,
   isQuoteExpired,
+  scrubCheckoutDraftPII,
 } from '../lib/checkout-draft.ts';
-
 function setupSessionStorage() {
   const values = new Map<string, string>();
   Object.defineProperty(globalThis, 'sessionStorage', {
@@ -126,4 +126,27 @@ test('persists quote metadata in draft without deleting design or customer data 
   assert.equal(loadedExpired.customer.fullName, 'Lê Văn C');
   assert.equal(loadedExpired.customer.phone, '0988776655');
   assert.equal(loadedExpired.customer.shippingAddress, '12 Nguyễn Trãi, Q1');
+});
+
+test('scrubs customer PII from checkout draft while retaining order identity and design', () => {
+  setupSessionStorage();
+  const draft = createCheckoutDraft(createInitialState('card'), {
+    fullName: 'Lê Văn C',
+    phone: '0988776655',
+    shippingAddress: '12 Nguyễn Trãi, Q1',
+  });
+  draft.orderId = 'QT-ORDER-123';
+  draft.status = 'ready-for-payment';
+  saveCheckoutDraft(draft);
+
+  scrubCheckoutDraftPII();
+
+  const loaded = loadCheckoutDraft();
+  assert.ok(loaded);
+  assert.equal(loaded.customer.fullName, '');
+  assert.equal(loaded.customer.phone, '');
+  assert.equal(loaded.customer.shippingAddress, '');
+  assert.equal(loaded.orderId, 'QT-ORDER-123');
+  assert.equal(loaded.status, 'ready-for-payment');
+  assert.equal(loaded.idempotencyKey, draft.idempotencyKey);
 });

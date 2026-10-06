@@ -14,6 +14,7 @@ import {
 } from '../../../lib/services/prepare-order-from-guest-checkout.ts';
 import { getSupabaseSecretKey } from '../../../lib/supabase/config.ts';
 import { createServerSupabaseClient } from '../../../lib/supabase/server.ts';
+import { createPrivilegedSupabaseClient } from '../../../lib/supabase/admin.ts';
 import { AdminCatalogRepository } from '../../../lib/repositories/admin-catalog-repository.ts';
 import { getSharedCatalogRepositoryForTest } from '../../../lib/repositories/price-quote-repository.ts';
 export interface CreateOrderRequestBody {
@@ -66,11 +67,10 @@ export async function POST(request: Request) {
     );
     let prepared;
     let authenticatedUserId: string | undefined;
-    let supabaseClient = null;
     if (hasSupabaseEnvironment) {
       try {
-        supabaseClient = await createServerSupabaseClient();
-        const { data: authData } = await supabaseClient.auth.getUser();
+        const authClient = await createServerSupabaseClient();
+        const { data: authData } = await authClient.auth.getUser();
         authenticatedUserId = authData?.user?.id;
       } catch {
         // Guest user
@@ -78,6 +78,10 @@ export async function POST(request: Request) {
     }
     const guestToken = getGuestOrderAccessTokenFromRequest(request);
     const accessContext = authenticatedUserId ?? guestToken ?? undefined;
+    const privilegedClient =
+      hasSupabaseEnvironment && getSupabaseSecretKey()
+        ? createPrivilegedSupabaseClient()
+        : null;
 
     try {
       prepared = await prepareOrderFromGuestCheckout(
@@ -93,10 +97,10 @@ export async function POST(request: Request) {
           priceQuoteId: body.quoteId ?? body.priceQuoteId,
           quoteId: body.quoteId ?? body.priceQuoteId,
         },
-        hasSupabaseEnvironment && supabaseClient
+        privilegedClient
           ? {
-            supabaseClient,
-            catalogRepo: new AdminCatalogRepository(supabaseClient),
+            supabaseClient: privilegedClient,
+            catalogRepo: new AdminCatalogRepository(privilegedClient),
           }
           : {
             ...createServerOrderPreparationOptions(),

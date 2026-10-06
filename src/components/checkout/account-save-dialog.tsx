@@ -18,7 +18,6 @@ import {
   validateOtpFormat,
 } from '@/lib/services/customer-auth.ts';
 import {
-  CustomerOrderClaimService,
   parseClaimStateMessage,
   type ClaimProgressState,
 } from '@/lib/services/customer-order-claim.ts';
@@ -32,7 +31,7 @@ export interface AccountSaveDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   orderId: string;
-  guestToken: string;
+  guestToken?: string;
   initialEmail?: string;
   onSuccess?: () => void;
 }
@@ -91,10 +90,19 @@ export function AccountSaveDialog({
     const supabase = createBrowserSupabaseClient();
     await ensureCustomerProfile(undefined, supabase);
 
-    // Claim order
+    // Claim order via server-side endpoint with HttpOnly cookie proof
     try {
-      const claimService = new CustomerOrderClaimService(supabase);
-      await claimService.claimGuestOrder(orderId, guestToken);
+      const res = await fetch(`/api/orders/${encodeURIComponent(orderId)}/claim`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'same-origin',
+        body: JSON.stringify(guestToken ? { guestToken } : {}),
+      });
+      if (!res.ok) {
+        const errData = (await res.json().catch(() => ({}))) as Record<string, unknown>;
+        const msg = typeof errData.error === 'string' ? errData.error : 'Lỗi khi liên kết đơn hàng';
+        console.warn('Lỗi khi liên kết đơn hàng:', msg);
+      }
     } catch (err: unknown) {
       console.warn('Lỗi khi liên kết đơn hàng:', err);
     }

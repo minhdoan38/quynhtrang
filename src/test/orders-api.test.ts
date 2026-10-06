@@ -1,5 +1,7 @@
 import test, { beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 
 import { POST } from '../app/api/orders/route.ts';
 import { GET } from '../app/api/orders/[id]/route.ts';
@@ -124,7 +126,7 @@ test('POST rejects the first invalid customer field with its exact Vietnamese me
   assert.equal(serverOrderStore.getAllOrders().length, 0);
 });
 
-test('POST is idempotent for repeated idempotency keys', async () => {
+test('POST replays the original order and payment for the same idempotency payload', async () => {
   const request = {
     idempotencyKey: 'orders-api-duplicate',
     design: createInitialState('notebook'),
@@ -132,18 +134,39 @@ test('POST is idempotent for repeated idempotency keys', async () => {
   };
 
   const firstResponse = await postOrder(request);
-  const secondResponse = await postOrder({
-    ...request,
-    design: { ...request.design, quantity: 9 },
-  });
+  const secondResponse = await postOrder(request);
   const first = await firstResponse.json() as OrderResponse;
   const second = await secondResponse.json() as OrderResponse;
 
   assert.equal(firstResponse.status, 201);
   assert.ok(secondResponse.status === 200 || secondResponse.status === 201);
   assert.equal(second.order.id, first.order.id);
-  assert.equal(second.paymentData.orderId, first.paymentData.orderId);
+  assert.deepEqual(second.paymentData, first.paymentData);
   assert.equal(serverOrderStore.getAllOrders().length, 1);
+});
+
+test('POST rejects a changed payload reusing an idempotency key', async () => {
+  const request = {
+    idempotencyKey: 'orders-api-conflict',
+    design: createInitialState('notebook'),
+    customer: validCustomer,
+  };
+  const firstResponse = await postOrder(request);
+  const conflictResponse = await postOrder({
+    ...request,
+    design: { ...request.design, quantity: 9 },
+  });
+
+  assert.equal(firstResponse.status, 201);
+  assert.equal(conflictResponse.status, 409);
+  assert.equal(serverOrderStore.getAllOrders().length, 1);
+});
+
+test('POST keeps publishable Supabase client limited to authentication', () => {
+  const source = readFileSync(resolve(process.cwd(), 'src/app/api/orders/route.ts'), 'utf8');
+  assert.match(source, /createPrivilegedSupabaseClient/);
+  assert.match(source, /createServerSupabaseClient[\s\S]*auth\.getUser/);
+  assert.doesNotMatch(source, /supabaseClient,\s*\n\s*catalogRepo: new AdminCatalogRepository\(supabaseClient\)/);
 });
 
 test('GET returns the stored order with normalized customer and sanitized snapshot', async () => {

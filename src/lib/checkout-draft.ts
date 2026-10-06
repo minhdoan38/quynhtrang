@@ -116,3 +116,14 @@ export function clearCheckoutDraft(): void {
     console.error('Failed to clear checkout draft:', error);
   }
 }
+export function scrubCheckoutDraftPII(): void {
+  const draft = loadCheckoutDraft();
+  if (!draft) return;
+  draft.customer = {
+    fullName: '',
+    phone: '',
+    shippingAddress: '',
+  };
+  draft.updatedAt = new Date().toISOString();
+  saveCheckoutDraft(draft);
+}

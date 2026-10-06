@@ -93,6 +93,10 @@ export class PaymentRepository {
       })
       .eq('order_id', orderId);
 
+    if (typeof (query as unknown as { neq?: unknown }).neq === 'function') {
+      query = (query as unknown as { neq(col: string, val: unknown): typeof query }).neq('status', 'paid');
+    }
+
     if (purpose) {
       query = query.eq('purpose', purpose);
     }
@@ -102,15 +106,20 @@ export class PaymentRepository {
       throw new Error(`Failed to mark payment reported: ${error?.message ?? 'unknown'}`);
     }
 
-    const { error: orderError } = await this.client
+    let orderQuery = this.client
       .from('orders')
       .update({ payment_status: 'payment_reported' })
       .eq('id', orderId);
 
+    if (typeof (orderQuery as unknown as { neq?: unknown }).neq === 'function') {
+      orderQuery = (orderQuery as unknown as { neq(col: string, val: unknown): typeof orderQuery }).neq('payment_status', 'paid');
+    }
+
+    const { error: orderError } = await orderQuery;
+
     if (orderError) {
       throw orderError;
     }
-
     return this.mapRow(data);
   }
 

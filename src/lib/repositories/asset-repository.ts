@@ -124,6 +124,18 @@ export class AssetRepository {
     if (error || !data) return null;
     return this.mapRow(data);
   }
+  async deleteById(id: string): Promise<void> {
+    const cleanId = id.replace(/^\/api\/assets\//, '');
+    const { data: asset } = await this.client
+      .from('assets')
+      .select('storage_bucket, storage_path')
+      .eq('id', cleanId)
+      .maybeSingle();
+    if (asset?.storage_bucket && asset?.storage_path) {
+      await this.client.storage.from(asset.storage_bucket).remove([asset.storage_path]);
+    }
+    await this.client.from('assets').delete().eq('id', cleanId);
+  }
 
   async listByProject(projectId: string): Promise<AssetRecord[]> {
     const { data, error } = await this.client

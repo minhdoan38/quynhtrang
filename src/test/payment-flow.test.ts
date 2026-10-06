@@ -120,10 +120,8 @@ test('payment route handlers are structured correctly', () => {
   assert.match(paymentSource, /verifyGuestOrderAccess/);
 
   assert.match(reportSource, /export async function POST/);
-  assert.match(reportSource, /serverOrderStore\.reportPayment/);
   assert.match(reportSource, /verifyGuestOrderAccess/);
-  assert.match(reportSource, /PaymentRepository/);
-  assert.match(reportSource, /PAYMENT_REPORTED/);
+  assert.match(reportSource, /report_checkout_payment/);
 });
 
 test('payment route enforces guest authorization', async () => {

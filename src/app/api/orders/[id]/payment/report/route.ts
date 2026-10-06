@@ -6,9 +6,7 @@ import {
   verifyGuestOrderAccess,
   verifyStaffAccess,
 } from '../../../../../../lib/guest-order-access.ts';
-import { OrderEventRepository } from '../../../../../../lib/repositories/order-event-repository.ts';
 import { OrderRepository } from '../../../../../../lib/repositories/order-repository.ts';
-import { PaymentRepository } from '../../../../../../lib/repositories/payment-repository.ts';
 import { serverOrderStore } from '../../../../../../lib/server-order-store.ts';
 import { createPrivilegedSupabaseClient } from '../../../../../../lib/supabase/admin.ts';
 import { getSupabaseSecretKey } from '../../../../../../lib/supabase/config.ts';
@@ -40,11 +38,9 @@ export async function POST(
       process.env.SUPABASE_URL?.trim()
     );
 
-    if (hasSupabaseEnvironment) {
+    if (hasSupabaseEnvironment && getSupabaseSecretKey()) {
       try {
         const client = createPrivilegedSupabaseClient();
-        const paymentRepo = new PaymentRepository(client);
-        const orderEventRepo = new OrderEventRepository(client);
         const orderRepo = new OrderRepository(client);
 
         if (staff) {
@@ -59,16 +55,27 @@ export async function POST(
             if (order) break;
           }
         }
-        const purpose = order?.payment.purpose
-          ?? serverOrderStore.getOrder(id)?.payment.purpose
-          ?? 'full_order_payment';
-        await paymentRepo.markCustomerReported(id, new Date().toISOString(), purpose);
-        await orderEventRepo.append({
-          orderId: id,
-          eventType: 'PAYMENT_REPORTED',
-          actorRole: 'customer',
-          payload: { purpose, reportedAt: new Date().toISOString() },
-        });
+        const purpose =
+          order?.payment?.purpose ??
+          serverOrderStore.getOrder(id)?.payment?.purpose ??
+          'full_order_payment';
+
+        const { data: rpcData, error: rpcError } = await client.rpc(
+          'report_checkout_payment',
+          { p_order_id: id, p_purpose: purpose },
+        );
+
+        if (rpcError) {
+          console.error('Lỗi RPC report_checkout_payment:', rpcError);
+        } else {
+          const code =
+            rpcData && typeof rpcData === 'object' && 'code' in rpcData
+              ? String(rpcData.code)
+              : '';
+          if (code === 'not_found') {
+            return NextResponse.json({ error: 'Không tìm thấy đơn hàng.' }, { status: 404 });
+          }
+        }
 
         if (staff) {
           order = await orderRepo.getById(id, { kind: 'staff', staff });
@@ -90,10 +97,9 @@ export async function POST(
 
     if (!order) {
       order = serverOrderStore.reportPayment(id);
-    } else {
+    } else if (order.paymentStatus !== 'paid') {
       serverOrderStore.reportPayment(id);
     }
-
     if (!order) {
       return NextResponse.json({ error: 'Không tìm thấy đơn hàng.' }, { status: 404 });
     }

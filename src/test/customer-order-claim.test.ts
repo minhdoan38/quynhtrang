@@ -1,8 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { CustomerOrderClaimService } from '../lib/services/customer-order-claim.ts';
 import type { SupabaseClient } from '@supabase/supabase-js';
-
+import { CustomerOrderClaimService } from '../lib/services/customer-order-claim.ts';
+import { POST as claimOrderRoute } from '../app/api/orders/[id]/claim/route.ts';
 test('claimGuestOrder rejects empty token or order ID before hitting DB', async () => {
   const service = new CustomerOrderClaimService({} as unknown as SupabaseClient);
   await assert.rejects(
@@ -44,4 +44,31 @@ test('claimGuestOrder dispatches claim_guest_order_and_project RPC and maps resp
   assert.equal(result.success, true);
   assert.equal(result.orderId, 'ord-1');
   assert.equal(result.projectId, 'proj-123');
+});
+
+test('POST /api/orders/[id]/claim rejects unauthenticated requests with 401', async () => {
+  const res = await claimOrderRoute(
+    new Request('http://localhost/api/orders/order-123/claim', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+    }),
+    { params: Promise.resolve({ id: 'order-123' }) },
+  );
+  assert.equal(res.status, 401);
+  const body = (await res.json()) as { ok: boolean; error: string };
+  assert.equal(body.ok, false);
+  assert.match(body.error, /đăng nhập/);
+});
+
+test('POST /api/orders/[id]/claim rejects empty order id with 400', async () => {
+  const res = await claimOrderRoute(
+    new Request('http://localhost/api/orders//claim', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+    }),
+    { params: Promise.resolve({ id: '' }) },
+  );
+  assert.equal(res.status, 400);
+  const body = (await res.json()) as { ok: boolean; error: string };
+  assert.equal(body.ok, false);
 });

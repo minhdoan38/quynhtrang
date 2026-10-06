@@ -40,13 +40,12 @@ export interface PreparedOrderResult {
   paymentData: PaymentInstructions;
 }
 
-type ProjectRepo = Pick<ProjectRepository, 'createProject'>;
-type AssetRepo = Pick<AssetRepository, 'promoteAsset'>;
+type ProjectRepo = Pick<ProjectRepository, 'createProject'> & { deleteById?(id: string): Promise<void> };
+type AssetRepo = Pick<AssetRepository, 'promoteAsset'> & { deleteById?(id: string): Promise<void> };
 type DesignVersionRepo = Pick<DesignVersionRepository, 'createVersion'>;
 type OrderRepo = Pick<OrderRepository, 'getByIdempotencyKey' | 'createPendingOrder' | 'createGuestAccess' | 'deleteById'>;
 type PaymentRepo = Pick<PaymentRepository, 'create'>;
 type OrderEventRepo = Pick<OrderEventRepository, 'append'>;
-
 export interface PrepareOrderOptions {
   supabaseClient?: SupabaseClient;
   orderRepo?: OrderRepo;
@@ -68,6 +67,40 @@ export class OrderPreparationError extends Error {
   }
 }
 
+function isPayloadMatching(input: PrepareOrderInput, existing: PendingOrder): boolean {
+  if (existing.customer) {
+    if (
+      existing.customer.fullName.trim() !== input.customer.fullName.trim() ||
+      existing.customer.phone.trim() !== input.customer.phone.trim() ||
+      existing.customer.shippingAddress.trim() !== input.customer.shippingAddress.trim()
+    ) {
+      return false;
+    }
+  }
+  if (existing.product) {
+    if (
+      existing.product.productId !== input.design.productId ||
+      (input.design.variantId && existing.product.variantId !== input.design.variantId) ||
+      existing.product.quantity !== input.design.quantity
+    ) {
+      return false;
+    }
+  }
+  if (existing.snapshot?.design) {
+    const existingDesign = existing.snapshot.design;
+    if (
+      existingDesign.productId !== input.design.productId ||
+      (input.design.variantId && existingDesign.variantId !== input.design.variantId) ||
+      existingDesign.quantity !== input.design.quantity ||
+      (input.design.text !== undefined && existingDesign.text !== input.design.text) ||
+      (input.design.color !== undefined && existingDesign.color !== input.design.color)
+    ) {
+      return false;
+    }
+  }
+  return true;
+}
+
 function resolveGuestToken(input: PrepareOrderInput): string {
   const message = `guest-order:${input.idempotencyKey.trim()}`;
   const secret = input.guestAccessSeed?.trim() || getSupabaseSecretKey();
@@ -75,7 +108,6 @@ function resolveGuestToken(input: PrepareOrderInput): string {
     ? createHmac('sha256', secret).update(message).digest('base64url')
     : createHash('sha256').update(message).digest('base64url');
 }
-
 function createRepositories(options: PrepareOrderOptions) {
   if (
     options.orderRepo &&
@@ -126,6 +158,9 @@ export async function prepareOrderFromGuestCheckout(
   const guestAccessToken = resolveGuestToken(input);
   const existingOrder = await repositories.orderRepo.getByIdempotencyKey(input.idempotencyKey.trim());
   if (existingOrder) {
+    if (!isPayloadMatching(input, existingOrder)) {
+      throw new OrderPreparationError('Mã tạo đơn đã được sử dụng với thông tin khác.', 409);
+    }
     return {
       order: existingOrder,
       guestAccessToken,
@@ -333,11 +368,45 @@ export async function prepareOrderFromGuestCheckout(
       status: 'pending_payment',
     },
   };
-  const order = await repositories.orderRepo.createPendingOrder(orderInput);
+  let order: PendingOrder;
+  try {
+    order = await repositories.orderRepo.createPendingOrder(orderInput);
+  } catch (error) {
+    if (repositories.projectRepo.deleteById) {
+      await repositories.projectRepo.deleteById(project.id).catch(() => { });
+    }
+    for (const pa of promotion.promotedAssets) {
+      if (repositories.assetRepo.deleteById) {
+        await repositories.assetRepo.deleteById(pa.id).catch(() => { });
+      }
+    }
+    throw error;
+  }
+
+  const rollbackDownstream = async () => {
+    try {
+      await repositories.orderRepo.deleteById(order.id);
+    } catch (e) {
+      console.warn('Rollback failed to delete order:', e);
+    }
+    for (const pa of promotion.promotedAssets) {
+      if (repositories.assetRepo.deleteById) {
+        await repositories.assetRepo.deleteById(pa.id).catch(() => { });
+      }
+    }
+    if (repositories.projectRepo.deleteById) {
+      try {
+        await repositories.projectRepo.deleteById(project.id);
+      } catch (e) {
+        console.warn('Rollback failed to delete project:', e);
+      }
+    }
+  };
+
   if (resolvedPriceQuoteId && repositories.catalogRepo) {
     const consumed = await repositories.catalogRepo.consumeQuote?.(resolvedPriceQuoteId, order.id);
     if (!consumed) {
-      await repositories.orderRepo.deleteById(order.id);
+      await rollbackDownstream();
       throw new OrderPreparationError('Báo giá đã được sử dụng.', 409);
     }
   }
@@ -380,9 +449,9 @@ export async function prepareOrderFromGuestCheckout(
     });
   } catch (error) {
     try {
-      await repositories.orderRepo.deleteById(order.id);
+      await rollbackDownstream();
     } catch (rollbackError) {
-      throw new AggregateError([error, rollbackError], 'Order preparation failed and rollback could not delete the order');
+      throw new AggregateError([error, rollbackError], 'Order preparation failed and rollback could not delete resources');
     }
     throw error;
   }
