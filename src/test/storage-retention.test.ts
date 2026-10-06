@@ -106,3 +106,24 @@ test('retains sourceTemplate and documentSchemaVersion during pruning and reads'
   });
   assert.equal(result[0].documentSchemaVersion, 1);
 });
+
+test('retention protects open project, active checkout project, and unmigrated recovery project from eviction', () => {
+  const p1: RecentProject = { ...baseProject, id: 'one', updatedAt: NOW - DAY_MS };
+  const p2: RecentProject = { ...baseProject, id: 'two', updatedAt: NOW - 2 * DAY_MS };
+  const p3: RecentProject = { ...baseProject, id: 'three', updatedAt: NOW - 3 * DAY_MS };
+  const pOpen: RecentProject = { ...baseProject, id: 'open-project', updatedAt: NOW - 40 * DAY_MS };
+  const pCheckout: RecentProject = { ...baseProject, id: 'checkout-project', updatedAt: NOW - 50 * DAY_MS };
+  const pRecovery: RecentProject = { ...baseProject, id: 'recovery-project', updatedAt: NOW - 60 * DAY_MS, recoveryPending: true };
+
+  setupLocalStorage([p1, p2, p3, pOpen, pCheckout, pRecovery]);
+
+  const result = getRecentProjects(NOW, {
+    currentProjectId: 'open-project',
+    activeCheckoutProjectId: 'checkout-project',
+  });
+  const ids = result.map((p) => p.id);
+
+  assert.ok(ids.includes('open-project'), 'Currently open project must be retained');
+  assert.ok(ids.includes('checkout-project'), 'Active checkout project must be retained');
+  assert.ok(ids.includes('recovery-project'), 'Unmigrated recovery project must be retained');
+});

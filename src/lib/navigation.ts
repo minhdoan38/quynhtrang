@@ -6,7 +6,7 @@
 
 export type CheckoutStep = 'summary' | 'customer' | 'qr' | 'confirmation';
 
-export type SaveStatus = 'saved' | 'saving' | 'error';
+export type SaveStatus = 'saved' | 'saving' | 'error' | 'conflict';
 
 export interface EditorBackState {
  hasUnsavedWarning?: boolean;

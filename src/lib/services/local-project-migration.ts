@@ -7,6 +7,7 @@ import {
 } from '../storage.ts';
 import type { DesignState } from '../product-state.ts';
 import { readDesignDocument } from '../design-document.ts';
+import { rehydrateDesignImages } from '../browser-storage/guest-project-store.ts';
 export interface LocalProjectItem {
   id: string;
   updatedAt: number;
@@ -95,6 +96,23 @@ export async function migrateLocalProjects(
           quantity: 1,
           documentSchemaVersion: 1,
         };
+      }
+
+      // Rehydrate any transient blob: URLs from durable data or cached assets
+      doc = rehydrateDesignImages(doc);
+
+      // Check if dead blob: URLs remain without backing bytes
+      const hasDeadBlob = Boolean(
+        (typeof doc.image?.src === 'string' && doc.image.src.startsWith('blob:')) ||
+        doc.elements?.some(
+          (el) =>
+            el.type === 'image' &&
+            typeof (el.data as Record<string, unknown> | undefined)?.src === 'string' &&
+            ((el.data as Record<string, unknown>).src as string).startsWith('blob:')
+        )
+      );
+      if (hasDeadBlob) {
+        throw new Error('Ảnh cục bộ không còn khả dụng trong bộ nhớ tạm. Hãy chọn lại ảnh trước khi chuyển đổi.');
       }
 
       // Verify provenance against database before assigning FK columns

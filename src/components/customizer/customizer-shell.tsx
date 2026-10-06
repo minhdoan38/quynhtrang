@@ -53,8 +53,13 @@ import {
   saveRecentProject,
   saveState,
   flushAutosave,
+  setCurrentOpenProjectId,
+  markProjectMigrated,
   type RecentProject,
 } from '@/lib/storage';
+import { rehydrateDesignImages } from '@/lib/browser-storage/guest-project-store';
+import { createBrowserSupabaseClient } from '@/lib/supabase/browser';
+import { readDesignDocument } from '@/lib/design-document';
 import { createGuestProjectFromTemplate } from '@/lib/services/template-clone';
 import {
   createCheckoutDraft,
@@ -392,7 +397,11 @@ export function CustomizerShell({ context, initialSearchParams }: CustomizerShel
   useEffect(() => {
     setMounted(true);
     if (context?.type === 'staff' || context?.type === 'customer' || context?.type === 'template-author' || context?.type === 'template-preview') {
-      resetHistory(context.initialDocument);
+      if (context.type === 'customer' && context.projectId) {
+        setCurrentProjectId(context.projectId);
+        setCurrentOpenProjectId(context.projectId);
+      }
+      resetHistory(rehydrateDesignImages(context.initialDocument));
       setView('editor');
       return;
     }
@@ -402,7 +411,91 @@ export function CustomizerShell({ context, initialSearchParams }: CustomizerShel
     const requestedTemplate = (typeof initialSearchParams?.template === 'string' ? initialSearchParams.template : null) || searchParams?.get('template');
     const requestedView = ((typeof initialSearchParams?.view === 'string' ? initialSearchParams.view : null) || searchParams?.get('view')) as View | null;
     const requestedMode = (typeof initialSearchParams?.mode === 'string' ? initialSearchParams.mode : null) || searchParams?.get('mode');
+    const requestedProject = (typeof initialSearchParams?.project === 'string' ? initialSearchParams.project : null) || searchParams?.get('project');
     const saved = loadState();
+
+    if (requestedProject) {
+      setCurrentProjectId(requestedProject);
+      setCurrentOpenProjectId(requestedProject);
+
+      void (async () => {
+        try {
+          const supabase = createBrowserSupabaseClient();
+          const { data: authData } = await supabase.auth.getUser();
+          if (!authData?.user) {
+            const localRecents = getRecentProjects();
+            const cached = localRecents.find((p) => p.id === requestedProject || p.syncedCloudProjectId === requestedProject);
+            if (cached) {
+              const base = createInitialState(cached.productId);
+              const restored: DesignState = {
+                ...base,
+                ...cached,
+                quantity: 1,
+                productOptions: { ...base.productOptions, ...cached.productOptions },
+              };
+              resetHistory(rehydrateDesignImages(migrateLegacyText(restored)));
+              setView('editor');
+              setSaveStatus('conflict');
+              showToast('Phiên làm việc chưa xác thực. Hiển thị bản nháp phục hồi cục bộ.');
+              return;
+            }
+            setView('editor');
+            setSaveStatus('conflict');
+            showToast('Không thể tải dự án từ đám mây. Vui lòng đăng nhập.');
+            return;
+          }
+
+          const { data: cloudRow, error: cloudError } = await supabase
+            .from('projects')
+            .select('*')
+            .eq('id', requestedProject)
+            .maybeSingle();
+
+          if (cloudError || !cloudRow) {
+            setView('editor');
+            setSaveStatus('conflict');
+            showToast('Không tìm thấy dự án trên đám mây hoặc xảy ra lỗi.');
+            return;
+          }
+
+          const rawDoc = (cloudRow.working_document || cloudRow.current_design_document || {}) as Record<string, unknown>;
+          const schemaVer = typeof rawDoc.documentSchemaVersion === 'number' ? rawDoc.documentSchemaVersion : 0;
+          let doc: DesignState;
+          try {
+            doc = readDesignDocument(rawDoc, schemaVer);
+          } catch {
+            const prod = (cloudRow.product_id || rawDoc.productId || 'wrapping') as ProductId;
+            const base = createInitialState(prod);
+            doc = {
+              ...base,
+              productId: prod,
+              variantId: cloudRow.variant_id || (rawDoc.variantId as string) || base.variantId,
+              text: typeof rawDoc.text === 'string' ? rawDoc.text : base.text,
+              color: typeof rawDoc.color === 'string' ? rawDoc.color : base.color,
+              backgroundColor: typeof rawDoc.backgroundColor === 'string' ? rawDoc.backgroundColor : base.backgroundColor,
+              image: (rawDoc.image as DesignState['image']) ?? null,
+              productOptions: (rawDoc.productOptions as Record<string, unknown>) || base.productOptions,
+              elements: (rawDoc.elements as DesignState['elements']) || base.elements,
+              quantity: 1,
+            };
+          }
+
+          const rehydrated = rehydrateDesignImages(doc);
+          resetHistory(migrateLegacyText(rehydrated));
+          setView('editor');
+
+          saveRecentProject(rehydrated, cloudRow.id);
+          markProjectMigrated(cloudRow.id, cloudRow.id, cloudRow.current_working_revision || 1);
+          setRecentProjects(getRecentProjects());
+        } catch {
+          setView('editor');
+          setSaveStatus('conflict');
+          showToast('Xung đột hoặc lỗi khi tải dự án đám mây.');
+        }
+      })();
+      return;
+    }
+
     if (requestedMode === 'preflight') {
       setView('editor');
       setOverlayMode('preflight');
@@ -618,6 +711,7 @@ export function CustomizerShell({ context, initialSearchParams }: CustomizerShel
 
   const handleResumeProject = useCallback((project: RecentProject) => {
     setCurrentProjectId(project.id);
+    setCurrentOpenProjectId(project.id);
     const base = createInitialState(project.productId);
     const merged: DesignState = {
       ...base,
@@ -627,7 +721,7 @@ export function CustomizerShell({ context, initialSearchParams }: CustomizerShel
       documentSchemaVersion: project.documentSchemaVersion,
       productOptions: { ...base.productOptions, ...project.productOptions },
     };
-    resetHistory(migrateLegacyText(merged));
+    resetHistory(rehydrateDesignImages(migrateLegacyText(merged)));
     setSelectedTarget(null);
     setSelectedElementId(null);
     setSelectedTextId(null);
