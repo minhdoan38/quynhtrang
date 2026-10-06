@@ -12,7 +12,7 @@ const checkoutSource = readFileSync(
 );
 
 test('Step 1 renders summary card, quantity stepper, and current price quote', () => {
-  assert.match(checkoutSource, /import \{ OrderSummaryCard \} from ['"]@\/components\/checkout\/order-summary-card['"]/);
+  assert.match(checkoutSource, /import \{[^}]*\bOrderSummaryCard\b[^}]*\} from ['"]@\/components\/checkout\/order-summary-card['"]/);
   assert.match(checkoutSource, /import \{ QuantityStepper \} from ['"]@\/components\/checkout\/quantity-stepper['"]/);
   assert.match(checkoutSource, /import \{ calculatePriceQuote \} from ['"]@\/lib\/pricing['"]/);
   assert.match(checkoutSource, /const priceQuote = calculatePriceQuote\(\{[\s\S]*?productId: design\.productId,[\s\S]*?variantId: design\.variantId,[\s\S]*?quantity: design\.quantity,[\s\S]*?productOptions: design\.productOptions,[\s\S]*?\}\);/);

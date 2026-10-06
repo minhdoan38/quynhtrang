@@ -1,3 +1,5 @@
+import js from '@eslint/js';
+import globals from 'globals';
 import babelParser from '@babel/eslint-parser';
 
 export default [
@@ -12,6 +14,7 @@ export default [
       '**/*.d.ts',
     ],
   },
+  js.configs.recommended,
   {
     files: [
       'src/**/*.{js,mjs,cjs,ts,jsx,tsx}',
@@ -31,52 +34,29 @@ export default [
       },
       ecmaVersion: 'latest',
       sourceType: 'module',
+      globals: {
+        ...globals.browser,
+        ...globals.node,
+        ...globals.es2024,
+      },
     },
     linterOptions: {
       reportUnusedDisableDirectives: 'error',
     },
     rules: {
-      'no-constant-condition': 'error',
       'no-duplicate-imports': ['error', { allowSeparateTypeImports: true }],
-      'no-unreachable': 'error',
-      'valid-typeof': 'error',
-      'constructor-super': 'error',
-      'for-direction': 'error',
-      'getter-return': 'error',
-      'no-async-promise-executor': 'error',
-      'no-case-declarations': 'error',
-      'no-class-assign': 'error',
-      'no-compare-neg-zero': 'error',
-      'no-cond-assign': 'error',
-      'no-const-assign': 'error',
-      'no-dupe-args': 'error',
-      'no-dupe-class-members': 'error',
-      'no-dupe-else-if': 'error',
-      'no-dupe-keys': 'error',
-      'no-duplicate-case': 'error',
-      'no-empty-character-class': 'error',
-      'no-empty-pattern': 'error',
-      'no-ex-assign': 'error',
-      'no-fallthrough': 'error',
-      'no-func-assign': 'error',
-      'no-invalid-regexp': 'error',
-      'no-irregular-whitespace': 'error',
-      'no-loss-of-precision': 'error',
-      'no-misleading-character-class': 'error',
-      'no-new-native-nonconstructor': 'error',
-      'no-prototype-builtins': 'error',
-      'no-self-assign': 'error',
-      'no-shadow-restricted-names': 'error',
-      'no-sparse-arrays': 'error',
-      'no-this-before-super': 'error',
-      'no-unexpected-multiline': 'error',
-      'no-unreachable-loop': 'error',
-      'no-unsafe-finally': 'error',
-      'no-unsafe-negation': 'error',
-      'no-unsafe-optional-chaining': 'error',
-      'no-unused-labels': 'error',
-      'no-with': 'error',
-      'use-isnan': 'error',
+      'no-unused-vars': 'off',
+      'no-useless-assignment': 'off',
+      'preserve-caught-error': 'off',
+      'no-extra-boolean-cast': 'off',
+      'no-control-regex': 'off',
+      'no-regex-spaces': 'off',
+    },
+  },
+  {
+    files: ['**/*.{ts,tsx}'],
+    rules: {
+      'no-undef': 'off',
     },
   },
 ];

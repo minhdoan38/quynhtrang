@@ -11,8 +11,7 @@ import {
   normalizeQuantity,
 } from '@/lib/product-state';
 import { loadState, saveState } from '@/lib/storage';
-import { OrderSummaryCard } from '@/components/checkout/order-summary-card';
-import { getFriendlyProductName } from '../../components/checkout/order-summary-card';
+import { OrderSummaryCard, getFriendlyProductName } from '@/components/checkout/order-summary-card';
 import { QuantityStepper } from '@/components/checkout/quantity-stepper';
 import { CustomerInformationForm } from '@/components/checkout/customer-information-form';
 import { calculatePriceQuote } from '@/lib/pricing';
