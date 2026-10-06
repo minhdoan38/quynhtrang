@@ -51,3 +51,15 @@
 - Focused test `src/test/state45-db-invariants.test.ts`: 3 passed, 0 failed.
 - `pnpm typecheck`: passed (exit code 0).
 - `pnpm test`: 1279 passed, 0 failed.
+
+## Fix Round 2 (Append-Only Receipt Preservation)
+
+- **Preserve append-only validation runs and draft immutability**:
+  - Removed `UPDATE template_validation_runs SET draft_id = ...` from `supabase/migrations/0022_state45_integrity_constraints.sql` to avoid triggering `trigger_validation_runs_append_only` (`'template_validation_runs is append-only'`).
+  - Removed `DELETE FROM template_drafts` to protect restrictive foreign key references while logging duplicate drafts in `state45_integrity_quarantine`.
+  - Preserved append-only validation receipts and mutable `template_assets` reparenting.
+
+### Fix Round 2 Verification
+- Focused test `src/test/state45-db-invariants.test.ts`: 3 passed, 0 failed.
+- `pnpm typecheck`: passed (exit code 0).
+- `pnpm test`: 1279 passed, 0 failed.
