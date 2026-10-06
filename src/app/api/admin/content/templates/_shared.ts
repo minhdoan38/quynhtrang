@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server.js';
+import { reportUnexpectedError } from '../../../../../lib/observability/report.ts';
 import type { SupabaseClient } from '@supabase/supabase-js';
 
 import {
@@ -191,7 +192,13 @@ export function templateRouteError(error: unknown): NextResponse {
       { status: 400 },
     );
   }
-  console.error('Template route failed', error);
+  reportUnexpectedError({
+    operation: 'admin_template_route',
+    role: 'admin',
+    status: 500,
+    errorCode: 'INTERNAL_ERROR',
+    error,
+  });
   return NextResponse.json(
     { error: 'Template request failed', code: 'INTERNAL_ERROR' },
     { status: 500 },

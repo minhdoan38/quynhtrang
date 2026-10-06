@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server.js';
+import { reportUnexpectedError } from '../../../../../lib/observability/report.ts';
 
 import type { LibraryKind } from '../../../../../lib/domain/asset-library.ts';
 import { AssetLibraryRepository } from '../../../../../lib/repositories/asset-library-repository.ts';
@@ -60,7 +61,13 @@ export async function GET(
 
     return new Response(bytes as BodyInit, { status: 200, headers });
   } catch (error) {
-    console.error('Public library delivery failed', error);
+    reportUnexpectedError({
+      operation: 'public_library_delivery',
+      route: '/api/library/[kind]/[id]',
+      status: 500,
+      errorCode: 'INTERNAL_ERROR',
+      error,
+    });
     return NextResponse.json(
       { error: 'Asset delivery failed', code: 'INTERNAL_ERROR' },
       { status: 500 },

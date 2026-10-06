@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server.js';
+import { reportUnexpectedError, recordReliabilityMetric } from '../../../../../../lib/observability/report.ts';
 import type { PendingOrder } from '../../../../../../lib/order-types.ts';
 import {
   getAllGuestTokensFromRequest,
@@ -66,7 +67,13 @@ export async function POST(
         );
 
         if (rpcError) {
-          console.error('Lỗi RPC report_checkout_payment:', rpcError);
+          recordReliabilityMetric('payment_confirmation_conflict', { role: staff ? staff.role : 'guest', status: 500 });
+          reportUnexpectedError({
+            operation: 'report_checkout_payment_rpc',
+            route: '/api/orders/[id]/payment/report',
+            role: staff ? staff.role : 'guest',
+            error: rpcError,
+          });
         } else {
           const code =
             rpcData && typeof rpcData === 'object' && 'code' in rpcData
@@ -91,7 +98,12 @@ export async function POST(
           }
         }
       } catch (err) {
-        console.error('Lỗi cập nhật thanh toán Supabase:', err);
+        reportUnexpectedError({
+          operation: 'report_payment_supabase_update',
+          route: '/api/orders/[id]/payment/report',
+          role: staff ? staff.role : 'guest',
+          error: err,
+        });
       }
     }
 
@@ -106,7 +118,12 @@ export async function POST(
 
     return NextResponse.json({ order });
   } catch (err) {
-    console.error('Lỗi ghi nhận chuyển khoản:', err);
+    reportUnexpectedError({
+      operation: 'report_payment',
+      route: '/api/orders/[id]/payment/report',
+      status: 500,
+      error: err,
+    });
     return NextResponse.json(
       { error: 'Có lỗi xảy ra khi ghi nhận thanh toán.' },
       { status: 500 }

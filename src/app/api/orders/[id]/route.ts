@@ -1,4 +1,5 @@
 import type { PendingOrder } from '../../../../lib/order-types.ts';
+import { reportUnexpectedError } from '../../../../lib/observability/report.ts';
 import {
   getAllGuestTokensFromRequest,
   hashGuestOrderAccessToken,
@@ -59,7 +60,12 @@ export async function GET(
           }
         }
       } catch (err) {
-        console.error('Lỗi truy vấn đơn hàng từ Supabase:', err);
+        reportUnexpectedError({
+          operation: 'query_order_supabase',
+          route: '/api/orders/[id]',
+          role: staff ? staff.role : 'guest',
+          error: err,
+        });
       }
     }
 
@@ -76,7 +82,12 @@ export async function GET(
 
     return Response.json({ order });
   } catch (err) {
-    console.error('Lỗi truy vấn đơn hàng:', err);
+    reportUnexpectedError({
+      operation: 'get_order_detail',
+      route: '/api/orders/[id]',
+      status: 500,
+      error: err,
+    });
     return Response.json(
       { error: 'Lỗi máy chủ.' },
       { status: 500 }

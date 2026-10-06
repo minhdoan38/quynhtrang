@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 
 import { NextResponse } from 'next/server.js';
+import { reportUnexpectedError } from '../../../../lib/observability/report.ts';
 
 import {
   AuthorizationError,
@@ -97,7 +98,13 @@ export function routeError(error: unknown): NextResponse {
       { status: 400 },
     );
   }
-  console.error('Asset library route failed', error);
+  reportUnexpectedError({
+    operation: 'admin_content_route',
+    role: 'admin',
+    status: 500,
+    errorCode: 'INTERNAL_ERROR',
+    error,
+  });
   return NextResponse.json(
     { error: 'Asset library request failed', code: 'INTERNAL_ERROR' },
     { status: 500 },

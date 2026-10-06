@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server.js';
+import { reportUnexpectedError } from '../../../../../lib/observability/report.ts';
 import { getPaymentInstructions } from '../../../../../lib/payment-qr-provider.ts';
 import {
   getAllGuestTokensFromRequest,
@@ -57,7 +58,12 @@ export async function GET(
           }
         }
       } catch (err) {
-        console.error('Lỗi truy vấn đơn hàng từ Supabase:', err);
+        reportUnexpectedError({
+          operation: 'query_order_payment_supabase',
+          route: '/api/orders/[id]/payment',
+          role: staff ? staff.role : 'guest',
+          error: err,
+        });
       }
     }
 
@@ -79,7 +85,12 @@ export async function GET(
       remainingAmount: instructions.remainingAmount,
     });
   } catch (err) {
-    console.error('Lỗi lấy hướng dẫn thanh toán:', err);
+    reportUnexpectedError({
+      operation: 'get_payment_instructions',
+      route: '/api/orders/[id]/payment',
+      status: 500,
+      error: err,
+    });
     return NextResponse.json(
       { error: err instanceof Error ? err.message : 'Chưa thể tạo mã thanh toán.' },
       { status: 500 }

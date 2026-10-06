@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server.js';
 import { toSafeRouteResponse } from '../../../lib/reliability/error-contract.ts';
+import { reportUnexpectedError, recordReliabilityMetric } from '../../../lib/observability/report.ts';
 import { getGuestOrderAccessTokenFromRequest, setGuestOrderAccessCookie } from '../../../lib/guest-order-access.ts';
 import { validateCustomerInfo } from '../../../lib/customer-info.ts';
 import { DEFAULT_BANK_DETAILS } from '../../../lib/payment-qr-provider.ts';
@@ -134,7 +135,14 @@ export async function POST(request: Request) {
     setGuestOrderAccessCookie(response, prepared.guestAccessToken, prepared.order.id);
     return response;
   } catch (error) {
-    console.error('Lỗi tạo đơn hàng:', error);
+    recordReliabilityMetric('order_creation_failure', { role: 'customer', status: 500 });
+    reportUnexpectedError({
+      operation: 'create_order',
+      route: '/api/orders',
+      role: 'customer',
+      status: 500,
+      error,
+    });
     return toSafeRouteResponse(error, 500);
   }
 }

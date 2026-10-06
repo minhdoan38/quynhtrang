@@ -1,17 +1,32 @@
 'use client';
 
+import { useEffect } from 'react';
 import Link from 'next/link';
 import { Button, buttonVariants } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
 import { AlertCircle } from 'lucide-react';
+import { reportUnexpectedError } from '@/lib/observability/report.ts';
+import { createSupportCode } from '@/lib/reliability/operation-id.ts';
 
 export default function OrderDetailError({
+  error,
   reset,
 }: {
   error: Error & { digest?: string };
   reset: () => void;
 }) {
+  const refCode = createSupportCode(error.digest || error.message || 'order_detail');
+
+  useEffect(() => {
+    reportUnexpectedError({
+      operation: 'admin_order_detail_view',
+      route: '/admin/orders/[id]',
+      errorCode: error.digest,
+      error,
+    });
+  }, [error]);
+
   return (
     <div className="max-w-2xl mx-auto px-4 py-16">
       <Card className="p-8 text-center border-neutral-200 shadow-sm space-y-5">
@@ -24,6 +39,9 @@ export default function OrderDetailError({
           </h2>
           <p className="text-sm text-neutral-600">
             Đã có lỗi xảy ra trong quá trình tải dữ liệu đơn hàng. Vui lòng thử lại.
+          </p>
+          <p className="text-xs text-neutral-400 font-mono">
+            Mã tham chiếu: {refCode}
           </p>
         </div>
         <div className="flex items-center justify-center gap-3 pt-2">
