@@ -360,3 +360,50 @@ test('StaffDraftSaveQueue restores saved status when reverting edit during error
 
   queue.dispose();
 });
+
+test('StaffDraftSaveQueue flush resolves when edit is reverted to in-flight snapshot', async () => {
+  const clock = createMockTimer();
+  const requests: SaveStaffDraftInput[] = [];
+  let resolver: ((res: RevisionResult<{ revision: number; updatedAt: string; requestId: string }>) => void) | null = null;
+
+  const queue = new StaffDraftSaveQueue({
+    draftId: 'draft-1',
+    initialRevision: 1,
+    expectedProductionVersionId: 'ver-1',
+    sessionId: 'session-1',
+    epoch: 1,
+    now: clock.now,
+    timer: clock.timer,
+    saveTransport: (input) => {
+      requests.push(input);
+      const { promise, resolve } = Promise.withResolvers<RevisionResult<{ revision: number; updatedAt: string; requestId: string }>>();
+      resolver = resolve;
+      return promise;
+    },
+  });
+
+  const docA = { text: 'A' } as unknown as DesignState;
+  const docB = { text: 'B' } as unknown as DesignState;
+
+  queue.enqueue(docA);
+  await clock.advance(850);
+  assert.equal(queue.isInFlight(), true);
+  assert.equal(requests.length, 1);
+
+  queue.enqueue(docB);
+  queue.enqueue(docA);
+
+  const flushPromise = queue.flush();
+
+  resolver!({
+    ok: true,
+    value: { revision: 2, updatedAt: '2026-10-06T00:00:00Z', requestId: requests[0].requestId },
+  });
+
+  const res = await flushPromise;
+  assert.equal(res.revision, 2);
+  assert.equal(queue.getStatus(), 'saved');
+  assert.equal(requests.length, 1, 'Should not trigger second save since doc was reverted to already-saved A');
+
+  queue.dispose();
+});

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
@@ -25,18 +25,33 @@ export function CommercialConfigEditor({ product, initialDraft, editable, onPubl
   const activeIds = product.variants.filter((variant) => variant.status === 'active').map((variant) => variant.id);
   const invalid = config ? validateCommercialConfig(config, activeIds).length > 0 : true;
   const locked = !editable || !draft || pending || status === 'conflict';
+  const openDraftInFlightRef = useRef(false);
+  const openDraftSeqRef = useRef(0);
   function change(next: CommercialConfigVersion) { setConfig(next); setDirty(true); setStatus('unsynced'); setMessage(''); }
   function updateRule(index: number, rule: CommercialVariantRule) {
     if (config) change({ ...config, variantRules: config.variantRules.map((current, i) => i === index ? rule : current) });
   }
   async function openDraft() {
+    if (openDraftInFlightRef.current) return;
+    openDraftInFlightRef.current = true;
+    const reqSeq = ++openDraftSeqRef.current;
     setPending(true);
     try {
       const result = await loadCommercialDraftAction(String(product.id));
+      if (reqSeq !== openDraftSeqRef.current) return;
       if (!result.ok) { setMessage(result.message); setStatus(result.code === 'REVISION_CONFLICT' ? 'conflict' : 'error'); return; }
       setDraft(result.value); setConfig(commercialDraftConfig(result.value)); setDirty(false); setStatus('saved'); setMessage('Đã mở bản nháp. Giá đang bán chưa thay đổi.');
-    } catch { setMessage('Chưa thể tải cấu hình sản phẩm.'); setStatus('error'); }
-    finally { setPending(false); }
+    } catch {
+      if (reqSeq === openDraftSeqRef.current) {
+        setMessage('Chưa thể tải cấu hình sản phẩm.'); setStatus('error');
+      }
+    }
+    finally {
+      if (reqSeq === openDraftSeqRef.current) {
+        setPending(false);
+      }
+      openDraftInFlightRef.current = false;
+    }
   }
   async function save() {
     if (!draft || !config) return;
@@ -92,7 +107,7 @@ export function CommercialConfigEditor({ product, initialDraft, editable, onPubl
           <p className="font-semibold">Thiết kế đã được cập nhật ở nơi khác.</p>
           <p className="text-xs text-red-700 mt-0.5">Cấu hình đã thay đổi ở nơi khác. Vui lòng tải lại trước khi tiếp tục chỉnh sửa.</p>
         </div>
-        <Button variant="outline" className="min-h-11 border-red-300 bg-white hover:bg-red-50 text-red-900 shrink-0" onClick={openDraft}>
+        <Button variant="outline" className="min-h-11 border-red-300 bg-white hover:bg-red-50 text-red-900 shrink-0" disabled={pending} onClick={openDraft}>
           Tải phiên bản mới
         </Button>
       </div>

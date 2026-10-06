@@ -316,7 +316,6 @@ export class DraftAutosaveQueue<TDocument> {
           }
 
           const docToSave = this.pendingDocument;
-          const generationToSave = this.documentGeneration;
           currentDocToSave = docToSave;
           this.pendingDocument = null;
           this.firstDirtyAt = null;
@@ -346,7 +345,8 @@ export class DraftAutosaveQueue<TDocument> {
                 this.pendingDocument = null;
                 this.firstDirtyAt = null;
               }
-              if (this.pendingDocument === null && generationToSave >= this.documentGeneration) {
+              // ponytail: pendingDocument === null guarantees current state matches saved snapshot
+              if (this.pendingDocument === null) {
                 this.setStatus('saved', { revision: this.revision });
                 this.drainFlushWaiters();
               }

@@ -85,6 +85,12 @@ export function DesignReviewClient({
       alert(message);
     }
   };
+  const handleReloadPersisted = () => {
+    setConflictDialogOpen(false);
+    if (typeof window !== 'undefined') {
+      window.location.reload();
+    }
+  };
   // Session ID per tab
   const [sessionId] = useState(() => {
     if (typeof window !== 'undefined') {
@@ -304,10 +310,7 @@ export function DesignReviewClient({
           open={conflictDialogOpen || draftSession.saveStatus === 'conflict'}
           message={draftSession.conflictDetails?.message || 'Thiết kế đã được cập nhật ở nơi khác.'}
           recoveryJson={currentDraft?.document ? JSON.stringify(currentDraft.document) : null}
-          onReload={() => {
-            setConflictDialogOpen(false);
-            router.refresh();
-          }}
+          onReload={handleReloadPersisted}
         />
       </>
     );
@@ -407,10 +410,7 @@ export function DesignReviewClient({
           open={conflictDialogOpen || draftSession.saveStatus === 'conflict'}
           message={draftSession.conflictDetails?.message || 'Thiết kế đã được cập nhật ở nơi khác.'}
           recoveryJson={currentDraft?.document ? JSON.stringify(currentDraft.document) : null}
-          onReload={() => {
-            setConflictDialogOpen(false);
-            router.refresh();
-          }}
+          onReload={handleReloadPersisted}
         />
       </div>
     );
@@ -469,10 +469,7 @@ export function DesignReviewClient({
         open={conflictDialogOpen || draftSession.saveStatus === 'conflict'}
         message={draftSession.conflictDetails?.message || 'Thiết kế đã được cập nhật ở nơi khác.'}
         recoveryJson={currentDraft?.document ? JSON.stringify(currentDraft.document) : null}
-        onReload={() => {
-          setConflictDialogOpen(false);
-          router.refresh();
-        }}
+        onReload={handleReloadPersisted}
       />
       {toastMessage && (
         <div

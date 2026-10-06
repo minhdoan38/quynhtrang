@@ -13,7 +13,7 @@ import { setImmediate as nextTurn } from 'node:timers/promises';
 interface TestElement {
   type: unknown;
   key: string | null;
-  props: { children?: unknown; type?: string; checked?: boolean; open?: boolean; error?: string; role?: string; onChange: () => void; onClick: () => void; onConfirm: () => Promise<void>; onOpenChange: (open: boolean) => void };
+  props: { children?: unknown; type?: string; checked?: boolean; disabled?: boolean; open?: boolean; error?: string; role?: string; onChange: () => void; onClick: () => void; onConfirm: () => Promise<void>; onOpenChange: (open: boolean) => void };
 }
 
 // Execute real TSX component functions; mock only React hooks, framework and I/O boundaries.
@@ -29,9 +29,13 @@ function componentModule(path: string, mocks: Record<string, unknown>) {
 
 function componentHarness(path: string, name: string, mocks: Record<string, unknown>) {
   const state: unknown[] = []; let cursor = 0;
-  const hooks = { useState(initial: unknown) { const index = cursor++; if (!(index in state)) state[index] = initial; return [state[index], (value: unknown) => { state[index] = typeof value === 'function' ? value(state[index]) : value; }]; } };
+  const refs: Array<{ current: unknown }> = []; let refCursor = 0;
+  const hooks = {
+    useState(initial: unknown) { const index = cursor++; if (!(index in state)) state[index] = initial; return [state[index], (value: unknown) => { state[index] = typeof value === 'function' ? value(state[index]) : value; }]; },
+    useRef(initial: unknown) { const index = refCursor++; if (!(index in refs)) refs[index] = { current: initial }; return refs[index]; },
+  };
   const component = componentModule(path, { ...mocks, react: hooks })[name];
-  return { render(props: unknown) { cursor = 0; return component(props); } };
+  return { render(props: unknown) { cursor = 0; refCursor = 0; return component(props); } };
 }
 
 function elements(tree: unknown): TestElement[] {
@@ -203,5 +207,56 @@ describe('Admin commercial editor contracts', () => {
     await refetchButton.props.onClick();
     await nextTurn();
     assert.equal(reloaded, true, 'Refetch button must trigger reload of latest draft');
+  });
+  it('disables reload button while pending and prevents concurrent openDraft invocations', async () => {
+    let loadCount = 0;
+    const resolvers: Array<(res: { ok: true; value: typeof draft }) => void> = [];
+    const draft = { id: 'd', productId: 'card', revision: 1, payload: { currency: 'VND', paymentPolicy: { kind: 'full_payment' }, variantRules: [{ variantId: 'horizontal', minimumQuantity: 1, quantityStep: 1, maximumQuantity: null, tiers: [{ minimumQuantity: 1, unitPrice: 100 }] }] } };
+    const product = { id: 'card', name: 'Thiệp', revision: 1, status: 'draft', variants: [{ id: 'horizontal', name: 'Ngang', status: 'active' }], metadata: {} };
+    const editor = componentHarness('../components/admin/commercial-config-editor.tsx', 'CommercialConfigEditor', {
+      '@/lib/admin/product-catalog-ui.ts': { commercialDraftConfig },
+      '@/lib/domain/commercial-config.ts': { validateCommercialConfig: () => [] },
+      '@/app/admin/products/actions.ts': {
+        saveCommercialDraftAction: async () => ({ ok: false, code: 'REVISION_CONFLICT', status: 409, message: 'Cấu hình đã thay đổi.' }),
+        loadCommercialDraftAction: () => {
+          loadCount++;
+          const { promise, resolve } = Promise.withResolvers<{ ok: true; value: typeof draft }>();
+          resolvers.push(resolve);
+          return promise;
+        },
+      },
+    });
+    const props = { product, initialDraft: draft, editable: true, onPublished() { } };
+    let tree = editor.render(props);
+    const saveButton = elements(tree).find((item) => item.type === 'Button' && item.props?.children === 'Lưu bản nháp');
+    assert.ok(saveButton);
+    await saveButton.props.onClick();
+    await nextTurn();
+
+    tree = editor.render(props);
+    const conflictBanner = elements(tree).find((item) => item.props?.role === 'alert' && elements(item).some((el) => el.props?.children === 'Thiết kế đã được cập nhật ở nơi khác.'));
+    assert.ok(conflictBanner);
+
+    const refetchButton = elements(conflictBanner).find((item) => item.type === 'Button' && item.props?.children === 'Tải phiên bản mới');
+    assert.ok(refetchButton);
+    assert.equal(refetchButton.props.disabled, false);
+
+    const click1 = refetchButton.props.onClick();
+    const click2 = refetchButton.props.onClick();
+
+    assert.equal(loadCount, 1, 'Synchronous double-click must not start duplicate load requests');
+
+    tree = editor.render(props);
+    const pendingRefetchButton = elements(tree).find((item) => item.type === 'Button' && item.props?.children === 'Tải phiên bản mới');
+    assert.ok(pendingRefetchButton);
+    assert.equal(pendingRefetchButton.props.disabled, true, 'Reload button must be disabled while pending');
+
+    resolvers[0]({ ok: true, value: { ...draft, revision: 2 } });
+    await click1;
+    await click2;
+    await nextTurn();
+
+    tree = editor.render(props);
+    assert.ok(elements(tree).some((item) => item.props?.children === 'Bản nháp đã lưu · revision 2'));
   });
 });
