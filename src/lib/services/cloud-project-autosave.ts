@@ -136,18 +136,16 @@ export async function saveCustomerProjectRevision(
       ? errorRecord.code.trim()
       : '';
     const rawMsg = error.message?.trim() || '';
-    const isNetworkError = /fetch|network|failed to fetch|timeout|abort/i.test(rawMsg);
+    const isNetworkError = /failed to fetch|fetch failed|socket hang up|econnreset|etimedout/i.test(rawMsg);
     const isPostgresCode = /^[0-9A-Z]{5}$/.test(rawCode);
     const isPostgrestCode = /^PGRST\d+$/i.test(rawCode);
-    const hasDbMessagePattern =
-      /(?:syntax error|relation|column|violates|duplicate key|unique constraint|foreign key|null value in column|check constraint|table|schema|pgrst|postgrest|pg_|42[a-z0-9]{3}|23[a-z0-9]{3})/i.test(
-        rawMsg,
-      );
-    const isDbError = !isNetworkError && (isPostgresCode || isPostgrestCode || hasDbMessagePattern);
+    const isDomainCode =
+      /^[A-Z][A-Z0-9_]{2,49}$/.test(rawMsg) && !isPostgresCode && !isPostgrestCode;
+    const isSafeToPass = isDomainCode || isNetworkError;
     // ponytail: safe default copy over raw DB text; add more granular DB codes if client recovery flows demand it.
     const safeErr = toSafeOperationError(error, {
       operation: 'cloudProjectAutosave',
-      defaultMessage: isDbError ? 'Lỗi lưu trữ đám mây' : error.message,
+      defaultMessage: isSafeToPass ? error.message : 'Lỗi lưu trữ đám mây',
     });
     return {
       conflict: false,

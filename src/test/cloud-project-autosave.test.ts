@@ -91,6 +91,47 @@ test('saveCustomerProjectRevision retains network message and code for network f
   assert.doesNotMatch(result.userMessage || '', /Lỗi lưu trữ đám mây/);
 });
 
+test('saveCustomerProjectRevision sanitizes unexpected runtime TypeErrors', async () => {
+  const mockSupabase = {
+    rpc: async () => ({
+      data: null,
+      error: new TypeError('Cannot read properties of undefined'),
+    }),
+  };
+
+  const result = await saveCustomerProjectRevision(
+    'project_123',
+    1,
+    createInitialState('card'),
+    mockSupabase as never,
+  );
+
+  assert.equal(result.conflict, false);
+  assert.equal(result.code, 'UNEXPECTED_ERROR');
+  assert.equal(result.userMessage, 'Lỗi lưu trữ đám mây');
+  assert.doesNotMatch(JSON.stringify(result), /Cannot read properties of undefined|TypeError/i);
+});
+
+test('saveCustomerProjectRevision preserves domain error codes', async () => {
+  const mockSupabase = {
+    rpc: async () => ({
+      data: null,
+      error: new Error('PROJECT_NOT_FOUND'),
+    }),
+  };
+
+  const result = await saveCustomerProjectRevision(
+    'project_123',
+    1,
+    createInitialState('card'),
+    mockSupabase as never,
+  );
+
+  assert.equal(result.conflict, false);
+  assert.equal(result.code, 'PROJECT_NOT_FOUND');
+  assert.equal(result.userMessage, 'PROJECT_NOT_FOUND');
+});
+
 test('saveCustomerProjectRevision sanitizes PostgREST and Postgres errors to cloud storage error copy', async () => {
   const mockSupabase = {
     rpc: async () => ({
