@@ -403,8 +403,10 @@ export function CustomizerShell({ context, initialSearchParams }: CustomizerShel
         setCurrentProjectId(context.projectId);
         setCurrentOpenProjectId(context.projectId);
       }
-      resetHistory(rehydrateDesignImages(context.initialDocument));
-      setView('editor');
+      void rehydrateDesignImages(context.initialDocument).then((rehydrated) => {
+        resetHistory(rehydrated);
+        setView('editor');
+      });
       return;
     }
     const searchParams = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null;
@@ -435,7 +437,8 @@ export function CustomizerShell({ context, initialSearchParams }: CustomizerShel
                 quantity: 1,
                 productOptions: { ...base.productOptions, ...cached.productOptions },
               };
-              resetHistory(rehydrateDesignImages(migrateLegacyText(restored)));
+              const rehydrated = await rehydrateDesignImages(migrateLegacyText(restored));
+              resetHistory(rehydrated);
               setView('editor');
               setSaveStatus('conflict');
               showToast('Phiên làm việc chưa xác thực. Hiển thị bản nháp phục hồi cục bộ.');
@@ -482,7 +485,7 @@ export function CustomizerShell({ context, initialSearchParams }: CustomizerShel
             };
           }
 
-          const rehydrated = rehydrateDesignImages(doc);
+          const rehydrated = await rehydrateDesignImages(doc);
           resetHistory(migrateLegacyText(rehydrated));
           setView('editor');
 
@@ -711,7 +714,7 @@ export function CustomizerShell({ context, initialSearchParams }: CustomizerShel
     setView('setup');
   }, []);
 
-  const handleResumeProject = useCallback((project: RecentProject) => {
+  const handleResumeProject = useCallback(async (project: RecentProject) => {
     setCurrentProjectId(project.id);
     setCurrentOpenProjectId(project.id);
     const base = createInitialState(project.productId);
@@ -723,7 +726,8 @@ export function CustomizerShell({ context, initialSearchParams }: CustomizerShel
       documentSchemaVersion: project.documentSchemaVersion,
       productOptions: { ...base.productOptions, ...project.productOptions },
     };
-    resetHistory(rehydrateDesignImages(migrateLegacyText(merged)));
+    const rehydrated = await rehydrateDesignImages(migrateLegacyText(merged));
+    resetHistory(rehydrated);
     setSelectedTarget(null);
     setSelectedElementId(null);
     setSelectedTextId(null);

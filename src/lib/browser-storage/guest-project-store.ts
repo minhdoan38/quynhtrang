@@ -29,7 +29,62 @@ const STORE_ASSETS = 'assets';
 // In-memory fallback caches for SSR and private browsing
 const inMemoryProjects = new Map<string, GuestProjectRecord>();
 const inMemoryAssets = new Map<string, GuestAssetRecord>();
+const objectUrlCache = new Map<string, string>();
 
+export function getRenderableAssetUrl(record: GuestAssetRecord): string {
+  if (objectUrlCache.has(record.id)) {
+    return objectUrlCache.get(record.id)!;
+  }
+
+  if (typeof window !== 'undefined' && typeof window.URL?.createObjectURL === 'function') {
+    try {
+      let blob: Blob | null = null;
+      if (record.payload instanceof Uint8Array) {
+        const buf = record.payload.buffer.slice(record.payload.byteOffset, record.payload.byteOffset + record.payload.byteLength) as ArrayBuffer;
+        blob = new Blob([buf], { type: record.mimeType || 'image/png' });
+      } else if (typeof record.dataUrl === 'string' && record.dataUrl.startsWith('data:')) {
+        const parsed = parseInlinePayload(record.dataUrl, record.mimeType);
+        if (parsed) {
+          const buf = parsed.bytes.buffer.slice(parsed.bytes.byteOffset, parsed.bytes.byteOffset + parsed.bytes.byteLength) as ArrayBuffer;
+          blob = new Blob([buf], { type: parsed.mimeType });
+        }
+      }
+      if (blob) {
+        const url = window.URL.createObjectURL(blob);
+        objectUrlCache.set(record.id, url);
+        return url;
+      }
+    } catch {
+      // Fallback to dataUrl
+    }
+  }
+
+  if (typeof record.dataUrl === 'string' && record.dataUrl.startsWith('data:')) {
+    return record.dataUrl;
+  }
+
+  if (record.payload instanceof Uint8Array) {
+    const base64 = typeof Buffer !== 'undefined'
+      ? Buffer.from(record.payload).toString('base64')
+      : globalThis.btoa(String.fromCharCode(...record.payload));
+    const mime = record.mimeType || 'image/png';
+    const dataUrl = `data:${mime};base64,${base64}`;
+    record.dataUrl = dataUrl;
+    return dataUrl;
+  }
+
+  return record.id;
+}
+
+export function resolveRenderableAssetUrl(srcOrId: string | null | undefined): string | null {
+  if (!srcOrId || typeof srcOrId !== 'string') return null;
+  if (!srcOrId.startsWith('asset-')) return srcOrId;
+  const cached = getInMemoryAsset(srcOrId);
+  if (cached) {
+    return getRenderableAssetUrl(cached);
+  }
+  return null;
+}
 export function getInMemoryProject(id: string): GuestProjectRecord | null {
   return inMemoryProjects.get(id) ?? null;
 }
@@ -174,11 +229,34 @@ export async function loadGuestAsset(id: string): Promise<GuestAssetRecord | nul
   return promise;
 }
 
-export function rehydrateImageState(image: ImageState | null): ImageState | null {
+export function rehydrateImageStateSync(image: ImageState | null): ImageState | null {
   if (!image) return null;
   const isBlob = typeof image.src === 'string' && image.src.startsWith('blob:');
-  if (!isBlob) {
+  const isAsset = typeof image.src === 'string' && image.src.startsWith('asset-');
+  const hasAssetId = typeof image.assetId === 'string' && image.assetId.startsWith('asset-');
+
+  if (!isBlob && !isAsset && !hasAssetId) {
     return image;
+  }
+
+  if (isAsset || hasAssetId) {
+    const assetKey = (isAsset ? image.src : image.assetId)!;
+    const cached = getInMemoryAsset(assetKey) || (image.name ? getInMemoryAsset(image.name) : null);
+    if (cached) {
+      const renderable = getRenderableAssetUrl(cached);
+      return {
+        ...image,
+        src: renderable,
+        assetId: cached.id || assetKey,
+        checksum: cached.checksum || image.checksum,
+        data: undefined,
+        payload: undefined,
+      };
+    }
+    return {
+      ...image,
+      assetId: image.assetId || (isAsset ? image.src : undefined),
+    };
   }
 
   // Restore dead blob: URL from base64 dataUrl or payload
@@ -197,60 +275,179 @@ export function rehydrateImageState(image: ImageState | null): ImageState | null
     };
   }
 
-  const cached = getInMemoryAsset(image.name) || getInMemoryAsset(image.src);
-  if (cached?.dataUrl) {
+  const cached = (image.name ? getInMemoryAsset(image.name) : null) || getInMemoryAsset(image.src);
+  if (cached) {
+    const renderable = getRenderableAssetUrl(cached);
     return {
       ...image,
-      src: cached.dataUrl,
-      data: cached.dataUrl,
+      src: renderable,
+      data: cached.dataUrl || renderable,
     };
   }
 
   return image;
 }
 
-export function rehydrateDesignImages(design: DesignState): DesignState {
-  const rehydratedMain = rehydrateImageState(design.image ?? null);
+export async function rehydrateImageState(image: ImageState | null): Promise<ImageState | null> {
+  if (!image) return null;
+  const syncRes = rehydrateImageStateSync(image);
+  if (!syncRes) return null;
+
+  const isAsset = typeof syncRes.src === 'string' && syncRes.src.startsWith('asset-');
+  const hasAssetId = typeof syncRes.assetId === 'string' && syncRes.assetId.startsWith('asset-');
+  const isDeadBlob = typeof syncRes.src === 'string' && syncRes.src.startsWith('blob:') && !objectUrlCache.has(syncRes.src);
+
+  if (isAsset || hasAssetId || isDeadBlob) {
+    const assetKey = (isAsset ? syncRes.src : syncRes.assetId) || syncRes.name;
+    if (assetKey) {
+      const loaded = await loadGuestAsset(assetKey);
+      if (loaded) {
+        const renderable = getRenderableAssetUrl(loaded);
+        return {
+          ...syncRes,
+          src: renderable,
+          assetId: loaded.id || syncRes.assetId,
+          checksum: loaded.checksum || syncRes.checksum,
+          data: undefined,
+          payload: undefined,
+        };
+      }
+    }
+  }
+
+  return syncRes;
+}
+
+export async function rehydrateDesignImages(design: DesignState): Promise<DesignState> {
+  const rehydratedMain = await rehydrateImageState(design.image ?? null);
   let elementsChanged = false;
 
-  const elements = design.elements?.map((el: CanvasElement) => {
+  const elements = design.elements ? await Promise.all(design.elements.map(async (el: CanvasElement) => {
     if (el.type === 'image' && el.data) {
       const imgData = el.data as Record<string, unknown>;
-      const src = typeof imgData.src === 'string' ? imgData.src : '';
-      if (src.startsWith('blob:')) {
-        let restored = '';
-        if (typeof imgData.data === 'string' && imgData.data.startsWith('data:')) {
-          restored = imgData.data;
-        } else if (typeof imgData.payload === 'string' && imgData.payload.startsWith('data:')) {
-          restored = imgData.payload;
-        } else if (rehydratedMain && rehydratedMain.src && !rehydratedMain.src.startsWith('blob:')) {
-          restored = rehydratedMain.src;
-        } else {
-          const cached = (typeof imgData.name === 'string' ? getInMemoryAsset(imgData.name) : null) || getInMemoryAsset(src);
-          if (cached?.dataUrl) restored = cached.dataUrl;
-        }
-
-        if (restored) {
-          elementsChanged = true;
-          return {
-            ...el,
-            data: {
-              ...imgData,
-              src: restored,
-              originalSrc: typeof imgData.originalSrc === 'string' && imgData.originalSrc.startsWith('blob:')
-                ? restored
-                : imgData.originalSrc,
-            },
-          };
-        }
+      const imageCandidate: ImageState = {
+        name: typeof imgData.name === 'string' ? imgData.name : '',
+        type: typeof imgData.type === 'string' ? imgData.type : undefined,
+        size: typeof imgData.size === 'number' ? imgData.size : undefined,
+        src: typeof imgData.src === 'string' ? imgData.src : '',
+        data: typeof imgData.data === 'string' ? imgData.data : undefined,
+        payload: typeof imgData.payload === 'string' ? imgData.payload : undefined,
+        assetId: typeof imgData.assetId === 'string' ? imgData.assetId : undefined,
+        checksum: typeof imgData.checksum === 'string' ? imgData.checksum : undefined,
+      };
+      const rehydratedElImg = await rehydrateImageState(imageCandidate);
+      if (rehydratedElImg && rehydratedElImg.src && rehydratedElImg.src !== imgData.src) {
+        elementsChanged = true;
+        return {
+          ...el,
+          data: {
+            ...imgData,
+            src: rehydratedElImg.src,
+            assetId: rehydratedElImg.assetId || imgData.assetId,
+            checksum: rehydratedElImg.checksum || imgData.checksum,
+            originalSrc: typeof imgData.originalSrc === 'string' && imgData.originalSrc.startsWith('blob:')
+              ? rehydratedElImg.src
+              : imgData.originalSrc,
+            data: undefined,
+            payload: undefined,
+          },
+        };
       }
     }
     return el;
-  });
+  })) : design.elements;
 
   return {
     ...design,
     image: rehydratedMain,
+    elements: elementsChanged ? elements : design.elements,
+  };
+}
+
+export async function extractAndPersistImageAssets(design: DesignState): Promise<DesignState> {
+  let mainImage = design.image ? { ...design.image } : null;
+  if (mainImage) {
+    const source = (mainImage.data || mainImage.payload || (typeof mainImage.src === 'string' && mainImage.src.startsWith('data:') ? mainImage.src : null));
+    if (typeof source === 'string') {
+      const parsed = parseInlinePayload(source, mainImage.type);
+      if (parsed) {
+        const checksum = mainImage.checksum || await sha256Hex(parsed.bytes);
+        const assetId = mainImage.assetId || `asset-${checksum}`;
+        await saveGuestAsset({
+          id: assetId,
+          name: mainImage.name || assetId,
+          mimeType: parsed.mimeType || mainImage.type || 'image/png',
+          size: parsed.bytes.byteLength,
+          payload: parsed.bytes,
+          dataUrl: parsed.dataUrl,
+          checksum,
+          lastUsedAt: Date.now(),
+        });
+        mainImage = {
+          ...mainImage,
+          src: assetId,
+          assetId,
+          checksum,
+          size: parsed.bytes.byteLength,
+          data: undefined,
+          payload: undefined,
+        };
+      }
+    } else if (mainImage.assetId && (mainImage.src.startsWith('blob:') || !mainImage.src)) {
+      mainImage = {
+        ...mainImage,
+        src: mainImage.assetId,
+        data: undefined,
+        payload: undefined,
+      };
+    }
+  }
+
+  let elementsChanged = false;
+  const elements = design.elements ? await Promise.all(design.elements.map(async (el) => {
+    if (el.type === 'image' && el.data) {
+      const imgData = { ...el.data } as Record<string, unknown>;
+      const source = (imgData.data || imgData.payload || (typeof imgData.src === 'string' && imgData.src.startsWith('data:') ? imgData.src : null));
+      if (typeof source === 'string') {
+        const parsed = parseInlinePayload(source, typeof imgData.type === 'string' ? imgData.type : undefined);
+        if (parsed) {
+          const checksum = (typeof imgData.checksum === 'string' ? imgData.checksum : null) || await sha256Hex(parsed.bytes);
+          const assetId = (typeof imgData.assetId === 'string' ? imgData.assetId : null) || `asset-${checksum}`;
+          await saveGuestAsset({
+            id: assetId,
+            name: typeof imgData.name === 'string' ? imgData.name : assetId,
+            mimeType: parsed.mimeType || (typeof imgData.type === 'string' ? imgData.type : 'image/png'),
+            size: parsed.bytes.byteLength,
+            payload: parsed.bytes,
+            dataUrl: parsed.dataUrl,
+            checksum,
+            lastUsedAt: Date.now(),
+          });
+          delete imgData.data;
+          delete imgData.payload;
+          imgData.src = assetId;
+          imgData.assetId = assetId;
+          imgData.checksum = checksum;
+          imgData.size = parsed.bytes.byteLength;
+          elementsChanged = true;
+          return { ...el, data: imgData };
+        }
+      } else if (typeof imgData.assetId === 'string' && imgData.assetId) {
+        if (typeof imgData.src === 'string' && imgData.src.startsWith('blob:')) {
+          imgData.src = imgData.assetId;
+          delete imgData.data;
+          delete imgData.payload;
+          elementsChanged = true;
+          return { ...el, data: imgData };
+        }
+      }
+    }
+    return el;
+  })) : design.elements;
+
+  return {
+    ...design,
+    image: mainImage,
     elements: elementsChanged ? elements : design.elements,
   };
 }

@@ -15,6 +15,7 @@ import {
 } from '../lib/storage.ts';
 import {
   rehydrateImageState,
+  rehydrateDesignImages,
   migrateLegacyLocalStorageAssets,
   loadGuestAsset,
 } from '../lib/browser-storage/guest-project-store.ts';
@@ -200,9 +201,9 @@ test('saveRecentProject and addRecentProject preserve template provenance and sc
   });
 });
 
-test('rehydrates a dead blob URL from durable base64 data', () => {
+test('rehydrates a dead blob URL from durable base64 data', async () => {
   const dataUrl = 'data:image/png;base64,aGVsbG8=';
-  const restored = rehydrateImageState({
+  const restored = await rehydrateImageState({
     name: 'recover.png',
     type: 'image/png',
     src: 'blob:https://example.test/revoked',
@@ -524,4 +525,146 @@ test('migrateLegacyLocalStorageAssets extracts base64, stores binary in IndexedD
   const quarantined = JSON.parse(dummyStorage['quynhtrang-quarantined-projects-v1']) as Array<{ id?: string; project?: { id?: string } }>;
   assert.equal(quarantined.length, 1);
   assert.equal(quarantined[0].project?.id || quarantined[0].id, 'legacy-corrupt-2');
+});
+
+test('saveRecentProjectAsync stores image bytes outside localStorage and rehydrates a renderable source', async () => {
+  const local: Record<string, string> = {};
+  const stores = new Map<string, Map<string, unknown>>([
+    ['projects', new Map()],
+    ['assets', new Map()],
+  ]);
+  const db = {
+    objectStoreNames: { contains: (name: string) => stores.has(name) },
+    transaction: (storeName: string) => {
+      const tx: MockIDBTransaction = {
+        objectStore: () => ({
+          put: (record: unknown) => {
+            const item = record as { id: string };
+            stores.get(storeName)?.set(item.id, structuredClone(record));
+            queueMicrotask(() => tx.oncomplete?.(new Event('complete')));
+            return {};
+          },
+          get: (id: string) => {
+            const req: { result?: unknown; onsuccess?: () => void; onerror?: () => void } = {};
+            queueMicrotask(() => {
+              req.result = stores.get(storeName)?.get(id);
+              req.onsuccess?.();
+            });
+            return req;
+          },
+        }),
+      };
+      return tx;
+    },
+  };
+  Object.defineProperty(globalThis, 'localStorage', {
+    configurable: true,
+    value: {
+      getItem: (key: string) => local[key] ?? null,
+      setItem: (key: string, value: string) => { local[key] = value; },
+      removeItem: (key: string) => { delete local[key]; },
+      clear: () => undefined,
+      key: () => null,
+      length: 0,
+    },
+  });
+  Object.defineProperty(globalThis, 'window', {
+    configurable: true,
+    value: {
+      indexedDB: {
+        open: () => {
+          const req: MockIDBOpenRequest = {};
+          queueMicrotask(() => req.onsuccess?.({ target: { result: db } }));
+          return req;
+        },
+      },
+    },
+  });
+
+  const base64 = Buffer.alloc(256 * 1024, 7).toString('base64');
+  const dataUrl = `data:image/png;base64,${base64}`;
+  const design: DesignState = {
+    productId: 'card',
+    variantId: 'horizontal',
+    templateId: null,
+    text: '',
+    color: '#000',
+    backgroundColor: '#fff',
+    image: {
+      name: 'large.png',
+      type: 'image/png',
+      size: 256 * 1024,
+      src: dataUrl,
+      data: dataUrl,
+      payload: dataUrl,
+    },
+    productOptions: {},
+    quantity: 1,
+  };
+
+  assert.equal(await saveRecentProjectAsync(design, 'large-image-project'), true);
+  const serialized = local['quynhtrang-recent-projects-v1'];
+  assert.ok(serialized.length < 10_000, `localStorage metadata was ${serialized.length} bytes`);
+  assert.equal(serialized.includes(base64), false);
+  const [storedProject] = JSON.parse(serialized) as RecentProject[];
+  assert.ok(storedProject.image?.assetId?.startsWith('asset-'));
+  assert.equal(storedProject.image?.src, storedProject.image?.assetId);
+  assert.equal(storedProject.image?.data, undefined);
+  assert.equal(storedProject.image?.payload, undefined);
+  assert.ok(stores.get('assets')?.has(storedProject.image!.assetId!));
+
+  const restored = await rehydrateDesignImages({ ...design, image: storedProject.image });
+  assert.ok(restored.image?.src.startsWith('blob:') || restored.image?.src.startsWith('data:image/png;base64,'));
+  assert.notEqual(restored.image?.src, storedProject.image?.assetId);
+});
+
+test('rehydrateImageState resolves a bare asset checksum reference to a renderable URL', async () => {
+  const assetId = `asset-${'a'.repeat(64)}`;
+  const dataUrl = 'data:image/png;base64,aGVsbG8=';
+  const asset = {
+    id: assetId,
+    name: 'checksum.png',
+    mimeType: 'image/png',
+    size: 5,
+    payload: Uint8Array.from([104, 101, 108, 108, 111]),
+    dataUrl,
+    lastUsedAt: Date.now(),
+  };
+  const db = {
+    objectStoreNames: { contains: () => true },
+    transaction: () => ({
+      objectStore: () => ({
+        get: () => {
+          const req: { result?: unknown; onsuccess?: () => void; onerror?: () => void } = {};
+          queueMicrotask(() => {
+            req.result = asset;
+            req.onsuccess?.();
+          });
+          return req;
+        },
+      }),
+    }),
+  };
+  Object.defineProperty(globalThis, 'window', {
+    configurable: true,
+    value: {
+      indexedDB: {
+        open: () => {
+          const req: MockIDBOpenRequest = {};
+          queueMicrotask(() => req.onsuccess?.({ target: { result: db } }));
+          return req;
+        },
+      },
+    },
+  });
+
+  const restored = await rehydrateImageState({
+    name: 'checksum.png',
+    type: 'image/png',
+    src: assetId,
+  });
+
+  assert.equal(restored?.assetId, assetId);
+  assert.ok(restored?.src.startsWith('blob:') || restored?.src.startsWith('data:image/png;base64,'));
+  assert.notEqual(restored?.src, assetId);
 });

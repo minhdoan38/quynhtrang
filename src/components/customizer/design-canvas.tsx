@@ -23,6 +23,7 @@ import { computePatternGrid, getWrappingPaperDimensions } from '@/lib/pattern-re
 import { evaluateImageQuality, type ImageQualityReport } from '@/lib/image-quality';
 import type { SafetyReport } from '@/lib/safe-area';
 import type { EditorMutationMode } from '@/lib/domain/design-revision';
+import { resolveRenderableAssetUrl, rehydrateImageState } from '@/lib/browser-storage/guest-project-store';
 import {
   TAP_THRESHOLD_PX,
   isDoubleTap,
@@ -109,7 +110,7 @@ export function DesignCanvas({
   text = '',
   color = '#111827',
   backgroundColor,
-  image = null,
+  image: rawImage = null,
   productOptions,
   isMockup = false,
   selectedTarget = null,
@@ -555,6 +556,38 @@ export function DesignCanvas({
     window.addEventListener('pointerup', handleMultiPointerUp);
   };
 
+  const [asyncResolvedSrc, setAsyncResolvedSrc] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!rawImage?.src || !rawImage.src.startsWith('asset-')) {
+      setAsyncResolvedSrc(null);
+      return;
+    }
+    const syncResolved = resolveRenderableAssetUrl(rawImage.src) || (rawImage.assetId ? resolveRenderableAssetUrl(rawImage.assetId) : null);
+    if (syncResolved) {
+      setAsyncResolvedSrc(syncResolved);
+      return;
+    }
+    let active = true;
+    void rehydrateImageState(rawImage).then((rehydrated) => {
+      if (active && rehydrated?.src && !rehydrated.src.startsWith('asset-')) {
+        setAsyncResolvedSrc(rehydrated.src);
+      }
+    });
+    return () => {
+      active = false;
+    };
+  }, [rawImage?.src, rawImage?.assetId]);
+
+  const image = useMemo(() => {
+    if (!rawImage) return null;
+    const resolved = asyncResolvedSrc || resolveRenderableAssetUrl(rawImage.src) || (rawImage.assetId ? resolveRenderableAssetUrl(rawImage.assetId) : null);
+    if (resolved && rawImage.src.startsWith('asset-')) {
+      return { ...rawImage, src: resolved };
+    }
+    return rawImage;
+  }, [rawImage, asyncResolvedSrc]);
+
   const isImageSelected = !isMockup && selectedTarget === 'image';
 
   const imgElement = useMemo(() => {
@@ -680,7 +713,7 @@ export function DesignCanvas({
                 data-col={cell.col}
                 data-row={cell.row}
               >
-                {image?.src && (
+                {image?.src && !image.src.startsWith('asset-') && (
                   <image
                     href={image.src}
                     x={((100 - 70 * effectiveImageTransform.scale) / 2) + effectiveImageTransform.x}
@@ -872,7 +905,7 @@ export function DesignCanvas({
               opacity: image?.src ? imageOpacity : 1,
             }}
           >
-            {image?.src ? (
+            {image?.src && !image.src.startsWith('asset-') ? (
               <img
                 src={image.src}
                 alt={image.name || 'Ảnh đã tải lên'}

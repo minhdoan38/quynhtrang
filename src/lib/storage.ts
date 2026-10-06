@@ -5,6 +5,7 @@ import { loadCheckoutDraft } from './checkout-draft.ts';
 import {
   saveGuestProject,
   estimateStorage,
+  extractAndPersistImageAssets,
 } from './browser-storage/guest-project-store.ts';
 
 const STATE_KEY = 'print-customizer-state-v1';
@@ -90,6 +91,10 @@ export function sanitizeElementsForStorage(elements?: CanvasElement[]): CanvasEl
         delete dataCopy.borderSvgPath;
         delete dataCopy.cutlineSvgPath;
         delete dataCopy.stickerContour;
+        if (dataCopy.assetId) {
+          delete dataCopy.data;
+          delete dataCopy.payload;
+        }
         copy.data = dataCopy;
       }
       return copy as unknown as CanvasElement;
@@ -241,7 +246,11 @@ function createRecentProject(
     text: state.text,
     color: state.color,
     backgroundColor: state.backgroundColor,
-    image: state.image ? { ...state.image } : null,
+    image: state.image ? {
+      ...state.image,
+      data: state.image.assetId ? undefined : state.image.data,
+      payload: state.image.assetId ? undefined : state.image.payload,
+    } : null,
     productOptions: sanitizeProductOptionsForStorage(state.productOptions),
     elements: sanitizeElementsForStorage(state.elements),
     sourceTemplate: state.sourceTemplate ? { ...state.sourceTemplate } : undefined,
@@ -306,15 +315,35 @@ export function saveRecentProject(
   return metadataOk;
 }
 
+function hasInlineImageAssets(state: DesignState): boolean {
+  if (state.image && (state.image.data || state.image.payload || (typeof state.image.src === 'string' && state.image.src.startsWith('data:')))) {
+    return true;
+  }
+  if (state.elements) {
+    for (const el of state.elements) {
+      if (el.type === 'image' && el.data) {
+        const d = el.data as Record<string, unknown>;
+        if (d.data || d.payload || (typeof d.src === 'string' && d.src.startsWith('data:'))) {
+          return true;
+        }
+      }
+    }
+  }
+  return false;
+}
+
 export async function saveRecentProjectAsync(
   state: DesignState,
   explicitId?: string,
   now: number = Date.now(),
   options?: { recoveryPending?: boolean },
 ): Promise<boolean> {
-  const { project, record, existing } = createRecentProject(state, explicitId, now, options);
+  const persistableState = hasInlineImageAssets(state)
+    ? await extractAndPersistImageAssets(state)
+    : state;
+  const { project, record, existing } = createRecentProject(persistableState, explicitId, now, options);
   inMemoryProjectsCache.set(project.id, project);
-  const metadataOk = writeRecentProjectMetadata(project, existing, state, explicitId);
+  const metadataOk = writeRecentProjectMetadata(project, existing, persistableState, explicitId);
   if (!metadataOk) return false;
   try {
     const durableOk = await saveGuestProject(record);

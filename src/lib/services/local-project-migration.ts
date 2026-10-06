@@ -99,7 +99,7 @@ export async function migrateLocalProjects(
       }
 
       // Rehydrate any transient blob: URLs from durable data or cached assets
-      doc = rehydrateDesignImages(doc);
+      doc = await rehydrateDesignImages(doc);
 
       // Check if dead blob: URLs remain without backing bytes
       const hasDeadBlob = Boolean(
