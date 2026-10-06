@@ -6,9 +6,9 @@ export interface ClaimResult {
   orderId: string;
   projectId: string | null;
 }
-export type ClaimProgressState = 'idle' | 'sending_otp' | 'otp_sent' | 'claiming' | 'migrating' | 'done' | 'error';
+export type ClaimProgressState = 'idle' | 'sending_otp' | 'otp_sent' | 'claiming' | 'migrating' | 'done' | 'partial' | 'error';
 
-export function parseClaimStateMessage(state: 'claiming' | 'migrating' | 'done'): string {
+export function parseClaimStateMessage(state: 'claiming' | 'migrating' | 'done' | 'partial'): string {
   switch (state) {
     case 'claiming':
       return 'Đang liên kết đơn hàng...';
@@ -16,6 +16,8 @@ export function parseClaimStateMessage(state: 'claiming' | 'migrating' | 'done')
       return 'Đang lưu thiết kế của bạn...';
     case 'done':
       return 'Đã lưu đơn hàng và thiết kế vào tài khoản.';
+    case 'partial':
+      return 'Đã liên kết đơn hàng, một số thiết kế cần thử lại.';
   }
 }
 

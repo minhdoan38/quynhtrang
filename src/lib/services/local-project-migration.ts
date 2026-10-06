@@ -25,10 +25,13 @@ export interface LocalProjectItem {
 }
 
 export interface MigrationSummary {
-  total: number;
-  migrated: number;
-  failed: number;
+  migratedCount: number;
+  failedCount: number;
+  failedProjectIds: string[];
   errors: string[];
+  total?: number;
+  migrated?: number;
+  failed?: number;
 }
 
 export function filterMigratableProjects(
@@ -50,12 +53,10 @@ export async function migrateLocalProjects(
   const allProjects = getRecentProjects();
   const migratable = filterMigratableProjects(allProjects);
 
-  const summary: MigrationSummary = {
-    total: migratable.length,
-    migrated: 0,
-    failed: 0,
-    errors: [],
-  };
+  let migratedCount = 0;
+  let failedCount = 0;
+  const failedProjectIds: string[] = [];
+  const errors: string[] = [];
 
   for (const local of migratable) {
     try {
@@ -69,7 +70,7 @@ export async function migrateLocalProjects(
 
       if (existingCloud) {
         markProjectMigrated(local.id, existingCloud.id, existingCloud.current_working_revision || 1);
-        summary.migrated++;
+        migratedCount++;
         continue;
       }
 
@@ -162,13 +163,26 @@ export async function migrateLocalProjects(
       }
 
       markProjectMigrated(local.id, createdProject.id, createdProject.current_working_revision || 1);
-      summary.migrated++;
+      migratedCount++;
     } catch (err: unknown) {
-      summary.failed++;
+      failedCount++;
+      failedProjectIds.push(local.id);
       const message = err instanceof Error ? err.message : 'Lỗi không xác định khi chuyển đổi dự án';
-      summary.errors.push(`Dự án ${local.id}: ${message}`);
+      errors.push(`Dự án ${local.id}: ${message}`);
     }
   }
+
+  const summary: MigrationSummary = {
+    migratedCount,
+    failedCount,
+    failedProjectIds,
+    errors,
+  };
+  Object.defineProperties(summary, {
+    total: { enumerable: false, get: () => migratedCount + failedCount },
+    migrated: { enumerable: false, get: () => migratedCount },
+    failed: { enumerable: false, get: () => failedCount },
+  });
 
   return summary;
 }

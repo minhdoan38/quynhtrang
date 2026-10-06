@@ -137,6 +137,24 @@ export interface UploadedTemplateAsset {
   viewUrl: string;
 }
 
+export type TemplateAssetUploadStatus = 'pending' | 'uploading' | 'uploaded' | 'failed';
+
+export interface TemplateAssetUploadResult {
+  requestId: string;
+  status: TemplateAssetUploadStatus;
+  ok: boolean;
+  asset?: UploadedTemplateAsset;
+  error?: string;
+  message?: string;
+}
+
+function stableTemplateAssetId(requestId: string): string {
+  const hash = createHash('sha256').update(requestId).digest('hex').slice(0, 32).split('');
+  hash[12] = '4';
+  hash[16] = ((parseInt(hash[16]!, 16) & 0x3) | 0x8).toString(16);
+  return `${hash.slice(0, 8).join('')}-${hash.slice(8, 12).join('')}-${hash.slice(12, 16).join('')}-${hash.slice(16, 20).join('')}-${hash.slice(20).join('')}`;
+}
+
 export interface TemplateAssetServiceOptions {
   repo?: TemplateRepository;
   supabaseClient?: SupabaseClient;
@@ -217,7 +235,7 @@ export async function validateTemplateRasterImage(
 export async function uploadTemplateAsset(
   actor: StaffIdentity,
   guard: { templateId: string; draftId?: string },
-  file: { bytes: Uint8Array | Buffer; filename?: string; mimeType?: string },
+  file: { bytes: Uint8Array | Buffer; filename?: string; mimeType?: string; requestId?: string },
   options?: TemplateAssetServiceOptions,
 ): Promise<UploadedTemplateAsset> {
   if (!actor || !['admin', 'editor'].includes(actor.role)) {
@@ -227,7 +245,24 @@ export async function uploadTemplateAsset(
   const repo = resolveRepository(options);
   const validated = await validateTemplateRasterImage(file.bytes);
 
-  const assetId = randomUUID();
+  const assetId = file.requestId ? stableTemplateAssetId(file.requestId) : randomUUID();
+  const existingAsset = await repo.getAsset(assetId);
+  if (existingAsset?.checksum) {
+    return {
+      assetId,
+      templateId: existingAsset.templateId,
+      draftId: existingAsset.draftId ?? undefined,
+      storageBucket: existingAsset.storageBucket,
+      storagePath: existingAsset.storageKey,
+      checksum: existingAsset.checksum,
+      mimeType: existingAsset.mimeType,
+      byteSize: existingAsset.byteSize,
+      pixelWidth: existingAsset.widthPx ?? 0,
+      pixelHeight: existingAsset.heightPx ?? 0,
+      canonicalLocator: `template-asset://${assetId}`,
+      viewUrl: `/api/admin/content/templates/${guard.templateId}/assets/${assetId}`,
+    };
+  }
   const storageBucket = 'template-drafts';
   const storagePath = `${guard.templateId}/${assetId}.${validated.ext}`;
 
@@ -269,6 +304,41 @@ export async function uploadTemplateAsset(
     canonicalLocator,
     viewUrl,
   };
+}
+
+export async function bulkUploadTemplateAssets(
+  actor: StaffIdentity,
+  guard: { templateId: string; draftId?: string },
+  files: Array<{ requestId: string; bytes: Uint8Array | Buffer; filename?: string; mimeType?: string; status?: TemplateAssetUploadStatus }>,
+  options?: TemplateAssetServiceOptions,
+): Promise<TemplateAssetUploadResult[]> {
+  if (files.length === 0 || files.length > 50) {
+    throw new TemplateServiceError('INVALID_INPUT', 'Template asset batch size must be between 1 and 50 items', 400);
+  }
+  const results: TemplateAssetUploadResult[] = new Array(files.length);
+  await Promise.all(files.map(async (file, index) => {
+    if (file.status === 'uploaded') {
+      results[index] = { requestId: file.requestId, status: 'uploaded', ok: true };
+      return;
+    }
+    try {
+      results[index] = {
+        requestId: file.requestId,
+        status: 'uploaded',
+        ok: true,
+        asset: await uploadTemplateAsset(actor, guard, file, options),
+      };
+    } catch (error: unknown) {
+      results[index] = {
+        requestId: file.requestId,
+        status: 'failed',
+        ok: false,
+        error: error instanceof TemplateServiceError ? error.code : 'INTERNAL_ERROR',
+        message: error instanceof Error ? error.message : 'Template asset upload failed',
+      };
+    }
+  }));
+  return results;
 }
 
 export type TemplateAssetAccess =

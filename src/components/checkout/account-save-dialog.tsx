@@ -21,7 +21,10 @@ import {
   parseClaimStateMessage,
   type ClaimProgressState,
 } from '@/lib/services/customer-order-claim.ts';
-import { migrateLocalProjects } from '@/lib/services/local-project-migration.ts';
+import {
+  migrateLocalProjects,
+  type MigrationSummary,
+} from '@/lib/services/local-project-migration.ts';
 import { createBrowserSupabaseClient } from '@/lib/supabase/browser.ts';
 
 export { parseClaimStateMessage, type ClaimProgressState };
@@ -49,7 +52,9 @@ export function AccountSaveDialog({
   const [otp, setOtp] = useState('');
   const [progress, setProgress] = useState<ClaimProgressState>('idle');
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
-
+  const [authenticatedUserId, setAuthenticatedUserId] = useState<string | null>(null);
+  const [migrationStats, setMigrationStats] = useState<{ migrated: number; failed: number } | null>(null);
+  const [retryingMigration, setRetryingMigration] = useState(false);
   const handleSendOtp = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!email || !email.includes('@')) {
@@ -87,10 +92,14 @@ export function AccountSaveDialog({
       return;
     }
 
+    const userId = verifyRes.user.id;
+    setAuthenticatedUserId(userId);
+
     const supabase = createBrowserSupabaseClient();
     await ensureCustomerProfile(undefined, supabase);
 
-    // Claim order via server-side endpoint with HttpOnly cookie proof
+    // Step 1: Claim order via server-side endpoint with HttpOnly cookie proof
+    let claimError: string | null = null;
     try {
       const res = await fetch(`/api/orders/${encodeURIComponent(orderId)}/claim`, {
         method: 'POST',
@@ -100,23 +109,61 @@ export function AccountSaveDialog({
       });
       if (!res.ok) {
         const errData = (await res.json().catch(() => ({}))) as Record<string, unknown>;
-        const msg = typeof errData.error === 'string' ? errData.error : 'Lỗi khi liên kết đơn hàng';
-        console.warn('Lỗi khi liên kết đơn hàng:', msg);
+        claimError = typeof errData.error === 'string' ? errData.error : 'Lỗi khi liên kết đơn hàng';
       }
     } catch (err: unknown) {
-      console.warn('Lỗi khi liên kết đơn hàng:', err);
+      claimError = err instanceof Error ? err.message : 'Lỗi khi liên kết đơn hàng';
     }
 
-    // Migrate local projects
+    if (claimError) {
+      setProgress('error');
+      setErrorMessage(claimError);
+      return;
+    }
+
+    // Step 2: Migrate local projects
     setProgress('migrating');
+    let summary: MigrationSummary;
     try {
-      await migrateLocalProjects(verifyRes.user.id, supabase);
+      summary = await migrateLocalProjects(userId, supabase);
     } catch (err: unknown) {
       console.warn('Lỗi khi chuyển thiết kế:', err);
+      summary = {
+        migratedCount: 0,
+        failedCount: 1,
+        failedProjectIds: [],
+        errors: [err instanceof Error ? err.message : 'Lỗi khi chuyển thiết kế'],
+      };
     }
 
-    setProgress('done');
-    onSuccess?.();
+    if (summary.failedCount > 0) {
+      setMigrationStats({ migrated: summary.migratedCount, failed: summary.failedCount });
+      setProgress('partial');
+    } else {
+      setProgress('done');
+      onSuccess?.();
+    }
+  };
+
+  const handleRetryMigration = async () => {
+    if (!authenticatedUserId || retryingMigration) return;
+    setRetryingMigration(true);
+    setErrorMessage(null);
+    try {
+      const supabase = createBrowserSupabaseClient();
+      const summary = await migrateLocalProjects(authenticatedUserId, supabase);
+      if (summary.failedCount > 0) {
+        setMigrationStats({ migrated: summary.migratedCount, failed: summary.failedCount });
+        setProgress('partial');
+      } else {
+        setProgress('done');
+        onSuccess?.();
+      }
+    } catch (err: unknown) {
+      setErrorMessage(err instanceof Error ? err.message : 'Lỗi khi thử lại lưu thiết kế');
+    } finally {
+      setRetryingMigration(false);
+    }
   };
 
   return (
@@ -140,6 +187,47 @@ export function AccountSaveDialog({
             >
               Hoàn tất
             </Button>
+          </div>
+        ) : progress === 'partial' ? (
+          <div className="py-6 flex flex-col items-center text-center space-y-3">
+            <div className="w-12 h-12 rounded-full bg-[#FFF8E7] flex items-center justify-center text-[#B25E00]">
+              <CheckCircle2 className="w-6 h-6" />
+            </div>
+            <DialogTitle className="text-lg font-bold text-[#2E3338]">
+              Đơn hàng đã được liên kết!
+            </DialogTitle>
+            <DialogDescription className="text-sm text-[#666A6D]">
+              Đơn hàng đã được lưu an toàn vào tài khoản của bạn.
+              {migrationStats ? ` Đã lưu thành công ${migrationStats.migrated} thiết kế, còn ${migrationStats.failed} thiết kế chưa thể chuyển đổi.` : ''}
+            </DialogDescription>
+            {errorMessage && (
+              <p className="text-xs text-red-600 font-medium">{errorMessage}</p>
+            )}
+            <div className="flex gap-2 mt-4">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => onOpenChange(false)}
+                className="h-11 px-4 text-xs font-semibold"
+              >
+                Để sau
+              </Button>
+              <Button
+                type="button"
+                onClick={handleRetryMigration}
+                disabled={retryingMigration}
+                className="h-11 px-6 bg-[#315F86] hover:bg-[#244A69] text-white text-xs font-semibold gap-1.5"
+              >
+                {retryingMigration ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    <span>Đang thử lại...</span>
+                  </>
+                ) : (
+                  <span>Thử lại lưu thiết kế</span>
+                )}
+              </Button>
+            </div>
           </div>
         ) : step === 'email' ? (
           <form onSubmit={handleSendOtp}>

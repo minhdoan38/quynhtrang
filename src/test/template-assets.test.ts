@@ -19,6 +19,7 @@ import { createInitialState, type DesignState } from '../lib/product-state.ts';
 import { createTemplateTarget } from '../lib/template-target.ts';
 import { isTemplateAssetPath, promoteDesignAssets } from '../lib/asset-store.ts';
 import {
+  bulkUploadTemplateAssets,
   canCollectTemplateAsset,
   createTemplateFromProject,
   extractTemplateAssetManifest,
@@ -432,6 +433,46 @@ describe('State 43 Task 10: Template Assets, Safe Delivery, and Source Cloning',
       );
       assert.equal(resolvedPub.isPublished, true);
       assert.equal(resolvedPub.checksum, uploaded.checksum);
+    });
+
+    it('bulk template upload isolates failures and skips already uploaded items on retry', async () => {
+      const mock = createMockRepository();
+      const editor = createMockEditor();
+      await mock.repo.createTemplate(editor.userId, buildCreateRepoInput({ id: 'tmpl-bulk', name: 'Bulk' }));
+
+      const pngBytes = await createTestImage('png', 100, 100);
+      const badBytes = Buffer.from('not an image');
+
+      const firstResults = await bulkUploadTemplateAssets(
+        editor,
+        { templateId: 'tmpl-bulk', draftId: 'draft-tmpl-bulk' },
+        [
+          { requestId: 'req-item-1', bytes: pngBytes, filename: 'valid.png' },
+          { requestId: 'req-item-2', bytes: badBytes, filename: 'bad.png' },
+        ],
+        { repo: mock.repo },
+      );
+
+      assert.equal(firstResults[0]?.status, 'uploaded');
+      assert.equal(firstResults[0]?.ok, true);
+      assert.equal(firstResults[1]?.status, 'failed');
+      assert.equal(firstResults[1]?.ok, false);
+
+      // Retry only processes the failed item and skips the uploaded one
+      const retryResults = await bulkUploadTemplateAssets(
+        editor,
+        { templateId: 'tmpl-bulk', draftId: 'draft-tmpl-bulk' },
+        [
+          { requestId: 'req-item-1', bytes: pngBytes, filename: 'valid.png', status: 'uploaded' },
+          { requestId: 'req-item-2', bytes: pngBytes, filename: 'fixed.png' },
+        ],
+        { repo: mock.repo },
+      );
+
+      assert.equal(retryResults[0]?.status, 'uploaded');
+      assert.equal(retryResults[0]?.ok, true);
+      assert.equal(retryResults[1]?.status, 'uploaded');
+      assert.equal(retryResults[1]?.ok, true);
     });
   });
 

@@ -88,9 +88,12 @@ export interface MutationKey {
   requestId: string;
 }
 
+export type BulkItemStatus = 'pending' | 'uploading' | 'uploaded' | 'failed';
+
 export interface BulkItemResult {
   ref: LibraryRef;
   ok: boolean;
+  status: BulkItemStatus;
   revision?: number;
   error?: LibraryErrorCode;
   message?: string;

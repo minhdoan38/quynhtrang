@@ -79,9 +79,11 @@ export async function POST(
           requestId: typeof item.requestId === 'string' && item.requestId.trim()
             ? item.requestId.trim()
             : randomUUID(),
+          status: typeof item.status === 'string'
+            ? (item.status as 'pending' | 'uploading' | 'uploaded' | 'failed')
+            : undefined,
         };
       });
-
       const results = await bulkUploadStickers(items, staff, repo);
       return NextResponse.json({ results });
     }

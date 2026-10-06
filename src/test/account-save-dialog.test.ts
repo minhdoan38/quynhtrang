@@ -6,4 +6,5 @@ test('maps claim and migration states to concise Vietnamese copy', () => {
   assert.equal(parseClaimStateMessage('claiming'), 'Đang liên kết đơn hàng...');
   assert.equal(parseClaimStateMessage('migrating'), 'Đang lưu thiết kế của bạn...');
   assert.equal(parseClaimStateMessage('done'), 'Đã lưu đơn hàng và thiết kế vào tài khoản.');
+  assert.equal(parseClaimStateMessage('partial'), 'Đã liên kết đơn hàng, một số thiết kế cần thử lại.');
 });

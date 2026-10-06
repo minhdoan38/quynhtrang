@@ -749,10 +749,31 @@ test('10. Bulk route handles bulk upload, metadata update, and publish operation
   });
   const bulkUploadRes = await bulkStickers(bulkUploadReq, deps);
   assert.equal(bulkUploadRes.status, 200);
-  const uploadJson = await bulkUploadRes.json() as { results: { ok: boolean }[] };
+  const uploadJson = await bulkUploadRes.json() as { results: { ok: boolean; status: string }[] };
   assert.equal(uploadJson.results.length, 1);
   assert.equal(uploadJson.results[0]?.ok, true);
+  assert.equal(uploadJson.results[0]?.status, 'uploaded');
 
+  const retryReq = new Request('http://localhost/api/admin/content/stickers/bulk', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      action: 'upload',
+      items: [
+        {
+          bytes: Buffer.from(svgBytes).toString('base64'),
+          filename: 'item-1.svg',
+          metadata: { displayName: 'Item 1' },
+          status: 'uploaded',
+        },
+      ],
+    }),
+  });
+  const retryRes = await bulkStickers(retryReq, deps);
+  assert.equal(retryRes.status, 200);
+  const retryJson = await retryRes.json() as { results: { ok: boolean; status: string }[] };
+  assert.equal(retryJson.results[0]?.ok, true);
+  assert.equal(retryJson.results[0]?.status, 'uploaded');
   const bulkMetaReq = new Request('http://localhost/api/admin/content/stickers/bulk', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },

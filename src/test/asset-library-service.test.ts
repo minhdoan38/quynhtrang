@@ -15,6 +15,7 @@ import type {
 } from '../lib/repositories/asset-library-repository.ts';
 import {
   archiveAsset,
+  bulkUploadStickers,
   createFontFaceDraft,
   createFontFamily,
   createStickerDraft,
@@ -439,4 +440,17 @@ test('updateAssetMetadata rejects various binary identity keys', async () => {
       isExpectedServiceError('INVALID_INPUT'),
     );
   }
+});
+
+test('bulk sticker upload preserves uploaded item and skips it on retry', async () => {
+  const bytes = new Uint8Array(await readFile(join(fixtures, 'safe-sticker.svg')));
+  const repoInstance = new FakeRepository();
+  const repo = repoInstance as unknown as AssetLibraryRepository;
+  const requestId = '10000000-0000-4000-8000-000000000001';
+  const first = await bulkUploadStickers([{ bytes, filename: 'one.svg', metadata: {}, requestId }], actor, repo);
+  assert.equal(first[0]?.status, 'uploaded');
+  const callsAfterFirst = repoInstance.calls.filter((call) => call.name === 'createDraft').length;
+  const retry = await bulkUploadStickers([{ bytes, filename: 'one.svg', metadata: {}, requestId, status: 'uploaded' }], actor, repo);
+  assert.equal(retry[0]?.status, 'uploaded');
+  assert.equal(repoInstance.calls.filter((call) => call.name === 'createDraft').length, callsAfterFirst);
 });

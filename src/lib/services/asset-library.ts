@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 
 import {
   assertLibraryTransition,
@@ -36,6 +36,13 @@ export class LibraryServiceError extends Error {
   }
 }
 
+
+function stableAssetId(requestId: string): string {
+  const hash = createHash('sha256').update(requestId).digest('hex').slice(0, 32).split('');
+  hash[12] = '4';
+  hash[16] = ((parseInt(hash[16]!, 16) & 0x3) | 0x8).toString(16);
+  return `${hash.slice(0, 8).join('')}-${hash.slice(8, 12).join('')}-${hash.slice(12, 16).join('')}-${hash.slice(16, 20).join('')}-${hash.slice(20).join('')}`;
+}
 function normalizeServiceError(error: unknown, fallbackMessage?: string): Error {
   if (error instanceof LibraryServiceError) return error;
   const message = error instanceof Error ? error.message : String(error);
@@ -103,14 +110,14 @@ export async function createStickerDraft(
   } catch (err) {
     throw new LibraryServiceError('VALIDATION_FAILED', err instanceof Error ? err.message : String(err));
   }
+  const id = stableAssetId(input.requestId);
+  const existingDraft = await repo.getSticker(id);
+  if (existingDraft?.ref.id === id) return existingDraft;
   const duplicate = await repo.findDuplicate('sticker', validated.checksum);
   if (duplicate) {
     throw new LibraryServiceError('DUPLICATE_BINARY', 'Duplicate sticker binary already exists in library');
   }
-
-  const id = randomUUID();
-  const ext = validated.format === 'svg' ? 'svg' : validated.format;
-  const storageKey = `drafts/${actor.userId}/${id}/${validated.checksum}.${ext}`;
+  const storageKey = `drafts/${actor.userId}/${id}/${validated.checksum}.${validated.format}`;
   const thumbKey = `drafts/${actor.userId}/${id}/${validated.checksum}-thumb.png`;
   const uploadedKeys: string[] = [];
 
@@ -717,6 +724,7 @@ export async function bulkUploadStickers(
     filename?: string;
     metadata: LibraryMetadataPatch;
     requestId: string;
+    status?: 'pending' | 'uploading' | 'uploaded' | 'failed';
   }[],
   actor: StaffIdentity,
   repo: AssetLibraryRepository,
@@ -727,11 +735,19 @@ export async function bulkUploadStickers(
   }
 
   return runWithConcurrency(items, options?.concurrency ?? 3, async (item) => {
+    if (item.status === 'uploaded') {
+      return {
+        ref: { kind: 'sticker', id: stableAssetId(item.requestId), checksum: '' },
+        ok: true,
+        status: 'uploaded' as const,
+      };
+    }
     try {
       const record = await createStickerDraft(item, actor, repo);
       return {
         ref: record.ref,
         ok: true,
+        status: 'uploaded' as const,
         revision: record.revision,
       };
     } catch (error) {
@@ -740,10 +756,11 @@ export async function bulkUploadStickers(
       return {
         ref: {
           kind: 'sticker',
-          id: item.filename ?? '',
+          id: stableAssetId(item.requestId),
           checksum: '',
         },
         ok: false,
+        status: 'failed' as const,
         error: code,
         message: normalized.message,
       };
@@ -768,20 +785,11 @@ export async function bulkUpdateStickerMetadata(
   return runWithConcurrency(items, options?.concurrency ?? 3, async (item) => {
     try {
       const record = await updateAssetMetadata(item.ref, item.key, item.patch, actor, repo);
-      return {
-        ref: record.ref,
-        ok: true,
-        revision: record.revision,
-      };
+      return { ref: record.ref, ok: true, status: 'uploaded' as const, revision: record.revision };
     } catch (error) {
       const normalized = normalizeServiceError(error);
       const code = normalized instanceof LibraryServiceError ? normalized.code : 'INVALID_INPUT';
-      return {
-        ref: item.ref,
-        ok: false,
-        error: code,
-        message: normalized.message,
-      };
+      return { ref: item.ref, ok: false, status: 'failed' as const, error: code, message: normalized.message };
     }
   });
 }
@@ -803,20 +811,11 @@ export async function bulkPublishStickers(
   return runWithConcurrency(items, options?.concurrency ?? 3, async (item) => {
     try {
       const record = await publishAsset(item.ref, item.key, item.validationId, actor, repo);
-      return {
-        ref: record.ref,
-        ok: true,
-        revision: record.revision,
-      };
+      return { ref: record.ref, ok: true, status: 'uploaded' as const, revision: record.revision };
     } catch (error) {
       const normalized = normalizeServiceError(error);
       const code = normalized instanceof LibraryServiceError ? normalized.code : 'VALIDATION_FAILED';
-      return {
-        ref: item.ref,
-        ok: false,
-        error: code,
-        message: normalized.message,
-      };
+      return { ref: item.ref, ok: false, status: 'failed' as const, error: code, message: normalized.message };
     }
   });
 }

@@ -120,8 +120,9 @@ test('migrateLocalProjects rehydrates dead blob URLs with backing data and fails
 
   const summary = await migrateLocalProjects('user-123', mockClient);
 
-  assert.equal(summary.migrated, 1);
-  assert.equal(summary.failed, 1);
+  assert.equal(summary.migratedCount, 1);
+  assert.equal(summary.failedCount, 1);
+  assert.deepEqual(summary.failedProjectIds, ['proj-unrecoverable']);
   assert.ok(summary.errors.some((e) => e.includes('proj-unrecoverable')));
 
   // Verify rehydrated document stored in cloud has dataUrl, not dead blob
@@ -132,4 +133,70 @@ test('migrateLocalProjects rehydrates dead blob URLs with backing data and fails
   const currentList = getRecentProjects();
   const unrec = currentList.find((p) => p.id === 'proj-unrecoverable');
   assert.equal(unrec?.syncedCloudProjectId, undefined);
+});
+
+test('migrateLocalProjects commits each success and retries only failed projects', async () => {
+  const dummyStorage: Record<string, string> = {};
+  Object.defineProperty(globalThis, 'window', { configurable: true, value: {} });
+  Object.defineProperty(globalThis, 'localStorage', {
+    configurable: true,
+    value: {
+      getItem: (key: string) => dummyStorage[key] ?? null,
+      setItem: (key: string, value: string) => { dummyStorage[key] = value; },
+      removeItem: (key: string) => { delete dummyStorage[key]; },
+      clear: () => undefined,
+      key: () => null,
+      length: 0,
+    },
+  });
+
+  const now = Date.now();
+  dummyStorage['quynhtrang-recent-projects-v1'] = JSON.stringify([
+    { id: 'project-1', updatedAt: now, productId: 'card', variantId: 'default' },
+    { id: 'project-2', updatedAt: now, productId: 'card', variantId: 'default' },
+  ] satisfies LocalProjectItem[]);
+
+  const insertedIds: string[] = [];
+  let failProject2 = true;
+  const mockClient = {
+    from(table: string) {
+      if (table !== 'projects') {
+        return { select: () => ({ eq: () => ({ eq: () => ({ maybeSingle: async () => ({ data: null }) }) }) }) };
+      }
+      return {
+        select() {
+          return { eq: () => ({ eq: () => ({ maybeSingle: async () => ({ data: null }) }) }) };
+        },
+        insert(payload: Record<string, unknown>) {
+          const localId = String(payload.origin_local_project_id);
+          insertedIds.push(localId);
+          return {
+            select() {
+              return {
+                single: async () => failProject2 && localId === 'project-2'
+                  ? { data: null, error: { message: 'temporary failure' } }
+                  : { data: { id: `cloud-${localId}`, current_working_revision: 1 }, error: null },
+              };
+            },
+          };
+        },
+      };
+    },
+  } as unknown as SupabaseClient;
+
+  const first = await migrateLocalProjects('user-123', mockClient);
+  assert.deepEqual(first, {
+    migratedCount: 1,
+    failedCount: 1,
+    failedProjectIds: ['project-2'],
+    errors: ['Dự án project-2: temporary failure'],
+  });
+  assert.equal(getRecentProjects().find((project) => project.id === 'project-1')?.syncedCloudProjectId, 'cloud-project-1');
+  assert.equal(getRecentProjects().find((project) => project.id === 'project-2')?.syncedCloudProjectId, undefined);
+
+  failProject2 = false;
+  const retry = await migrateLocalProjects('user-123', mockClient);
+  assert.deepEqual(retry, { migratedCount: 1, failedCount: 0, failedProjectIds: [], errors: [] });
+  assert.deepEqual(insertedIds, ['project-1', 'project-2', 'project-2']);
+  assert.equal(getRecentProjects().find((project) => project.id === 'project-2')?.syncedCloudProjectId, 'cloud-project-2');
 });
