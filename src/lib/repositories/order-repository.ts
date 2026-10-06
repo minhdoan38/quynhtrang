@@ -1,5 +1,4 @@
 import type { PaymentPolicy } from '../domain/commercial-config.ts';
-import type { PaymentPurpose } from '../order-types.ts';
 import type { SupabaseClient } from '@supabase/supabase-js';
 
 import {
@@ -23,7 +22,13 @@ import {
 } from '../domain/order.ts';
 import { resolveOrderNextAction } from '../admin/order-next-action.ts';
 import { resolveApprovedThumbnailUrl } from '../admin/thumbnail-delivery.ts';
-import type { ApprovedDesignSnapshot, CustomerInfo, OrderPayment, PendingOrder } from '../order-types.ts';
+import type {
+  ApprovedDesignSnapshot,
+  CustomerInfo,
+  OrderPayment,
+  PaymentPurpose,
+  PendingOrder,
+} from '../order-types.ts';
 import type { DesignState, DesignSummary, ProductId } from '../product-state.ts';
 
 interface QueryFilterable {

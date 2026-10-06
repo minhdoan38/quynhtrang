@@ -1,7 +1,6 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import { calculatePrice } from '../lib/domain/commercial-config.ts';
-import { validateCommercialConfig } from '../lib/domain/commercial-config.ts';
+import { calculatePrice, validateCommercialConfig } from '../lib/domain/commercial-config.ts';
 import { AdminCatalogRepository } from '../lib/repositories/admin-catalog-repository.ts';
 import { createOrLoadCommercialDraft, saveCommercialDraft, publishProductCommercialConfig } from '../lib/services/commercial-config-service.ts';
 import { catalogActionError, catalogStartingPrice, commercialDraftConfig } from '../lib/admin/product-catalog-ui.ts';

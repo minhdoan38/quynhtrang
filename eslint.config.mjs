@@ -1,4 +1,3 @@
-import js from '@eslint/js';
 import babelParser from '@babel/eslint-parser';
 
 export default [
@@ -13,25 +12,12 @@ export default [
       '**/*.d.ts',
     ],
   },
-  js.configs.recommended,
   {
     files: [
       'src/**/*.{js,mjs,cjs,ts,jsx,tsx}',
       'scripts/**/*.{js,mjs,cjs,ts}',
       'e2e/**/*.{js,mjs,cjs,ts}',
     ],
-    plugins: {
-      '@next/next': {
-        rules: {
-          'no-img-element': { create: () => ({}) },
-        },
-      },
-      'react-hooks': {
-        rules: {
-          'exhaustive-deps': { create: () => ({}) },
-        },
-      },
-    },
     languageOptions: {
       parser: babelParser,
       parserOptions: {
@@ -47,20 +33,50 @@ export default [
       sourceType: 'module',
     },
     linterOptions: {
-      reportUnusedDisableDirectives: 'off',
+      reportUnusedDisableDirectives: 'error',
     },
     rules: {
-      'no-unused-vars': 'off',
-      'no-undef': 'off',
-      'no-empty': 'off',
-      'no-control-regex': 'off',
-      'no-useless-escape': 'off',
-      'prefer-const': 'off',
-      'no-constant-condition': 'off',
-      'no-useless-assignment': 'off',
-      'no-extra-boolean-cast': 'off',
-      'no-regex-spaces': 'off',
-      'preserve-caught-error': 'off',
+      'no-constant-condition': 'error',
+      'no-duplicate-imports': ['error', { allowSeparateTypeImports: true }],
+      'no-unreachable': 'error',
+      'valid-typeof': 'error',
+      'constructor-super': 'error',
+      'for-direction': 'error',
+      'getter-return': 'error',
+      'no-async-promise-executor': 'error',
+      'no-case-declarations': 'error',
+      'no-class-assign': 'error',
+      'no-compare-neg-zero': 'error',
+      'no-cond-assign': 'error',
+      'no-const-assign': 'error',
+      'no-dupe-args': 'error',
+      'no-dupe-class-members': 'error',
+      'no-dupe-else-if': 'error',
+      'no-dupe-keys': 'error',
+      'no-duplicate-case': 'error',
+      'no-empty-character-class': 'error',
+      'no-empty-pattern': 'error',
+      'no-ex-assign': 'error',
+      'no-fallthrough': 'error',
+      'no-func-assign': 'error',
+      'no-invalid-regexp': 'error',
+      'no-irregular-whitespace': 'error',
+      'no-loss-of-precision': 'error',
+      'no-misleading-character-class': 'error',
+      'no-new-native-nonconstructor': 'error',
+      'no-prototype-builtins': 'error',
+      'no-self-assign': 'error',
+      'no-shadow-restricted-names': 'error',
+      'no-sparse-arrays': 'error',
+      'no-this-before-super': 'error',
+      'no-unexpected-multiline': 'error',
+      'no-unreachable-loop': 'error',
+      'no-unsafe-finally': 'error',
+      'no-unsafe-negation': 'error',
+      'no-unsafe-optional-chaining': 'error',
+      'no-unused-labels': 'error',
+      'no-with': 'error',
+      'use-isnan': 'error',
     },
   },
 ];

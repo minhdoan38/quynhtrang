@@ -4,13 +4,18 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { createHash } from 'node:crypto';
 import type { SupabaseClient } from '@supabase/supabase-js';
-import type { PaymentPurpose, PaymentStatus, OrderPayment } from '../lib/order-types.ts';
+import type {
+  CustomerInfo,
+  OrderPayment,
+  PaymentPurpose,
+  PaymentStatus,
+  PendingOrder,
+} from '../lib/order-types.ts';
 import { PaymentRepository, type PaymentRecord } from '../lib/repositories/payment-repository.ts';
 import { confirmOrderPayment } from '../lib/services/admin-order-operations.ts';
 import { getPaymentInstructions } from '../lib/payment-qr-provider.ts';
 import { prepareOrderFromGuestCheckout } from '../lib/services/prepare-order-from-guest-checkout.ts';
 import { createInitialState } from '../lib/product-state.ts';
-import type { CustomerInfo, PendingOrder } from '../lib/order-types.ts';
 
 // Fake Supabase Table Client for testing PaymentRepository
 class FakeTableClient {

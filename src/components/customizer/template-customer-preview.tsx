@@ -23,7 +23,6 @@ export function TemplateCustomerPreview({
     } catch {
       return JSON.parse(JSON.stringify(initialDocument));
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
 

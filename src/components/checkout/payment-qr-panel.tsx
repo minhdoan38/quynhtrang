@@ -156,7 +156,6 @@ export function PaymentQrPanel({
             </div>
           ) : instructions?.qrUrl ? (
             <div className="relative w-full h-full bg-white rounded-xl flex items-center justify-center p-1.5 shadow-2xs">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
               <img
                 src={instructions.qrUrl}
                 alt={`Mã thanh toán VietQR đơn hàng #${order.id}`}

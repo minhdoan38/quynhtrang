@@ -55,6 +55,7 @@ jobs:
       - name: Next.js production build
         run: pnpm run build
 
+      # Note: scripts/state45-production-smoke.ts manages its own background server lifecycle via internal child process
       - name: Production smoke checks
         run: node --experimental-strip-types scripts/state45-production-smoke.ts --port 3000
 
@@ -83,6 +84,10 @@ jobs:
           psql "$SUPABASE_DB_URL" -v ON_ERROR_STOP=1 -f supabase/migrations/0020_state45_fulfillment_render_recovery.sql
           psql "$SUPABASE_DB_URL" -v ON_ERROR_STOP=1 -f supabase/migrations/0021_state45_publish_replay.sql
           psql "$SUPABASE_DB_URL" -v ON_ERROR_STOP=1 -f supabase/migrations/0022_state45_integrity_constraints.sql
+          psql "$SUPABASE_DB_URL" -v ON_ERROR_STOP=1 -f supabase/seed.sql
+          psql "$SUPABASE_DB_URL" -v ON_ERROR_STOP=1 -f supabase/seed_state39.sql
+          psql "$SUPABASE_DB_URL" -v ON_ERROR_STOP=1 -f supabase/seed_state40.sql
+          psql "$SUPABASE_DB_URL" -v ON_ERROR_STOP=1 -f supabase/seed_state44.sql
           psql "$SUPABASE_DB_URL" -v ON_ERROR_STOP=1 -f supabase/tests/state37_rls.sql
           psql "$SUPABASE_DB_URL" -v ON_ERROR_STOP=1 -f supabase/tests/state38_order_operations.sql
           psql "$SUPABASE_DB_URL" -v ON_ERROR_STOP=1 -f supabase/tests/state39_design_revisions.sql
@@ -102,6 +107,7 @@ jobs:
       - name: Install Playwright browsers
         run: pnpm exec playwright install --with-deps chromium webkit
 
+      # Note: playwright.config.ts manages its own background server lifecycle via webServer config
       - name: Golden and failure E2E suites
         run: pnpm run test:e2e
 
