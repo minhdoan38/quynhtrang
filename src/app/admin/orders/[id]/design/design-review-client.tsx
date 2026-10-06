@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useTransition } from 'react';
+import React, { useRef, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { DesignReviewView } from '@/components/admin/design-review.tsx';
 import { DesignCompare } from '@/components/admin/design-compare.tsx';
@@ -71,6 +71,7 @@ export function DesignReviewClient({
   const [selectedVersionNumber, setSelectedVersionNumber] = useState(productionVersionNumber);
   const [versions] = useState<DesignVersionListItem[]>(initialVersions);
   const [assessment, setAssessment] = useState<StaffPreflightAssessment | null>(null);
+  const customerApproval = useRef<Parameters<typeof approveCustomerAsIsAction>[0] | null>(null);
 
   // Dialog controls
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
@@ -223,6 +224,12 @@ export function DesignReviewClient({
     }
 
     startTransition(async () => {
+      if (customerApproval.current) {
+        const replay = await approveCustomerAsIsAction(customerApproval.current);
+        if (replay.ok) router.push(`/admin/orders/${orderId}`);
+        else alert(replay.message);
+        return;
+      }
       const preflightRes = await runCustomerPreflightAction({
         orderId,
         expectedCustomerVersionId: custVer.id,
@@ -239,14 +246,15 @@ export function DesignReviewClient({
         return;
       }
 
-      const res = await approveCustomerAsIsAction({
+      customerApproval.current = {
         orderId,
         expectedCustomerVersionId: custVer.id,
         expectedProductionVersionId: prodVer.id,
         assessmentId: preflightRes.value.id,
         acknowledgedWarningIds: preflightRes.value.warningIds,
-        requestId: `as-is-${Date.now()}-${crypto.randomUUID()}`,
-      });
+        requestId: preflightRes.value.id,
+      };
+      const res = await approveCustomerAsIsAction(customerApproval.current);
 
       if (res.ok) {
         router.push(`/admin/orders/${orderId}`);
@@ -295,7 +303,7 @@ export function DesignReviewClient({
                 epoch: currentDraft.lease?.epoch || 1,
                 assessmentId: assessment.id,
                 acknowledgedWarningIds,
-                requestId: `approve-${Date.now()}-${crypto.randomUUID()}`,
+                requestId: assessment.id,
               });
 
               if (res.ok) {

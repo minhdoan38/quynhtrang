@@ -23,6 +23,7 @@ import type {
   FontFamilyRecord,
   StickerRecord,
 } from '../repositories/asset-library-repository.ts';
+import { mapFaceRow, mapStickerRow } from '../repositories/asset-library-repository.ts';
 import { probeLibraryBinary } from './library-render-probe.ts';
 import { validateFont, validateSticker } from './library-validation.ts';
 
@@ -396,7 +397,12 @@ export async function publishAsset(
   }
 
   if (current.revision !== key.expectedRevision) {
-    throw new LibraryServiceError('REVISION_CONFLICT', `Expected revision ${key.expectedRevision}, found ${current.revision}`);
+    try {
+      const replay = await repo.publish(actor.userId, key.requestId, ref.kind, ref.id, key.expectedRevision, validationId, null) as { item: Parameters<typeof mapStickerRow>[0] & Parameters<typeof mapFaceRow>[0] };
+      return ref.kind === 'sticker' ? mapStickerRow(replay.item) : mapFaceRow(replay.item);
+    } catch (error) {
+      throw normalizeServiceError(error);
+    }
   }
 
   const receipt = await repo.getValidationRunById(validationId);

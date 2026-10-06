@@ -67,6 +67,7 @@ export async function approveDraftAction(params: {
   acknowledgedWarningIds: string[];
   requestId: string;
 }): Promise<RevisionResult<ApprovedRevisionResult>> {
+  // Preserve the caller's intent; SQL resolves replay before lease/preflight checks.
   return service.approveDraft(params);
 }
 
@@ -78,6 +79,7 @@ export async function approveCustomerAsIsAction(params: {
   acknowledgedWarningIds: string[];
   requestId: string;
 }): Promise<RevisionResult<ApprovedRevisionResult>> {
+  // A lost response must retry the same assessment and request ID.
   return service.approveCustomerAsIs(params);
 }
 

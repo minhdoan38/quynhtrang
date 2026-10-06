@@ -21,7 +21,7 @@ export interface AdminOrderOperationDeps {
 
 export async function confirmOrderPayment(
   deps: AdminOrderOperationDeps,
-  input: { orderId: string; expectedState: 'pending_payment' | 'payment_reported'; purpose?: PaymentPurpose; paymentId?: string }
+  input: { orderId: string; expectedState: 'pending_payment' | 'payment_reported'; purpose?: PaymentPurpose; paymentId?: string; requestId?: string }
 ): Promise<AdminOrderMutationResult> {
   if (deps.staff.role !== 'admin') {
     return {
@@ -31,7 +31,7 @@ export async function confirmOrderPayment(
     };
   }
 
-  if (!input.orderId) {
+  if (!input.orderId || (input.requestId !== undefined && !input.requestId.trim())) {
     return {
       ok: false,
       code: 'validation_error',
@@ -43,6 +43,7 @@ export async function confirmOrderPayment(
     const rpcParams: Record<string, unknown> = {
       p_order_id: input.orderId,
       p_expected_state: input.expectedState,
+      p_request_id: input.requestId ??= crypto.randomUUID(),
       ...(input.purpose ? { p_purpose: input.purpose } : {}),
       ...(input.paymentId ? { p_payment_id: input.paymentId } : {}),
     };
@@ -115,7 +116,7 @@ export async function confirmOrderPayment(
 
 export async function placeOrderHold(
   deps: AdminOrderOperationDeps,
-  input: { orderId: string; reason: string }
+  input: { orderId: string; reason: string; requestId?: string }
 ): Promise<AdminOrderMutationResult> {
   if (deps.staff.role !== 'admin') {
     return {
@@ -126,7 +127,7 @@ export async function placeOrderHold(
   }
 
   const trimmedReason = (input.reason ?? '').trim();
-  if (trimmedReason.length < 3 || trimmedReason.length > 500) {
+  if ((input.requestId !== undefined && !input.requestId.trim()) || !input.orderId || trimmedReason.length < 3 || trimmedReason.length > 500) {
     return {
       ok: false,
       code: 'validation_error',
@@ -138,6 +139,7 @@ export async function placeOrderHold(
     const { data, error } = await deps.supabase.rpc('hold_order', {
       p_order_id: input.orderId,
       p_reason: trimmedReason,
+      p_request_id: input.requestId ??= crypto.randomUUID(),
     });
 
     if (error) {
@@ -215,7 +217,7 @@ export async function placeOrderHold(
 
 export async function releaseOrderHold(
   deps: AdminOrderOperationDeps,
-  input: { orderId: string; expectedHoldId: string }
+  input: { orderId: string; expectedHoldId: string; requestId?: string }
 ): Promise<AdminOrderMutationResult> {
   if (deps.staff.role !== 'admin') {
     return {
@@ -225,7 +227,7 @@ export async function releaseOrderHold(
     };
   }
 
-  if (!input.orderId || !input.expectedHoldId) {
+  if (!input.orderId || !input.expectedHoldId || (input.requestId !== undefined && !input.requestId.trim())) {
     return {
       ok: false,
       code: 'validation_error',
@@ -237,6 +239,7 @@ export async function releaseOrderHold(
     const { data, error } = await deps.supabase.rpc('release_order_hold', {
       p_order_id: input.orderId,
       p_expected_hold_id: input.expectedHoldId,
+      p_request_id: input.requestId ??= crypto.randomUUID(),
     });
 
     if (error) {

@@ -261,7 +261,7 @@ export function TemplateAuthorClient({
             sessionId,
             leaseEpoch,
             validationId: validationReceipt.id,
-            requestId: crypto.randomUUID(),
+            requestId: validationReceipt.id,
             acknowledgedWarningIds,
             revisionNote: revisionNote.trim() || undefined,
           }),

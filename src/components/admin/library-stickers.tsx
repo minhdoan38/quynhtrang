@@ -191,6 +191,7 @@ export function LibraryStickers({ userRole }: LibraryStickersProps) {
         body: JSON.stringify({
           expectedRevision: selectedSticker.revision,
           validationId: selectedSticker.validationId || undefined,
+          requestId: selectedSticker.validationId,
         }),
       });
       if (!res.ok) {

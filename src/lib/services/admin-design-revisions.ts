@@ -83,6 +83,7 @@ export async function approveDraft(params: {
   requestId: string;
 }): Promise<RevisionResult<ApprovedRevisionResult>> {
   await requireCurrentStaff();
+  if (!params.requestId?.trim()) return { ok: false, code: 'REVISION_CONFLICT', message: 'Thiếu mã yêu cầu duyệt thiết kế.' };
   const supabase = await createServerSupabaseClient();
   const repo = new DesignRevisionRepository(supabase);
   return repo.approveRevision(params);
@@ -97,6 +98,7 @@ export async function approveCustomerAsIs(params: {
   requestId: string;
 }): Promise<RevisionResult<ApprovedRevisionResult>> {
   await requireCurrentStaff();
+  if (!params.requestId?.trim()) return { ok: false, code: 'REVISION_CONFLICT', message: 'Thiếu mã yêu cầu duyệt thiết kế.' };
   const supabase = await createServerSupabaseClient();
   const repo = new DesignRevisionRepository(supabase);
   return repo.approveCustomerAsIs(params);

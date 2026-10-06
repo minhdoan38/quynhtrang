@@ -68,7 +68,6 @@ export async function saveCommercialDraftAction(input: SaveCommercialDraftInput 
 }
 export async function publishCommercialConfigAction(input: PublishCommercialConfigInput & { draftId: string }): Promise<CatalogActionResult<CommercialConfigVersion>> {
   return mutate(input?.productId, (deps) => {
-    if (deps.repo.getCommercialDraft(input.productId)?.id !== input.draftId) throw new Error('REVISION_CONFLICT');
     return publishProductCommercialConfig(input, deps);
   });
 }

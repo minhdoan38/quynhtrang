@@ -27,6 +27,7 @@ export function CommercialConfigEditor({ product, initialDraft, editable, onPubl
   const locked = !editable || !draft || pending || status === 'conflict';
   const openDraftInFlightRef = useRef(false);
   const openDraftSeqRef = useRef(0);
+  const publishIntent = useRef<{ key: string; requestId: string } | null>(null);
   function change(next: CommercialConfigVersion) { setConfig(next); setDirty(true); setStatus('unsynced'); setMessage(''); }
   function updateRule(index: number, rule: CommercialVariantRule) {
     if (config) change({ ...config, variantRules: config.variantRules.map((current, i) => i === index ? rule : current) });
@@ -74,11 +75,13 @@ export function CommercialConfigEditor({ product, initialDraft, editable, onPubl
   }
   async function publish() {
     if (!draft || dirty) return;
+    const key = JSON.stringify([product.id, draft.id, draft.revision, product.revision]);
+    if (publishIntent.current?.key !== key) publishIntent.current = { key, requestId: crypto.randomUUID() };
     setPending(true);
     setStatus('saving');
     setPublishError(null);
     try {
-      const result = await publishCommercialConfigAction({ productId: String(product.id), draftId: draft.id, expectedDraftRevision: draft.revision, expectedProductRevision: product.revision, requestId: crypto.randomUUID() });
+      const result = await publishCommercialConfigAction({ productId: String(product.id), draftId: draft.id, expectedDraftRevision: draft.revision, expectedProductRevision: product.revision, requestId: publishIntent.current.requestId });
       if (!result.ok) {
         setPublishError(result.message);
         setMessage(result.message);

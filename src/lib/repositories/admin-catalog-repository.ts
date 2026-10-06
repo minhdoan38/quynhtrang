@@ -45,6 +45,7 @@ export class AdminCatalogRepository {
   private readonly drafts = new Map<string, CommercialDraft>();
   private readonly quotes = new Map<string, PriceQuote>();
   private readonly events: CommercialAuditEvent[] = [];
+  private readonly publishedRequests = new Map<string, { productId: string; draftId: string; draftRevision: number; productRevision: number; version: CommercialConfigVersion }>();
 
   constructor(client: SupabaseClient | null = null) {
     this.client = client;
@@ -382,6 +383,23 @@ export class AdminCatalogRepository {
     return structuredClone(draft);
   }
 
+  async resolvePublishedRequest(productId: string, draftRevision: number, productRevision: number, requestId: string, draftId?: string): Promise<CommercialConfigVersion | null> {
+    let saved = this.publishedRequests.get(requestId);
+    if (this.client) {
+      const { data, error } = await this.client.from('asset_events').select('target_id, metadata_diff').eq('event', 'commercial_config_published').eq('metadata_diff->>requestId', requestId).maybeSingle();
+      if (error) throw new Error('PUBLISH_FAILED');
+      if (data) {
+        const metadata = data.metadata_diff;
+        saved = { productId: data.target_id, draftId: metadata.draftId, draftRevision: metadata.draftRevision, productRevision: metadata.productRevision, version: metadata.version };
+        if (saved.productId !== productId || saved.draftRevision !== draftRevision || saved.productRevision !== productRevision || (draftId !== undefined && saved.draftId !== draftId)) throw new Error('REVISION_CONFLICT');
+        return this.publishDraft(productId, saved.draftId, draftRevision, productRevision, requestId);
+      }
+    }
+    if (!saved) return null;
+    if (saved.productId !== productId || saved.draftRevision !== draftRevision || saved.productRevision !== productRevision || (draftId !== undefined && saved.draftId !== draftId)) throw new Error('REVISION_CONFLICT');
+    return structuredClone(saved.version);
+  }
+
   async publishDraft(productId: string, draftIdOrExpectedRevision: string | number, expectedDraftRevisionOrProductRevision: number, expectedProductRevisionOrRequestId: number | string, requestIdValue?: string): Promise<CommercialConfigVersion> {
     const draftId = typeof draftIdOrExpectedRevision === 'string' ? draftIdOrExpectedRevision : this.drafts.get(productId)?.id ?? '';
     const expectedDraftRevision = typeof draftIdOrExpectedRevision === 'string' ? expectedDraftRevisionOrProductRevision : draftIdOrExpectedRevision;
@@ -405,6 +423,11 @@ export class AdminCatalogRepository {
         variantRules: Array.isArray(row.variantRules) ? row.variantRules as CommercialConfigVersion['variantRules'] : [],
       };
     }
+    const replay = this.publishedRequests.get(requestId);
+    if (replay) {
+      if (replay.productId !== productId || replay.draftId !== draftId || replay.draftRevision !== expectedDraftRevision || replay.productRevision !== expectedProductRevision) throw new Error('REVISION_CONFLICT');
+      return structuredClone(replay.version);
+    }
     const product = this.products.get(productId);
     const draft = this.drafts.get(productId);
     if (!product || !draft) throw new Error('NOT_FOUND');
@@ -418,6 +441,7 @@ export class AdminCatalogRepository {
     this.products.set(productId, product);
     this.drafts.delete(productId);
     this.events.push({ event: 'commercial_config_published', productId, requestId });
+    this.publishedRequests.set(requestId, { productId, draftId, draftRevision: expectedDraftRevision, productRevision: expectedProductRevision, version: structuredClone(version) });
     return structuredClone(version);
   }
 

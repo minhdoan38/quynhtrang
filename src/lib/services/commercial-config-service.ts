@@ -14,6 +14,7 @@ export interface SaveCommercialDraftInput {
 
 export interface PublishCommercialConfigInput {
   productId: string;
+  draftId?: string;
   expectedDraftRevision: number;
   expectedProductRevision: number;
   requestId: string;
@@ -70,9 +71,16 @@ export async function saveCommercialDraft(input: SaveCommercialDraftInput, deps:
 export async function publishProductCommercialConfig(input: PublishCommercialConfigInput, deps: CommercialDeps): Promise<PublishedCommercialConfig> {
   requireAdmin(deps.staff);
   if (!input.productId.trim() || !input.requestId.trim() || !Number.isSafeInteger(input.expectedDraftRevision) || input.expectedDraftRevision < 1 || !Number.isSafeInteger(input.expectedProductRevision) || input.expectedProductRevision < 1) throw new Error('INVALID_INPUT');
+  const replay = await deps.repo.resolvePublishedRequest(input.productId, input.expectedDraftRevision, input.expectedProductRevision, input.requestId, input.draftId);
+  if (replay) return replay;
   const product = deps.repo.getProduct(input.productId);
   const draft = deps.repo.getCommercialDraft(input.productId);
-  if (!product || !draft) throw new Error('NOT_FOUND');
+  if (!product || !draft) {
+    const committed = await deps.repo.resolvePublishedRequest(input.productId, input.expectedDraftRevision, input.expectedProductRevision, input.requestId, input.draftId);
+    if (committed) return committed;
+    throw new Error('NOT_FOUND');
+  }
+  if (input.draftId !== undefined && input.draftId !== draft.id) throw new Error('REVISION_CONFLICT');
   const activeVariantIds = deps.repo.listVariants(input.productId).filter((variant) => variant.status === 'active').map((variant) => variant.id);
   validatePayload({ ...draft.payload, id: draft.payload.id ?? draft.id, productId: input.productId, versionNumber: Math.max(1, draft.payload.versionNumber ?? 1) }, activeVariantIds);
   return deps.repo.publishDraft(input.productId, draft.id, input.expectedDraftRevision, input.expectedProductRevision, input.requestId);

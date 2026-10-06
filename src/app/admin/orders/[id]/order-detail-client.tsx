@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation.js';
 import type { AdminOrderDetail, StaffIdentity } from '@/lib/domain/order.ts';
 import { OrderDetail } from '@/components/admin/order-detail.tsx';
@@ -55,6 +55,14 @@ export function OrderDetailClient({
   const router = useRouter();
   const [detail, setDetail] = useState<AdminOrderDetail>(initialDetail);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const mutationIds = useRef(new Map<string, string>());
+  function requestId(target: string) {
+    const existing = mutationIds.current.get(target);
+    if (existing) return existing;
+    const id = crypto.randomUUID();
+    mutationIds.current.set(target, id);
+    return id;
+  }
 
   // Dialog states
   const [isPaymentDialogOpen, setIsPaymentDialogOpen] = useState(false);
@@ -123,6 +131,7 @@ export function OrderDetailClient({
       expectedState,
       purpose: detail.payment.purpose,
       paymentId: detail.payment.id,
+      requestId: requestId(JSON.stringify(['payment', detail.id, detail.payment.id, expectedState])),
     });
 
     if (result.ok) {
@@ -154,9 +163,11 @@ export function OrderDetailClient({
     const result = await holdOrderAction({
       orderId: detail.id,
       reason: trimmed,
+      requestId: requestId(JSON.stringify(['hold', detail.id, trimmed])),
     });
 
     if (result.ok) {
+      mutationIds.current.delete(JSON.stringify(['hold', detail.id, trimmed]));
       await refetchDetail();
       setIsHoldDialogOpen(false);
       setHoldReason('');
@@ -179,6 +190,7 @@ export function OrderDetailClient({
     const result = await releaseHoldAction({
       orderId: detail.id,
       expectedHoldId: detail.activeHold.id,
+      requestId: requestId(JSON.stringify(['release', detail.id, detail.activeHold.id])),
     });
 
     if (result.ok) {

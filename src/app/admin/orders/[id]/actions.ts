@@ -22,6 +22,7 @@ export async function confirmPaymentAction(input: {
   expectedState: 'pending_payment' | 'payment_reported';
   purpose: PaymentPurpose;
   paymentId: string;
+  requestId: string;
 }): Promise<AdminOrderMutationResult> {
   try {
     const staff = await requireCurrentStaff('admin');
@@ -46,6 +47,7 @@ export async function confirmPaymentAction(input: {
 export async function holdOrderAction(input: {
   orderId: string;
   reason: string;
+  requestId: string;
 }): Promise<AdminOrderMutationResult> {
   try {
     const staff = await requireCurrentStaff('admin');
@@ -70,6 +72,7 @@ export async function holdOrderAction(input: {
 export async function releaseHoldAction(input: {
   orderId: string;
   expectedHoldId: string;
+  requestId: string;
 }): Promise<AdminOrderMutationResult> {
   try {
     const staff = await requireCurrentStaff('admin');

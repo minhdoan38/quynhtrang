@@ -183,6 +183,7 @@ export function LibraryFontDetail({ familyId, userRole }: LibraryFontDetailProps
         body: JSON.stringify({
           expectedRevision: face.revision,
           validationId: face.validationId || undefined,
+          requestId: face.validationId,
         }),
       });
       if (!res.ok) {
