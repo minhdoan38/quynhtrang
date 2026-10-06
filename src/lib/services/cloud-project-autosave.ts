@@ -5,6 +5,8 @@ import {
   extractLibraryDependencies,
   validateNoDraftDependencies,
 } from './library-dependencies.ts';
+import { toSafeOperationError, type RetryPolicy } from '../reliability/error-contract.ts';
+import { createOperationId } from '../reliability/operation-id.ts';
 
 export interface SaveCustomerProjectRevisionOptions {
   libraryLookup?: ReadonlyMap<string, { status: string }>;
@@ -15,27 +17,54 @@ export interface AutosaveResponseResult {
   serverRevision?: number;
   newRevision?: number;
   userMessage?: string;
+  operationId?: string;
+  code?: string;
+  safeMessageKey?: string;
+  retryable?: boolean;
+  retryPolicy?: RetryPolicy;
 }
 
-export function handleAutosaveResponse(raw: unknown): AutosaveResponseResult {
+export function handleAutosaveResponse(
+  raw: unknown,
+  options?: { operationId?: string },
+): AutosaveResponseResult {
   const res = raw as {
     success?: boolean;
     error?: string;
     current_revision?: number;
     new_revision?: number;
   };
+  const operationId = options?.operationId || createOperationId('autosave');
 
   if (res?.error === 'STALE_REVISION' || res?.success === false) {
+    const safeErr = toSafeOperationError(
+      {
+        code: res?.error || 'STALE_REVISION',
+        current_revision: res?.current_revision,
+      },
+      {
+        operation: 'cloudProjectAutosave',
+        operationId,
+        defaultMessage: 'Thiết kế này vừa được cập nhật trên thiết bị khác. Vui lòng tải lại phiên bản mới nhất.',
+      },
+    );
+
     return {
       conflict: true,
-      serverRevision: res.current_revision,
-      userMessage: 'Thiết kế này vừa được cập nhật trên thiết bị khác. Vui lòng tải lại phiên bản mới nhất.',
+      serverRevision: res?.current_revision,
+      userMessage: safeErr.userMessage,
+      operationId: safeErr.operationId,
+      code: safeErr.code,
+      safeMessageKey: safeErr.safeMessageKey,
+      retryable: safeErr.retryable,
+      retryPolicy: safeErr.retryPolicy,
     };
   }
 
   return {
     conflict: false,
     newRevision: res?.new_revision,
+    operationId,
   };
 }
 
@@ -99,9 +128,18 @@ export async function saveCustomerProjectRevision(
   });
 
   if (error) {
+    const safeErr = toSafeOperationError(error, {
+      operation: 'cloudProjectAutosave',
+      defaultMessage: error.message,
+    });
     return {
       conflict: false,
-      userMessage: error.message || 'Lỗi lưu trữ đám mây',
+      userMessage: safeErr.userMessage,
+      operationId: safeErr.operationId,
+      code: safeErr.code,
+      safeMessageKey: safeErr.safeMessageKey,
+      retryable: safeErr.retryable,
+      retryPolicy: safeErr.retryPolicy,
     };
   }
 
