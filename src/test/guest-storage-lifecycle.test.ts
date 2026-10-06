@@ -6,12 +6,18 @@ import {
   getLastPersistenceError,
   getRecentProjects,
   saveRecentProject,
+  saveRecentProjectAsync,
   saveRecentProjectWithResult,
+  saveRecentProjectWithResultAsync,
   pruneExpiredRecentProjects,
   markProjectMigrated,
   type RecentProject,
 } from '../lib/storage.ts';
-import { rehydrateImageState } from '../lib/browser-storage/guest-project-store.ts';
+import {
+  rehydrateImageState,
+  migrateLegacyLocalStorageAssets,
+  loadGuestAsset,
+} from '../lib/browser-storage/guest-project-store.ts';
 import type { DesignState } from '../lib/product-state.ts';
 
 test('maintains stable project ID across multiple autosave flushes', () => {
@@ -276,4 +282,246 @@ test('retention pruning protects currently open project from eviction', () => {
   dummyStorage['quynhtrang-recent-projects-v1'] = JSON.stringify([p1, p2, p3, p4]);
   const protectedList = getRecentProjects(now, { currentProjectId: 'p4' });
   assert.ok(protectedList.some((p) => p.id === 'p4'));
+});
+
+interface MockIDBTransaction {
+  oncomplete?: ((ev: Event) => void) | null;
+  onabort?: ((ev: Event) => void) | null;
+  onerror?: ((ev: Event) => void) | null;
+  objectStore: (name: string) => { put: (record: unknown) => { onerror?: () => void; onsuccess?: () => void } };
+}
+
+interface MockIDBOpenRequest {
+  onsuccess?: ((ev: { target: { result: unknown } }) => void) | null;
+  onerror?: ((ev: unknown) => void) | null;
+  onblocked?: (() => void) | null;
+  onupgradeneeded?: ((ev: unknown) => void) | null;
+}
+
+test('saveRecentProjectAsync awaits IndexedDB write and fails gracefully if IndexedDB aborts', async () => {
+  const dummyStorage: Record<string, string> = {};
+  Object.defineProperty(globalThis, 'localStorage', {
+    configurable: true,
+    value: {
+      getItem: (k: string) => dummyStorage[k] ?? null,
+      setItem: (k: string, v: string) => { dummyStorage[k] = v; },
+      removeItem: (k: string) => { delete dummyStorage[k]; },
+      clear: () => undefined,
+      key: () => null,
+      length: 0,
+    },
+  });
+
+  const design: DesignState = {
+    productId: 'card',
+    variantId: 'h',
+    templateId: null,
+    text: 'test async save',
+    color: '#000',
+    backgroundColor: '#fff',
+    image: null,
+    productOptions: {},
+    quantity: 1,
+  };
+
+  // 1. Test failure when IndexedDB transaction aborts
+  const mockDbAbort = {
+    objectStoreNames: { contains: () => true },
+    transaction: (): MockIDBTransaction => {
+      const tx: MockIDBTransaction = {
+        objectStore: () => ({
+          put: () => {
+            queueMicrotask(() => {
+              if (tx.onabort) tx.onabort(new Event('abort'));
+            });
+            return {};
+          },
+        }),
+      };
+      return tx;
+    },
+  };
+
+  Object.defineProperty(globalThis, 'window', {
+    configurable: true,
+    value: {
+      indexedDB: {
+        open: (): MockIDBOpenRequest => {
+          const req: MockIDBOpenRequest = {};
+          queueMicrotask(() => {
+            if (req.onsuccess) req.onsuccess({ target: { result: mockDbAbort } });
+          });
+          return req;
+        },
+      },
+    },
+  });
+
+  const abortOk = await saveRecentProjectAsync(design, 'proj-abort-test');
+  assert.equal(abortOk, false);
+  const res = await saveRecentProjectWithResultAsync(design, 'proj-abort-test');
+  assert.equal(res.ok, false);
+  assert.equal(res.code, 'CLIENT_PERSISTENCE_ERROR');
+  const err = getLastPersistenceError();
+  assert.equal(err?.code, 'CLIENT_PERSISTENCE_ERROR');
+  // In-memory document must remain intact despite persistence failure
+  assert.equal(getInMemoryProject('proj-abort-test')?.text, 'test async save');
+
+  // 2. Test that saveRecentProjectAsync awaits transaction completion before returning true
+  let completeTx: (() => void) | null = null;
+  const mockDbComplete = {
+    objectStoreNames: { contains: () => true },
+    transaction: (): MockIDBTransaction => {
+      const tx: MockIDBTransaction = {
+        objectStore: () => ({
+          put: () => ({}),
+        }),
+      };
+      completeTx = () => {
+        if (tx.oncomplete) tx.oncomplete(new Event('complete'));
+      };
+      return tx;
+    },
+  };
+
+  Object.defineProperty(globalThis, 'window', {
+    configurable: true,
+    value: {
+      indexedDB: {
+        open: (): MockIDBOpenRequest => {
+          const req: MockIDBOpenRequest = {};
+          queueMicrotask(() => {
+            if (req.onsuccess) req.onsuccess({ target: { result: mockDbComplete } });
+          });
+          return req;
+        },
+      },
+    },
+  });
+
+  let settled = false;
+  const pendingPromise = saveRecentProjectAsync({ ...design, text: 'durable completed' }, 'proj-complete-test').then((r: boolean) => {
+    settled = true;
+    return r;
+  });
+
+  // Flush microtasks to allow open and transaction to initialize
+  await Promise.resolve();
+  await Promise.resolve();
+  assert.equal(settled, false, 'saveRecentProjectAsync must not resolve before transaction finishes');
+
+  // Complete transaction
+  const triggerComplete = completeTx as (() => void) | null;
+  triggerComplete?.();
+  const successRes = await pendingPromise;
+  assert.equal(successRes, true);
+  assert.equal(settled, true);
+});
+
+
+test('migrateLegacyLocalStorageAssets extracts base64, stores binary in IndexedDB, strips large payload from localStorage, and isolates corrupt records into quarantine', async () => {
+  const dummyStorage: Record<string, string> = {};
+  Object.defineProperty(globalThis, 'localStorage', {
+    configurable: true,
+    value: {
+      getItem: (k: string) => dummyStorage[k] ?? null,
+      setItem: (k: string, v: string) => { dummyStorage[k] = v; },
+      removeItem: (k: string) => { delete dummyStorage[k]; },
+      clear: () => undefined,
+      key: () => null,
+      length: 0,
+    },
+  });
+  Object.defineProperty(globalThis, 'window', {
+    configurable: true,
+    value: {}, // fallback memory mode for guest-project-store
+  });
+
+  const validBase64 = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
+
+  const validProject: RecentProject = {
+    id: 'legacy-valid-1',
+    productId: 'card',
+    variantId: 'v1',
+    templateId: null,
+    text: 'Hợp lệ',
+    color: '#000',
+    backgroundColor: '#fff',
+    image: {
+      name: 'photo.png',
+      type: 'image/png',
+      src: validBase64,
+      data: validBase64,
+      payload: validBase64,
+      size: 68,
+    },
+    productOptions: {},
+    updatedAt: Date.now(),
+  };
+
+  const corruptProject = {
+    id: 'legacy-corrupt-2',
+    productId: 'sticker',
+    variantId: 'v1',
+    templateId: null,
+    text: 'Dữ liệu hỏng',
+    color: '#000',
+    backgroundColor: '#fff',
+    image: {
+      name: 'broken.png',
+      type: 'image/png',
+      src: 'data:image/png;base64,INVALID_MALFORMED_CHARS_!@#$%',
+      data: 'data:image/png;base64,INVALID_MALFORMED_CHARS_!@#$%',
+      size: 50,
+    },
+    productOptions: {},
+    updatedAt: Date.now(),
+  };
+
+  const cleanNoImgProject: RecentProject = {
+    id: 'legacy-clean-3',
+    productId: 'wrapping',
+    variantId: 'v1',
+    templateId: null,
+    text: 'Không có ảnh',
+    color: '#000',
+    backgroundColor: '#fff',
+    image: null,
+    productOptions: {},
+    updatedAt: Date.now(),
+  };
+
+  dummyStorage['quynhtrang-recent-projects-v1'] = JSON.stringify([validProject, corruptProject, cleanNoImgProject]);
+
+  const stats = await migrateLegacyLocalStorageAssets();
+  assert.equal(stats.migratedCount, 1);
+  assert.equal(stats.quarantinedCount, 1);
+
+  // Check clean metadata rewritten to localStorage
+  const remaining = JSON.parse(dummyStorage['quynhtrang-recent-projects-v1']) as Array<{ id: string; image?: { assetId?: string; checksum?: string; src?: string; data?: string; payload?: string; name?: string } }>;
+  assert.equal(remaining.length, 2);
+  const remainingIds = remaining.map((p) => p.id);
+  assert.ok(remainingIds.includes('legacy-valid-1'));
+  assert.ok(remainingIds.includes('legacy-clean-3'));
+  assert.ok(!remainingIds.includes('legacy-corrupt-2'));
+
+  // Valid project has inline base64 stripped and replaced with lightweight asset reference
+  const migratedItem = remaining.find((p) => p.id === 'legacy-valid-1');
+  assert.ok(migratedItem?.image?.assetId);
+  assert.ok(migratedItem?.image?.checksum);
+  assert.equal(migratedItem.image.src, migratedItem.image.assetId);
+  assert.equal(migratedItem.image.data, undefined);
+  assert.equal(migratedItem.image.payload, undefined);
+  assert.equal(migratedItem.image.name, 'photo.png');
+
+  // Binary record exists in guest asset store with verified checksum
+  const assetRecord = await loadGuestAsset(migratedItem.image.assetId!);
+  assert.ok(assetRecord);
+  assert.equal(assetRecord.checksum, migratedItem.image.checksum);
+  assert.ok(assetRecord.size > 0);
+
+  // Corrupt record isolated into quarantine store
+  const quarantined = JSON.parse(dummyStorage['quynhtrang-quarantined-projects-v1']) as Array<{ id?: string; project?: { id?: string } }>;
+  assert.equal(quarantined.length, 1);
+  assert.equal(quarantined[0].project?.id || quarantined[0].id, 'legacy-corrupt-2');
 });

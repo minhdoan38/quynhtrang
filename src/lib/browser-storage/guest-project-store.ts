@@ -83,9 +83,9 @@ export async function saveGuestProject(record: GuestProjectRecord): Promise<bool
   try {
     const tx = db.transaction(STORE_PROJECTS, 'readwrite');
     const store = tx.objectStore(STORE_PROJECTS);
-    const req = store.put(record);
-    req.onsuccess = () => resolve(true);
-    req.onerror = () => resolve(false);
+    store.put(record);
+    tx.oncomplete = () => resolve(true);
+    tx.onerror = () => resolve(false);
     tx.onabort = () => resolve(false);
   } catch {
     resolve(false);
@@ -142,9 +142,10 @@ export async function saveGuestAsset(record: GuestAssetRecord): Promise<boolean>
   try {
     const tx = db.transaction(STORE_ASSETS, 'readwrite');
     const store = tx.objectStore(STORE_ASSETS);
-    const req = store.put(record);
-    req.onsuccess = () => resolve(true);
-    req.onerror = () => resolve(false);
+    store.put(record);
+    tx.oncomplete = () => resolve(true);
+    tx.onerror = () => resolve(false);
+    tx.onabort = () => resolve(false);
   } catch {
     resolve(false);
   }
@@ -264,4 +265,123 @@ export async function estimateStorage(): Promise<{ usage?: number; quota?: numbe
     }
   }
   return null;
+}
+
+const LEGACY_PROJECTS_KEY = 'quynhtrang-recent-projects-v1';
+const QUARANTINED_PROJECTS_KEY = 'quynhtrang-quarantined-projects-v1';
+
+type LegacyRecord = Record<string, unknown>;
+
+function isRecord(value: unknown): value is LegacyRecord {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function parseInlinePayload(value: string, fallbackMimeType?: string): { bytes: Uint8Array; mimeType: string; dataUrl: string } | null {
+  const dataMatch = /^data:([^;,]+)?(?:;charset=[^;,]+)?;base64,([A-Za-z0-9+/]*={0,2})$/.exec(value);
+  const raw = dataMatch ? dataMatch[2] : value;
+  if (!raw || raw.length % 4 === 1 || !/^[A-Za-z0-9+/]*={0,2}$/.test(raw) || raw.indexOf('=') >= 0 && !raw.endsWith('='.repeat(raw.length - raw.indexOf('=')))) return null;
+  try {
+    const decoded = globalThis.atob(raw);
+    const bytes = Uint8Array.from(decoded, (char) => char.charCodeAt(0));
+    if (!bytes.length) return null;
+    const mimeType = dataMatch?.[1] || fallbackMimeType || 'application/octet-stream';
+    return { bytes, mimeType, dataUrl: `data:${mimeType};base64,${raw}` };
+  } catch {
+    return null;
+  }
+}
+
+async function sha256Hex(bytes: Uint8Array): Promise<string> {
+  if (!globalThis.crypto?.subtle) throw new Error('Web Crypto unavailable');
+  const digest = await globalThis.crypto.subtle.digest(
+    'SHA-256',
+    bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer,
+  );
+  return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, '0')).join('');
+}
+
+async function migrateLegacyImage(image: LegacyRecord): Promise<boolean> {
+  const sourceKey = ['data', 'payload', 'src'].find((key) => {
+    const value = image[key];
+    return typeof value === 'string' && (key !== 'src' || value.startsWith('data:'));
+  });
+  if (!sourceKey) return false;
+  const payload = image[sourceKey];
+  if (typeof payload !== 'string') throw new Error('Invalid inline image payload');
+  const parsed = parseInlinePayload(payload, typeof image.type === 'string' ? image.type : undefined);
+  if (!parsed) throw new Error('Invalid inline image payload');
+  const checksum = await sha256Hex(parsed.bytes);
+  if (typeof image.checksum === 'string' && image.checksum !== checksum) throw new Error('Image checksum mismatch');
+  const assetId = typeof image.assetId === 'string' && image.assetId ? image.assetId : `asset-${checksum}`;
+  const saved = await saveGuestAsset({
+    id: assetId,
+    name: typeof image.name === 'string' ? image.name : assetId,
+    mimeType: parsed.mimeType,
+    size: parsed.bytes.byteLength,
+    payload: parsed.bytes,
+    dataUrl: parsed.dataUrl,
+    checksum,
+    lastUsedAt: Date.now(),
+  });
+  if (!saved) throw new Error('Asset transaction failed');
+  delete image.data;
+  delete image.payload;
+  image.src = assetId;
+  image.assetId = assetId;
+  image.checksum = checksum;
+  image.size = parsed.bytes.byteLength;
+  return true;
+}
+
+export async function migrateLegacyLocalStorageAssets(): Promise<{ migratedCount: number; quarantinedCount: number }> {
+  if (typeof localStorage === 'undefined') return { migratedCount: 0, quarantinedCount: 0 };
+  const raw = localStorage.getItem(LEGACY_PROJECTS_KEY);
+  if (!raw) return { migratedCount: 0, quarantinedCount: 0 };
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    localStorage.setItem(QUARANTINED_PROJECTS_KEY, JSON.stringify([{ raw, reason: 'Invalid project JSON' }]));
+    localStorage.removeItem(LEGACY_PROJECTS_KEY);
+    return { migratedCount: 0, quarantinedCount: 1 };
+  }
+  if (!Array.isArray(parsed)) {
+    localStorage.setItem(QUARANTINED_PROJECTS_KEY, JSON.stringify([{ project: parsed, reason: 'Projects must be an array' }]));
+    localStorage.removeItem(LEGACY_PROJECTS_KEY);
+    return { migratedCount: 0, quarantinedCount: 1 };
+  }
+  const clean: unknown[] = [];
+  const quarantined: unknown[] = [];
+  let migratedCount = 0;
+  for (const project of parsed) {
+    if (!isRecord(project) || typeof project.id !== 'string') {
+      quarantined.push({ project, reason: 'Malformed project record' });
+      continue;
+    }
+    try {
+      let migrated = false;
+      if (isRecord(project.image)) migrated = await migrateLegacyImage(project.image) || migrated;
+      if (Array.isArray(project.elements)) {
+        for (const element of project.elements) {
+          if (isRecord(element) && element.type === 'image' && isRecord(element.data)) {
+            migrated = await migrateLegacyImage(element.data) || migrated;
+          }
+        }
+      }
+      if (migrated) migratedCount++;
+      clean.push(project);
+    } catch (error) {
+      quarantined.push({ project, reason: error instanceof Error ? error.message : 'Invalid project asset' });
+    }
+  }
+  if (quarantined.length) {
+    let existing: unknown[] = [];
+    try {
+      const prior = JSON.parse(localStorage.getItem(QUARANTINED_PROJECTS_KEY) || '[]');
+      if (Array.isArray(prior)) existing = prior;
+    } catch { /* overwrite malformed quarantine with valid records */ }
+    localStorage.setItem(QUARANTINED_PROJECTS_KEY, JSON.stringify([...existing, ...quarantined]));
+  }
+  localStorage.setItem(LEGACY_PROJECTS_KEY, JSON.stringify(clean));
+  return { migratedCount, quarantinedCount: quarantined.length };
 }

@@ -184,6 +184,8 @@ export interface ImageState {
  height?: number;
  data?: string;
  payload?: string | Uint8Array;
+ assetId?: string;
+ checksum?: string;
 }
 export type ElementType = 'image' | 'text' | 'shape' | 'sticker' | 'group';
 

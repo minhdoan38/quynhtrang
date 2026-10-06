@@ -50,14 +50,13 @@ import { areDesignStatesEqual } from '@/lib/history-transaction';
 import {
   getRecentProjects,
   loadState,
-  saveRecentProject,
-  saveState,
-  flushAutosave,
+  saveRecentProjectAsync,
+  flushAutosaveAsync,
   setCurrentOpenProjectId,
   markProjectMigrated,
   type RecentProject,
 } from '@/lib/storage';
-import { rehydrateDesignImages } from '@/lib/browser-storage/guest-project-store';
+import { migrateLegacyLocalStorageAssets, rehydrateDesignImages } from '@/lib/browser-storage/guest-project-store';
 import { createBrowserSupabaseClient } from '@/lib/supabase/browser';
 import { readDesignDocument } from '@/lib/design-document';
 import { createGuestProjectFromTemplate } from '@/lib/services/template-clone';
@@ -313,7 +312,7 @@ export function CustomizerShell({ context, initialSearchParams }: CustomizerShel
     setActiveSheet(null);
   }, [activeSheet, closeColorSession, commitActiveTransaction]);
 
-  const executeAutosave = useCallback((currentState: DesignState) => {
+  const executeAutosave = useCallback(async (currentState: DesignState) => {
     if (capabilities.isIsolatedPreview) {
       return true;
     }
@@ -333,7 +332,7 @@ export function CustomizerShell({ context, initialSearchParams }: CustomizerShel
       return true;
     }
     setSaveStatus('saving');
-    const ok = flushAutosave(currentState, currentProjectId ?? undefined);
+    const ok = await flushAutosaveAsync(currentState, currentProjectId ?? undefined);
     setSaveStatus(ok ? 'saved' : 'error');
     if (ok) {
       setRecentProjects(getRecentProjects());
@@ -396,6 +395,9 @@ export function CustomizerShell({ context, initialSearchParams }: CustomizerShel
   // Restore editor data after mount
   useEffect(() => {
     setMounted(true);
+    void migrateLegacyLocalStorageAssets().then(() => {
+      setRecentProjects(getRecentProjects());
+    }).catch(() => undefined);
     if (context?.type === 'staff' || context?.type === 'customer' || context?.type === 'template-author' || context?.type === 'template-preview') {
       if (context.type === 'customer' && context.projectId) {
         setCurrentProjectId(context.projectId);
@@ -484,7 +486,7 @@ export function CustomizerShell({ context, initialSearchParams }: CustomizerShel
           resetHistory(migrateLegacyText(rehydrated));
           setView('editor');
 
-          saveRecentProject(rehydrated, cloudRow.id);
+          await saveRecentProjectAsync(rehydrated, cloudRow.id);
           markProjectMigrated(cloudRow.id, cloudRow.id, cloudRow.current_working_revision || 1);
           setRecentProjects(getRecentProjects());
         } catch {
@@ -555,7 +557,7 @@ export function CustomizerShell({ context, initialSearchParams }: CustomizerShel
             const useData = await useRes.json();
             if (useData.kind === 'guest' && useData.payload) {
               const project = createGuestProjectFromTemplate(useData.payload, reqId);
-              saveRecentProject(project.document, project.id);
+              await saveRecentProjectAsync(project.document, project.id);
               setRecentProjects(getRecentProjects());
               setCurrentProjectId(project.id);
               resetHistory(migrateLegacyText(project.document));
@@ -732,8 +734,8 @@ export function CustomizerShell({ context, initialSearchParams }: CustomizerShel
     setView('editor');
   }, [resetHistory]);
 
-  const handleBackToLauncher = useCallback(() => {
-    saveRecentProject(state, currentProjectId ?? undefined);
+  const handleBackToLauncher = useCallback(async () => {
+    await saveRecentProjectAsync(state, currentProjectId ?? undefined);
     setRecentProjects(getRecentProjects());
     setOverlayMode(null);
     setSelectedTarget(null);
@@ -748,7 +750,7 @@ export function CustomizerShell({ context, initialSearchParams }: CustomizerShel
   const handleApplyTemplate = useCallback(
     async (templateId: string, versionId?: string | null) => {
       if (!context || capabilities.allowLocalStorage) {
-        saveRecentProject(state, currentProjectId ?? undefined);
+        await saveRecentProjectAsync(state, currentProjectId ?? undefined);
       }
 
       if (templateId === 'blank') {
@@ -761,7 +763,7 @@ export function CustomizerShell({ context, initialSearchParams }: CustomizerShel
         const reqId = crypto.randomUUID();
         const newProjId = `proj_${Date.now()}_${reqId.slice(0, 8)}`;
         if (!context || capabilities.allowLocalStorage) {
-          saveRecentProject(initial, newProjId);
+          await saveRecentProjectAsync(initial, newProjId);
           setRecentProjects(getRecentProjects());
           setCurrentProjectId(newProjId);
         }
@@ -817,7 +819,7 @@ export function CustomizerShell({ context, initialSearchParams }: CustomizerShel
         const data = await res.json();
         if (data.kind === 'guest' && data.payload) {
           const newProject = createGuestProjectFromTemplate(data.payload, requestId);
-          const savedOk = saveRecentProject(newProject.document, newProject.id);
+          const savedOk = await saveRecentProjectAsync(newProject.document, newProject.id);
           if (!savedOk) {
             showToast('Không thể lưu dự án mới vào bộ nhớ.');
             return;

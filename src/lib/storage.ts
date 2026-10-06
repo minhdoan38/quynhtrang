@@ -224,12 +224,12 @@ export function getRecentProjects(
   }
 }
 
-export function saveRecentProject(
+function createRecentProject(
   state: DesignState,
   explicitId?: string,
   now: number = Date.now(),
-  options?: { recoveryPending?: boolean }
-): boolean {
+  options?: { recoveryPending?: boolean },
+): { project: RecentProject; record: Parameters<typeof saveGuestProject>[0]; existing: RecentProject[] } {
   const existing = getRecentProjects(now);
   const existingMatch = existing.find((p) => (explicitId ? p.id === explicitId : p.productId === state.productId));
   const projectId = explicitId ?? existingMatch?.id ?? `${state.productId}-${now}`;
@@ -252,37 +252,80 @@ export function saveRecentProject(
     migratedAt: existingMatch?.migratedAt,
     recoveryPending: options?.recoveryPending ?? existingMatch?.recoveryPending,
   };
+  return {
+    project,
+    existing,
+    record: {
+      id: projectId,
+      document: state,
+      updatedAt: now,
+      schemaVersion: state.documentSchemaVersion ?? 1,
+      recoveryPending: project.recoveryPending,
+      syncedCloudProjectId: project.syncedCloudProjectId,
+      syncedRevision: project.syncedRevision,
+    },
+  };
+}
 
-  // Always retain newest in memory
-  inMemoryProjectsCache.set(projectId, project);
+function recordPersistenceError(): void {
+  lastPersistenceError = {
+    code: 'CLIENT_PERSISTENCE_ERROR',
+    message: 'Không thể lưu trữ dữ liệu trên thiết bị. Hãy kiểm tra bộ nhớ trình duyệt.',
+  };
+  void estimateStorage();
+}
 
-  // Asynchronously commit to durable IndexedDB store
-  void saveGuestProject({
-    id: projectId,
-    document: state,
-    updatedAt: now,
-    schemaVersion: state.documentSchemaVersion ?? 1,
-    recoveryPending: project.recoveryPending,
-    syncedCloudProjectId: project.syncedCloudProjectId,
-    syncedRevision: project.syncedRevision,
-  });
-
+function writeRecentProjectMetadata(project: RecentProject, existing: RecentProject[], state: DesignState, explicitId?: string): boolean {
   if (typeof window === 'undefined' && typeof localStorage === 'undefined') return true;
-
   try {
-    // Deduplicate same ID or same productId
-    const filtered = existing.filter((p) => p.id !== projectId && (explicitId ? true : p.productId !== state.productId));
-    const updated = [project, ...filtered].slice(0, 3);
-    localStorage.setItem(RECENT_PROJECTS_KEY, JSON.stringify(updated));
-    lastPersistenceError = null;
+    const filtered = existing.filter((p) => p.id !== project.id && (explicitId ? true : p.productId !== state.productId));
+    localStorage.setItem(RECENT_PROJECTS_KEY, JSON.stringify([project, ...filtered].slice(0, 3)));
     return true;
   } catch (err) {
-    lastPersistenceError = {
-      code: 'CLIENT_PERSISTENCE_ERROR',
-      message: 'Không thể lưu trữ dữ liệu trên thiết bị. Hãy kiểm tra bộ nhớ trình duyệt.',
-    };
-    void estimateStorage();
+    recordPersistenceError();
     console.error('Failed to save recent project to localStorage:', err);
+    return false;
+  }
+}
+
+export function saveRecentProject(
+  state: DesignState,
+  explicitId?: string,
+  now: number = Date.now(),
+  options?: { recoveryPending?: boolean },
+): boolean {
+  const { project, record, existing } = createRecentProject(state, explicitId, now, options);
+  inMemoryProjectsCache.set(project.id, project);
+  void saveGuestProject(record).then((ok) => {
+    if (!ok) recordPersistenceError();
+  }).catch(() => {
+    recordPersistenceError();
+  });
+  const metadataOk = writeRecentProjectMetadata(project, existing, state, explicitId);
+  if (metadataOk) lastPersistenceError = null;
+  return metadataOk;
+}
+
+export async function saveRecentProjectAsync(
+  state: DesignState,
+  explicitId?: string,
+  now: number = Date.now(),
+  options?: { recoveryPending?: boolean },
+): Promise<boolean> {
+  const { project, record, existing } = createRecentProject(state, explicitId, now, options);
+  inMemoryProjectsCache.set(project.id, project);
+  const metadataOk = writeRecentProjectMetadata(project, existing, state, explicitId);
+  if (!metadataOk) return false;
+  try {
+    const durableOk = await saveGuestProject(record);
+    if (!durableOk) {
+      recordPersistenceError();
+      return false;
+    }
+    lastPersistenceError = null;
+    return true;
+  } catch {
+    recordPersistenceError();
     return false;
   }
 }
@@ -291,9 +334,19 @@ export function saveRecentProjectWithResult(
   state: DesignState,
   explicitId?: string,
   now: number = Date.now(),
-  options?: { recoveryPending?: boolean }
+  options?: { recoveryPending?: boolean },
 ): { ok: boolean; code?: string } {
   const ok = saveRecentProject(state, explicitId, now, options);
+  return ok ? { ok: true } : { ok: false, code: lastPersistenceError?.code ?? 'CLIENT_PERSISTENCE_ERROR' };
+}
+
+export async function saveRecentProjectWithResultAsync(
+  state: DesignState,
+  explicitId?: string,
+  now: number = Date.now(),
+  options?: { recoveryPending?: boolean },
+): Promise<{ ok: boolean; code?: string }> {
+  const ok = await saveRecentProjectAsync(state, explicitId, now, options);
   return ok ? { ok: true } : { ok: false, code: lastPersistenceError?.code ?? 'CLIENT_PERSISTENCE_ERROR' };
 }
 
@@ -334,6 +387,12 @@ export function markProjectMigrated(localId: string, cloudProjectId: string, rev
   } catch (err) {
     console.error('Failed to mark project migrated in localStorage:', err);
   }
+}
+
+export async function flushAutosaveAsync(state: DesignState, explicitId?: string): Promise<boolean> {
+  const stateOk = saveState(state);
+  const projectOk = await saveRecentProjectAsync(state, explicitId);
+  return stateOk && projectOk;
 }
 
 export function flushAutosave(state: DesignState, explicitId?: string): boolean {
