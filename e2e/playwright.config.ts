@@ -53,6 +53,7 @@ export default defineConfig({
     env: {
       PORT: '3000',
       ENABLE_TEST_STAFF_BYPASS: '1',
+      ...(isDev ? { NODE_ENV: process.env.NODE_ENV || 'development' } : {}),
     },
   },
 });

@@ -127,31 +127,43 @@ export async function runProductionSmoke(
       console.log(`[State45Smoke] Using already running server at ${baseUrl}`);
     }
 
-    const testRoutes = [
-      { path: '/', expectStatuses: [200] },
-      { path: '/checkout', expectStatuses: [200] },
-      { path: '/my-designs', expectStatuses: [200, 307, 308] },
-      { path: '/admin/orders', expectStatuses: [200, 307, 308] },
-    ];
+    // Under NODE_ENV=production, unauthenticated /admin/orders redirecting to /admin/login (307)
+    // is the EXPECTED and REQUIRED secure behavior (since production ignores synthetic staff cookies).
+    const testRoutes: Array<{
+      path: string;
+      expectStatuses: number[];
+      expectedRedirect?: string;
+    }> = [
+        { path: '/', expectStatuses: [200] },
+        { path: '/checkout', expectStatuses: [200] },
+        { path: '/login', expectStatuses: [200] },
+        { path: '/admin/orders', expectStatuses: [307], expectedRedirect: '/admin/login' },
+      ];
 
     for (const item of testRoutes) {
       const url = `${baseUrl}${item.path}`;
       const res = await fetch(url, { redirect: 'manual' });
       const status = res.status;
       const text = await res.text();
+      const location = res.headers.get('location') ?? '';
       const hasErrorShell =
         text.includes('Application error: a client-side exception') ||
         text.includes('Internal Server Error') ||
         (status >= 500 && status < 600);
 
-      const ok = item.expectStatuses.includes(status) && !hasErrorShell;
+      const statusOk = item.expectStatuses.includes(status);
+      const redirectOk = !item.expectedRedirect || location.includes(item.expectedRedirect);
+      const ok = statusOk && redirectOk && !hasErrorShell;
+
       checks.push({
         route: item.path,
         status,
         ok,
-        notes: ok ? 'Healthy' : `Unexpected status or error shell: ${status}`,
+        notes: ok
+          ? (item.expectedRedirect ? `Secure redirect (307) to ${location}` : 'Healthy')
+          : `Unexpected status, missing redirect, or error shell (status=${status}, location=${location})`,
       });
-      console.log(`[State45Smoke] Route "${item.path}": ${status} -> ${ok ? 'OK' : 'FAIL'}`);
+      console.log(`[State45Smoke] Route "${item.path}": ${status}${location ? ` -> ${location}` : ''} -> ${ok ? 'OK' : 'FAIL'}`);
     }
 
     const allOk = checks.every((c) => c.ok);

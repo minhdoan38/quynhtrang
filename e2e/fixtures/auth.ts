@@ -1,3 +1,7 @@
+import { createServerClient } from '@supabase/ssr';
+
+import { assertTestSupabaseUrl } from './supabase.ts';
+
 export type TestActorRole = 'admin' | 'editor' | 'customer';
 
 export type TestActorKey = 'customerA' | 'customerB' | 'admin' | 'editor';
@@ -76,23 +80,71 @@ export function createTestAuthCookies(
       name: 'state45_test_actor',
       value: identity.actorKey,
       url: baseUrl,
-      path: '/',
       sameSite: 'Lax',
     },
   ];
 
-  if (identity.role === 'admin' || identity.role === 'editor') {
-    // Test staff bypass cookie used in isolated smoke/e2e test environment
+  if (
+    process.env.NODE_ENV !== 'production' &&
+    (identity.role === 'admin' || identity.role === 'editor')
+  ) {
     cookies.push({
       name: 'smoke_staff_role',
       value: identity.role,
       url: baseUrl,
-      path: '/',
       sameSite: 'Lax',
     });
   }
 
   return cookies;
+}
+
+export interface TestSupabaseAuth {
+  url: string;
+  publishableKey: string;
+  accessToken?: string;
+  refreshToken?: string;
+  password?: string;
+}
+
+export async function createTestSupabaseAuthCookies(
+  actor: TestActorKey,
+  auth: TestSupabaseAuth,
+  baseUrl = 'http://localhost:3000',
+): Promise<TestCookie[]> {
+  const values: Record<string, string> = {};
+  const supabase = createServerClient(assertTestSupabaseUrl(auth.url), auth.publishableKey, {
+    cookies: {
+      getAll: () => [],
+      setAll: (cookies) => {
+        for (const cookie of cookies) {
+          if (cookie.value) values[cookie.name] = cookie.value;
+          else delete values[cookie.name];
+        }
+      },
+    },
+  });
+
+  const result = auth.accessToken && auth.refreshToken
+    ? await supabase.auth.setSession({
+      access_token: auth.accessToken,
+      refresh_token: auth.refreshToken,
+    })
+    : auth.password
+      ? await supabase.auth.signInWithPassword({
+        email: getTestAuthIdentity(actor).email,
+        password: auth.password,
+      })
+      : null;
+
+  if (!result) {
+    throw new Error('Test Supabase auth requires accessToken + refreshToken or password');
+  }
+  if (result.error) {
+    throw new Error(`Test Supabase authentication failed: ${result.error.message}`);
+  }
+
+  return Object.entries(values).map(([name, value]) => ({ name, value, url: baseUrl }));
 }
 
 export interface CookieContextLike {
@@ -104,8 +156,11 @@ export async function applyTestAuth(
   context: CookieContextLike,
   actor: TestActorKey,
   baseUrl = 'http://localhost:3000',
+  supabaseAuth?: TestSupabaseAuth,
 ): Promise<void> {
-  const cookies = createTestAuthCookies(actor, baseUrl);
+  const cookies = supabaseAuth
+    ? await createTestSupabaseAuthCookies(actor, supabaseAuth, baseUrl)
+    : createTestAuthCookies(actor, baseUrl);
   await context.addCookies(cookies);
   if (context.setExtraHTTPHeaders) {
     await context.setExtraHTTPHeaders(createTestAuthHeaders(actor));

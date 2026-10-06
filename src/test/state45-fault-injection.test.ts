@@ -4,6 +4,7 @@ import { describe, it } from 'node:test';
 import {
   TEST_AUTH_IDENTITIES,
   createTestAuthHeaders,
+  createTestAuthCookies,
 } from '../../e2e/fixtures/auth.ts';
 import {
   assertTestSupabaseUrl,
@@ -120,6 +121,33 @@ describe('State 45 deterministic fixtures', () => {
       ['orders', 'id', 'order-release-45-w3'],
       ['projects', 'id', 'project-release-45-w3'],
     ]);
+  });
+
+  it('formats Playwright cookies with url and no path, gating smoke staff role on non-production', () => {
+    const env = process.env as Record<string, string | undefined>;
+    const prevEnv = env.NODE_ENV;
+    try {
+      env.NODE_ENV = 'production';
+      const prodCookies = createTestAuthCookies('admin', 'http://localhost:3000');
+      assert.equal(prodCookies.some((c) => c.name === 'smoke_staff_role'), false);
+      for (const cookie of prodCookies) {
+        assert.ok(cookie.url, `Cookie ${cookie.name} missing url`);
+        assert.equal(cookie.path, undefined, `Cookie ${cookie.name} must not specify path when url is present`);
+      }
+
+      env.NODE_ENV = 'development';
+      const devCookies = createTestAuthCookies('admin', 'http://localhost:3000');
+      const smokeRoleCookie = devCookies.find((c) => c.name === 'smoke_staff_role');
+      assert.ok(smokeRoleCookie, 'Expected smoke_staff_role in development');
+      assert.equal(smokeRoleCookie?.value, 'admin');
+      for (const cookie of devCookies) {
+        assert.ok(cookie.url, `Cookie ${cookie.name} missing url`);
+        assert.equal(cookie.path, undefined, `Cookie ${cookie.name} must not specify path when url is present`);
+      }
+    } finally {
+      if (prevEnv === undefined) delete env.NODE_ENV;
+      else env.NODE_ENV = prevEnv;
+    }
   });
 });
 
