@@ -105,6 +105,153 @@ async function defaultHeartbeatTransport(input: {
   return { ok: true };
 }
 
+export interface TemplateDraftHeartbeatSchedulerOptions {
+  intervalMs?: number;
+  baseRetryMs?: number;
+  maxRetries?: number;
+  timer?: {
+    setTimeout: (fn: () => void, ms: number) => unknown;
+    clearTimeout: (id: unknown) => void;
+  };
+  randomJitter?: () => number;
+  isDocumentVisible?: () => boolean;
+  sendHeartbeat: () => Promise<{ ok: boolean; code?: string; message?: string }>;
+  onConflict: (code?: string, message?: string) => void;
+}
+
+export class TemplateDraftHeartbeatScheduler {
+  private readonly intervalMs: number;
+  private readonly baseRetryMs: number;
+  private readonly maxRetries: number;
+  private readonly timer: {
+    setTimeout: (fn: () => void, ms: number) => unknown;
+    clearTimeout: (id: unknown) => void;
+  };
+  private readonly randomJitter: () => number;
+  private readonly isDocumentVisible: () => boolean;
+  private readonly sendHeartbeat: () => Promise<{ ok: boolean; code?: string; message?: string }>;
+  private readonly onConflict: (code?: string, message?: string) => void;
+
+  private currentTimer: unknown = null;
+  private inFlight = false;
+  private disposed = false;
+  private needsImmediate = false;
+
+  constructor(options: TemplateDraftHeartbeatSchedulerOptions) {
+    this.intervalMs = options.intervalMs ?? 30_000;
+    this.baseRetryMs = options.baseRetryMs ?? 2_000;
+    this.maxRetries = options.maxRetries ?? 3;
+    this.timer = options.timer ?? {
+      setTimeout: (fn, ms) => setTimeout(fn, ms),
+      clearTimeout: (id) => clearTimeout(id as NodeJS.Timeout),
+    };
+    this.randomJitter = options.randomJitter ?? Math.random;
+    this.isDocumentVisible =
+      options.isDocumentVisible ??
+      (() => typeof document === 'undefined' || document.visibilityState === 'visible');
+    this.sendHeartbeat = options.sendHeartbeat;
+    this.onConflict = options.onConflict;
+  }
+
+  start(): void {
+    if (this.disposed) return;
+    this.scheduleNext(this.intervalMs);
+  }
+
+  async triggerImmediate(): Promise<void> {
+    if (this.disposed) return;
+    if (!this.isDocumentVisible()) return;
+    this.clearTimer();
+    if (this.inFlight) {
+      this.needsImmediate = true;
+      return;
+    }
+    await this.executeHeartbeat(0);
+  }
+
+  dispose(): void {
+    this.disposed = true;
+    this.clearTimer();
+  }
+
+  private clearTimer(): void {
+    if (this.currentTimer !== null) {
+      this.timer.clearTimeout(this.currentTimer);
+      this.currentTimer = null;
+    }
+  }
+
+  private scheduleNext(ms: number): void {
+    this.clearTimer();
+    if (this.disposed) return;
+    this.currentTimer = this.timer.setTimeout(() => {
+      this.currentTimer = null;
+      void this.executeHeartbeat(0);
+    }, ms);
+  }
+
+  private scheduleRetry(attempt: number): void {
+    this.clearTimer();
+    if (this.disposed) return;
+    const delay = this.baseRetryMs * (1 << attempt) + Math.floor(this.randomJitter() * 250);
+    this.currentTimer = this.timer.setTimeout(() => {
+      this.currentTimer = null;
+      void this.executeHeartbeat(attempt + 1);
+    }, delay);
+  }
+
+  private async executeHeartbeat(attempt: number): Promise<void> {
+    if (this.disposed) return;
+    if (!this.isDocumentVisible()) {
+      this.scheduleNext(this.intervalMs);
+      return;
+    }
+
+    this.inFlight = true;
+    try {
+      const res = await this.sendHeartbeat();
+      if (this.disposed) return;
+
+      if (res.ok) {
+        if (this.needsImmediate) {
+          this.needsImmediate = false;
+          this.inFlight = false;
+          void this.executeHeartbeat(0);
+          return;
+        }
+        this.scheduleNext(this.intervalMs);
+        return;
+      }
+
+      if (
+        res.code === 'LEASE_LOST' ||
+        res.code === 'LEASE_CONFLICT' ||
+        res.code === 'LEASE_EXPIRED'
+      ) {
+        this.disposed = true;
+        this.clearTimer();
+        this.onConflict(res.code, res.message);
+        return;
+      }
+
+      if (attempt < this.maxRetries) {
+        this.scheduleRetry(attempt);
+      } else {
+        this.scheduleNext(this.intervalMs);
+      }
+    } catch {
+      if (this.disposed) return;
+      if (attempt < this.maxRetries) {
+        this.scheduleRetry(attempt);
+      } else {
+        this.scheduleNext(this.intervalMs);
+      }
+    } finally {
+      this.inFlight = false;
+    }
+  }
+}
+
 export function useTemplateDraftSession(
   options: UseTemplateDraftSessionOptions,
 ): TemplateDraftSession {
@@ -166,40 +313,24 @@ export function useTemplateDraftSession(
     };
   }, [templateId, draftId, initialRevision, sessionId, epoch, readOnly, saveTransport]);
 
-  // Heartbeat every 30 seconds while tab is visible
+  // Heartbeat every 30 seconds while tab is visible with bounded retry on failure
   useEffect(() => {
     if (readOnly) return;
 
-    let heartbeatTimer: NodeJS.Timeout | undefined;
+    const scheduler = new TemplateDraftHeartbeatScheduler({
+      sendHeartbeat: () => heartbeatTransport({ templateId, draftId, sessionId, epoch }),
+      onConflict: (code, message) => {
+        setSaveStatus('conflict');
+        setConflictDetails({ code, message });
+        queueRef.current?.stop('Mất quyền chỉnh sửa');
+      },
+    });
 
-    const runHeartbeat = async () => {
-      if (typeof document !== 'undefined' && document.visibilityState !== 'visible') {
-        return;
-      }
-
-      try {
-        const res = await heartbeatTransport({ templateId, draftId, sessionId, epoch });
-        if (!res.ok) {
-          if (
-            res.code === 'LEASE_LOST' ||
-            res.code === 'LEASE_CONFLICT' ||
-            res.code === 'LEASE_EXPIRED'
-          ) {
-            setSaveStatus('conflict');
-            setConflictDetails({ code: res.code, message: res.message });
-            queueRef.current?.stop('Mất quyền chỉnh sửa');
-          }
-        }
-      } catch {
-        // Transient network failure: retry on next interval
-      }
-    };
-
-    heartbeatTimer = setInterval(runHeartbeat, 30_000);
+    scheduler.start();
 
     const handleVisibilityChange = () => {
-      if (document.visibilityState === 'visible') {
-        runHeartbeat();
+      if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
+        void scheduler.triggerImmediate();
       }
     };
 
@@ -208,7 +339,7 @@ export function useTemplateDraftSession(
     }
 
     return () => {
-      clearInterval(heartbeatTimer);
+      scheduler.dispose();
       if (typeof document !== 'undefined') {
         document.removeEventListener('visibilitychange', handleVisibilityChange);
       }

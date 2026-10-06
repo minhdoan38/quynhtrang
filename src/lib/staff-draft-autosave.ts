@@ -64,12 +64,8 @@ export class StaffDraftSaveQueue {
     this.inner.enqueue(document);
   }
 
-  async flush(): Promise<void> {
-    try {
-      await this.inner.flush();
-    } catch {
-      // Legacy flush suppresses rejection when stopped or conflicted
-    }
+  async flush(): Promise<{ revision: number }> {
+    return this.inner.flush();
   }
 
   stop(reason?: string): void {

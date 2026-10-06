@@ -24,7 +24,7 @@ import { POST as leaseRoute } from '../app/api/admin/content/templates/[id]/draf
 import { POST as heartbeatRoute } from '../app/api/admin/content/templates/[id]/draft/heartbeat/route.ts';
 import { POST as takeoverRoute } from '../app/api/admin/content/templates/[id]/draft/takeover/route.ts';
 import { POST as discardRoute } from '../app/api/admin/content/templates/[id]/draft/discard/route.ts';
-
+import { TemplateDraftHeartbeatScheduler } from '../lib/use-template-draft-session.ts';
 function createMockEditor(userId = '43000000-0000-0000-0000-0000000000e1'): StaffIdentity {
   return {
     userId,
@@ -1354,6 +1354,140 @@ describe('State 43 Task 6: Draft Autosave Queue & Concurrency', () => {
 
       const res = await saveDraftRoute(req, { params: Promise.resolve({ id: 'tmpl-1' }) }, deps);
       assert.equal(res.status, 403);
+    });
+  });
+
+  describe('TemplateDraftHeartbeatScheduler', () => {
+    it('schedules standard 30s heartbeat when healthy', async () => {
+      const clock = createMockTimer();
+      let count = 0;
+      const scheduler = new TemplateDraftHeartbeatScheduler({
+        timer: clock.timer,
+        randomJitter: () => 0,
+        sendHeartbeat: async () => {
+          count++;
+          return { ok: true };
+        },
+        onConflict: () => { },
+      });
+      scheduler.start();
+
+      await clock.advance(29_999);
+      assert.equal(count, 0);
+
+      await clock.advance(1);
+      assert.equal(count, 1);
+
+      await clock.advance(30_000);
+      assert.equal(count, 2);
+
+      scheduler.dispose();
+    });
+
+    it('retries transient heartbeat failure with jittered backoff before lease expires', async () => {
+      const clock = createMockTimer();
+      const attempts: number[] = [];
+      let shouldFail = true;
+      const scheduler = new TemplateDraftHeartbeatScheduler({
+        timer: clock.timer,
+        randomJitter: () => 0,
+        sendHeartbeat: async () => {
+          attempts.push(clock.now());
+          if (shouldFail) {
+            throw new Error('Connection timeout');
+          }
+          return { ok: true };
+        },
+        onConflict: () => { },
+      });
+      scheduler.start();
+
+      // At 30s: first heartbeat (fails)
+      await clock.advance(30_000);
+      assert.equal(attempts.length, 1);
+
+      // Retry 1: after 2s (32s) (fails)
+      await clock.advance(2_000);
+      assert.equal(attempts.length, 2);
+
+      // Retry 2: after 4s (36s) (fails)
+      await clock.advance(4_000);
+      assert.equal(attempts.length, 3);
+
+      // Allow third retry (after 8s -> 44s) to succeed
+      shouldFail = false;
+      await clock.advance(8_000);
+      assert.equal(attempts.length, 4);
+
+      // Next scheduled heartbeat should be 30s after recovery (74s)
+      await clock.advance(30_000);
+      assert.equal(attempts.length, 5);
+
+      scheduler.dispose();
+    });
+
+    it('stops retrying immediately on lease conflict', async () => {
+      const clock = createMockTimer();
+      let conflictCode: string | undefined;
+      let sendCount = 0;
+      const scheduler = new TemplateDraftHeartbeatScheduler({
+        timer: clock.timer,
+        randomJitter: () => 0,
+        sendHeartbeat: async () => {
+          sendCount++;
+          return { ok: false, code: 'LEASE_LOST', message: 'Mất quyền chỉnh sửa' };
+        },
+        onConflict: (code?: string) => {
+          conflictCode = code;
+        },
+      });
+      scheduler.start();
+
+      await clock.advance(30_000);
+      assert.equal(sendCount, 1);
+      assert.equal(conflictCode, 'LEASE_LOST');
+
+      // No further retries or heartbeats scheduled
+      await clock.advance(100_000);
+      assert.equal(sendCount, 1);
+
+      scheduler.dispose();
+    });
+
+    it('triggers immediate heartbeat on tab visibility change', async () => {
+      const clock = createMockTimer();
+      let count = 0;
+      let isVisible = true;
+      const scheduler = new TemplateDraftHeartbeatScheduler({
+        timer: clock.timer,
+        randomJitter: () => 0,
+        isDocumentVisible: () => isVisible,
+        sendHeartbeat: async () => {
+          count++;
+          return { ok: true };
+        },
+        onConflict: () => { },
+      });
+      scheduler.start();
+
+      await clock.advance(10_000);
+      assert.equal(count, 0);
+
+      await scheduler.triggerImmediate();
+      assert.equal(count, 1);
+
+      // Next heartbeat scheduled 30s after the immediate one
+      await clock.advance(29_999);
+      assert.equal(count, 1);
+      await clock.advance(1);
+      assert.equal(count, 2);
+
+      // When hidden, immediate trigger does not send
+      isVisible = false;
+      await scheduler.triggerImmediate();
+      assert.equal(count, 2);
+
+      scheduler.dispose();
     });
   });
 });

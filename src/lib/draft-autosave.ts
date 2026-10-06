@@ -89,7 +89,7 @@ export class DraftAutosaveQueue<TDocument> {
   private reqCounter = 0;
   private flushWaiters: FlushWaiter[] = [];
   private lastErrorDetails?: { code?: string; message?: string };
-
+  private documentGeneration = 0;
   constructor(options: DraftAutosaveOptions<TDocument>) {
     this.revision = options.initialRevision;
     this.debounceMs = options.debounceMs ?? 800;
@@ -169,6 +169,7 @@ export class DraftAutosaveQueue<TDocument> {
       return;
     }
 
+    this.documentGeneration++;
     this.latestDocument = document;
     this.pendingDocument = document;
     const currentTime = this.now();
@@ -315,12 +316,12 @@ export class DraftAutosaveQueue<TDocument> {
           }
 
           const docToSave = this.pendingDocument;
+          const generationToSave = this.documentGeneration;
           currentDocToSave = docToSave;
           this.pendingDocument = null;
           this.firstDirtyAt = null;
           this.inFlightDocument = docToSave;
           this.setStatus('saving');
-
           const expectedRev = this.revision;
           const reqId = this.generateRequestId
             ? this.generateRequestId(expectedRev)
@@ -333,7 +334,7 @@ export class DraftAutosaveQueue<TDocument> {
           });
 
           if (res.ok) {
-            this.revision = res.value.revision;
+            this.revision = Math.max(this.revision, res.value.revision);
             this.lastSavedDocument = docToSave;
             currentDocToSave = null;
             if ((this.status as SaveStatus) !== 'stopped' && (this.status as SaveStatus) !== 'conflict') {
@@ -345,7 +346,7 @@ export class DraftAutosaveQueue<TDocument> {
                 this.pendingDocument = null;
                 this.firstDirtyAt = null;
               }
-              if (this.pendingDocument === null) {
+              if (this.pendingDocument === null && generationToSave >= this.documentGeneration) {
                 this.setStatus('saved', { revision: this.revision });
                 this.drainFlushWaiters();
               }

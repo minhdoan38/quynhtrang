@@ -171,4 +171,37 @@ describe('Admin commercial editor contracts', () => {
       assert.ok(elements(content).some((item) => item.props?.role === 'alert' && item.props.children === failure.message));
     }
   });
+  it('displays explicit conflict banner on REVISION_CONFLICT and allows refetch', async () => {
+    let reloaded = false;
+    const conflictResult = { ok: false, code: 'REVISION_CONFLICT', status: 409, message: 'Cấu hình đã thay đổi ở tab khác. Tải lại trước khi chỉnh sửa tiếp.' };
+    const draft = { id: 'd', productId: 'card', revision: 1, payload: { currency: 'VND', paymentPolicy: { kind: 'full_payment' }, variantRules: [{ variantId: 'horizontal', minimumQuantity: 1, quantityStep: 1, maximumQuantity: null, tiers: [{ minimumQuantity: 1, unitPrice: 100 }] }] } };
+    const product = { id: 'card', name: 'Thiệp', revision: 1, status: 'draft', variants: [{ id: 'horizontal', name: 'Ngang', status: 'active' }], metadata: {} };
+    const editor = componentHarness('../components/admin/commercial-config-editor.tsx', 'CommercialConfigEditor', {
+      '@/lib/admin/product-catalog-ui.ts': { commercialDraftConfig },
+      '@/lib/domain/commercial-config.ts': { validateCommercialConfig: () => [] },
+      '@/app/admin/products/actions.ts': {
+        saveCommercialDraftAction: async () => conflictResult,
+        loadCommercialDraftAction: async () => {
+          reloaded = true;
+          return { ok: true, value: { ...draft, revision: 2 } };
+        },
+      },
+    });
+    const props = { product, initialDraft: draft, editable: true, onPublished() { } };
+    let tree = editor.render(props);
+    const saveButton = elements(tree).find((item) => item.type === 'Button' && item.props?.children === 'Lưu bản nháp');
+    assert.ok(saveButton);
+    await saveButton.props.onClick();
+    await nextTurn();
+
+    tree = editor.render(props);
+    const conflictBanner = elements(tree).find((item) => item.props?.role === 'alert' && elements(item).some((el) => el.props?.children === 'Thiết kế đã được cập nhật ở nơi khác.'));
+    assert.ok(conflictBanner, 'Must display explicit conflict banner on REVISION_CONFLICT');
+
+    const refetchButton = elements(conflictBanner).find((item) => item.type === 'Button' && item.props?.children === 'Tải phiên bản mới');
+    assert.ok(refetchButton, 'Must offer Tải phiên bản mới button');
+    await refetchButton.props.onClick();
+    await nextTurn();
+    assert.equal(reloaded, true, 'Refetch button must trigger reload of latest draft');
+  });
 });

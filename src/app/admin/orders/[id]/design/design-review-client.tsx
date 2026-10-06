@@ -77,7 +77,14 @@ export function DesignReviewClient({
   const [discardDialogOpen, setDiscardDialogOpen] = useState(false);
   const [takeoverDialogOpen, setTakeoverDialogOpen] = useState(false);
   const [conflictDialogOpen, setConflictDialogOpen] = useState(false);
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
 
+  const showToast = (message: string) => {
+    setToastMessage(message);
+    if (typeof alert === 'function') {
+      alert(message);
+    }
+  };
   // Session ID per tab
   const [sessionId] = useState(() => {
     if (typeof window !== 'undefined') {
@@ -254,38 +261,55 @@ export function DesignReviewClient({
   if (mode === 'review-changes' && currentDraft && assessment) {
     const baseVersion = versions.find((v) => v.versionNumber === selectedVersionNumber) || versions[0];
     return (
-      <DesignCompare
-        orderId={orderId}
-        publicOrderCode={publicOrderCode}
-        baseVersionNumber={baseVersion.versionNumber}
-        baseDocument={selectedDocument}
-        draftDocument={currentDraft.document}
-        draftReason={currentDraft.reason}
-        assessment={assessment}
-        onBackToEdit={() => setMode('staff-edit')}
-        isApproving={isPending}
-        onApprove={async (acknowledgedWarningIds) => {
-          startTransition(async () => {
-            const prodVer = versions.find((v) => v.isProduction) || versions[0];
-            const res = await approveDraftAction({
-              draftId: currentDraft.id,
-              expectedRevision: draftSession.currentRevision,
-              expectedProductionVersionId: currentDraft.expectedProductionDesignVersionId || prodVer.id,
-              sessionId,
-              epoch: currentDraft.lease?.epoch || 1,
-              assessmentId: assessment.id,
-              acknowledgedWarningIds,
-              requestId: `approve-${Date.now()}-${crypto.randomUUID()}`,
-            });
-
-            if (res.ok) {
-              router.push(`/admin/orders/${orderId}`);
-            } else {
-              alert(`Duyệt thất bại: ${res.message}`);
+      <>
+        <DesignCompare
+          orderId={orderId}
+          publicOrderCode={publicOrderCode}
+          baseVersionNumber={baseVersion.versionNumber}
+          baseDocument={selectedDocument}
+          draftDocument={currentDraft.document}
+          draftReason={currentDraft.reason}
+          assessment={assessment}
+          onBackToEdit={() => setMode('staff-edit')}
+          isApproving={isPending}
+          onApprove={async (acknowledgedWarningIds) => {
+            try {
+              await draftSession.flushSave();
+            } catch {
+              showToast('Chưa thể lưu bản nháp, vui lòng thử lại');
+              return;
             }
-          });
-        }}
-      />
+            startTransition(async () => {
+              const prodVer = versions.find((v) => v.isProduction) || versions[0];
+              const res = await approveDraftAction({
+                draftId: currentDraft.id,
+                expectedRevision: draftSession.currentRevision,
+                expectedProductionVersionId: currentDraft.expectedProductionDesignVersionId || prodVer.id,
+                sessionId,
+                epoch: currentDraft.lease?.epoch || 1,
+                assessmentId: assessment.id,
+                acknowledgedWarningIds,
+                requestId: `approve-${Date.now()}-${crypto.randomUUID()}`,
+              });
+
+              if (res.ok) {
+                router.push(`/admin/orders/${orderId}`);
+              } else {
+                alert(`Duyệt thất bại: ${res.message}`);
+              }
+            });
+          }}
+        />
+        <ConflictDialog
+          open={conflictDialogOpen || draftSession.saveStatus === 'conflict'}
+          message={draftSession.conflictDetails?.message || 'Thiết kế đã được cập nhật ở nơi khác.'}
+          recoveryJson={currentDraft?.document ? JSON.stringify(currentDraft.document) : null}
+          onReload={() => {
+            setConflictDialogOpen(false);
+            router.refresh();
+          }}
+        />
+      </>
     );
   }
 
@@ -313,8 +337,12 @@ export function DesignReviewClient({
             <button
               type="button"
               onClick={async () => {
-                await draftSession.flushSave();
-                setMode('review');
+                try {
+                  await draftSession.flushSave();
+                  setMode('review');
+                } catch {
+                  showToast('Chưa thể lưu bản nháp, vui lòng thử lại');
+                }
               }}
               className="px-2.5 py-1 rounded bg-neutral-700 hover:bg-neutral-600 text-white font-medium transition-colors"
             >
@@ -341,7 +369,12 @@ export function DesignReviewClient({
                 setMode('review');
               },
               onComplete: async () => {
-                await draftSession.flushSave();
+                try {
+                  await draftSession.flushSave();
+                } catch {
+                  showToast('Chưa thể lưu bản nháp, vui lòng thử lại');
+                  return;
+                }
                 const prodVersion = versions.find((v) => v.isProduction) || versions[0];
                 const preflightRes = await runDraftPreflightAction({
                   draftId: currentDraft.id,
@@ -370,6 +403,15 @@ export function DesignReviewClient({
             }}
           />
         </div>
+        <ConflictDialog
+          open={conflictDialogOpen || draftSession.saveStatus === 'conflict'}
+          message={draftSession.conflictDetails?.message || 'Thiết kế đã được cập nhật ở nơi khác.'}
+          recoveryJson={currentDraft?.document ? JSON.stringify(currentDraft.document) : null}
+          onReload={() => {
+            setConflictDialogOpen(false);
+            router.refresh();
+          }}
+        />
       </div>
     );
   }
@@ -425,12 +467,28 @@ export function DesignReviewClient({
 
       <ConflictDialog
         open={conflictDialogOpen || draftSession.saveStatus === 'conflict'}
-        message={draftSession.conflictDetails?.message}
+        message={draftSession.conflictDetails?.message || 'Thiết kế đã được cập nhật ở nơi khác.'}
+        recoveryJson={currentDraft?.document ? JSON.stringify(currentDraft.document) : null}
         onReload={() => {
           setConflictDialogOpen(false);
           router.refresh();
         }}
       />
+      {toastMessage && (
+        <div
+          role="alert"
+          className="fixed bottom-4 right-4 z-50 flex items-center gap-3 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800 shadow-lg"
+        >
+          <span>{toastMessage}</span>
+          <button
+            type="button"
+            onClick={() => setToastMessage(null)}
+            className="text-xs font-semibold underline"
+          >
+            Đóng
+          </button>
+        </div>
+      )}
     </>
   );
 }

@@ -229,7 +229,7 @@ interface ConflictDialogProps {
 export function ConflictDialog({
   open,
   title = 'Xung đột phiên làm việc',
-  message = 'Bản nháp đã có phiên bản chỉnh sửa mới hơn hoặc quyền chỉnh sửa đã bị chuyển.',
+  message = 'Thiết kế đã được cập nhật ở nơi khác.',
   recoveryJson = null,
   onReload,
 }: ConflictDialogProps) {
@@ -280,7 +280,7 @@ export function ConflictDialog({
             onClick={onReload}
             className="h-11 px-5 bg-[#315F86] hover:bg-[#244A69] text-white text-xs font-semibold"
           >
-            Tải lại bản mới nhất
+            Tải phiên bản mới
           </Button>
         </DialogFooter>
       </DialogContent>

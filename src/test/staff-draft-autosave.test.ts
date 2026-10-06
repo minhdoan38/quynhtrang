@@ -173,6 +173,103 @@ test('StaffDraftSaveQueue halts on REVISION_CONFLICT without discarding local st
   queue.dispose();
 });
 
+test('StaffDraftSaveQueue flush propagates revision conflict and keeps pending draft', async () => {
+  const clock = createMockTimer();
+  const doc = { text: 'Unsynced conflict edit' } as unknown as DesignState;
+  const queue = new StaffDraftSaveQueue({
+    draftId: 'draft-1',
+    initialRevision: 1,
+    expectedProductionVersionId: 'ver-1',
+    sessionId: 'session-1',
+    epoch: 1,
+    now: clock.now,
+    timer: clock.timer,
+    saveTransport: async () => ({
+      ok: false,
+      code: 'REVISION_CONFLICT',
+      message: 'Thiết kế đã được cập nhật ở nơi khác.',
+    }),
+  });
+
+  queue.enqueue(doc);
+  await assert.rejects(queue.flush(), (error: unknown) => {
+    assert.ok(error && typeof error === 'object' && 'code' in error);
+    assert.equal(error.code, 'REVISION_CONFLICT');
+    return true;
+  });
+  assert.equal(queue.getStatus(), 'conflict');
+  assert.deepEqual(queue.getLatestDocument(), doc);
+
+  queue.dispose();
+});
+
+test('StaffDraftSaveQueue flush propagates network failure and keeps draft dirty for retry', async () => {
+  const clock = createMockTimer();
+  const doc = { text: 'Unsynced network edit' } as unknown as DesignState;
+  const queue = new StaffDraftSaveQueue({
+    draftId: 'draft-1',
+    initialRevision: 1,
+    expectedProductionVersionId: 'ver-1',
+    sessionId: 'session-1',
+    epoch: 1,
+    now: clock.now,
+    timer: clock.timer,
+    saveTransport: async () => {
+      throw new Error('Connection lost');
+    },
+  });
+
+  queue.enqueue(doc);
+  await assert.rejects(queue.flush(), (error: unknown) => {
+    assert.ok(error && typeof error === 'object' && 'code' in error);
+    assert.equal(error.code, 'NETWORK_ERROR');
+    return true;
+  });
+  assert.equal(queue.getStatus(), 'error');
+  assert.deepEqual(queue.getLatestDocument(), doc);
+
+  queue.dispose();
+});
+
+test('StaffDraftSaveQueue does not acknowledge an older response as the latest local snapshot', async () => {
+  const clock = createMockTimer();
+  const statuses: string[] = [];
+  const resolvers: Array<(res: RevisionResult<{ revision: number; updatedAt: string; requestId: string }>) => void> = [];
+  const requests: SaveStaffDraftInput[] = [];
+  const queue = new StaffDraftSaveQueue({
+    draftId: 'draft-1',
+    initialRevision: 1,
+    expectedProductionVersionId: 'ver-1',
+    sessionId: 'session-1',
+    epoch: 1,
+    now: clock.now,
+    timer: clock.timer,
+    onStatusChange: (status) => statuses.push(status),
+    saveTransport: (input) => {
+      requests.push(input);
+      const { promise, resolve } = Promise.withResolvers<RevisionResult<{ revision: number; updatedAt: string; requestId: string }>>();
+      resolvers.push(resolve);
+      return promise;
+    },
+  });
+
+  queue.enqueue({ text: 'First' } as unknown as DesignState);
+  await clock.advance(850);
+  queue.enqueue({ text: 'Newer' } as unknown as DesignState);
+  resolvers[0]({ ok: true, value: { revision: 2, updatedAt: '2026-10-06T00:00:00Z', requestId: requests[0].requestId } });
+  await Promise.resolve();
+
+  assert.equal(queue.getStatus(), 'saving');
+  assert.equal(statuses.includes('saved'), false);
+  assert.deepEqual(requests[1].document, { text: 'Newer' });
+
+  resolvers[1]({ ok: true, value: { revision: 3, updatedAt: '2026-10-06T00:00:01Z', requestId: requests[1].requestId } });
+  await Promise.resolve();
+  assert.equal(queue.getStatus(), 'saved');
+
+  queue.dispose();
+});
+
 test('StaffDraftSaveQueue ignores semantically identical enqueues when saved', async () => {
   const clock = createMockTimer();
   const savedRequests: SaveStaffDraftInput[] = [];

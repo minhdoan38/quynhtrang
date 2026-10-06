@@ -11,6 +11,7 @@ import { validateCommercialConfig, type CommercialConfigVersion, type Commercial
 import type { AdminProduct } from '@/lib/repositories/admin-catalog-repository.ts';
 import { commercialDraftConfig } from '@/lib/admin/product-catalog-ui.ts';
 import { loadCommercialDraftAction, saveCommercialDraftAction, publishCommercialConfigAction } from '@/app/admin/products/actions.ts';
+export type CommercialEditorSaveStatus = 'idle' | 'saving' | 'saved' | 'unsynced' | 'conflict' | 'error';
 
 export function CommercialConfigEditor({ product, initialDraft, editable, onPublished }: { product: AdminProduct; initialDraft: CommercialDraft | null; editable: boolean; onPublished: () => void }) {
   const [draft, setDraft] = useState(initialDraft);
@@ -20,10 +21,11 @@ export function CommercialConfigEditor({ product, initialDraft, editable, onPubl
   const [message, setMessage] = useState('');
   const [publishOpen, setPublishOpen] = useState(false);
   const [publishError, setPublishError] = useState<string | null>(null);
+  const [status, setStatus] = useState<CommercialEditorSaveStatus>(initialDraft ? 'saved' : 'idle');
   const activeIds = product.variants.filter((variant) => variant.status === 'active').map((variant) => variant.id);
   const invalid = config ? validateCommercialConfig(config, activeIds).length > 0 : true;
-  const locked = !editable || !draft || pending;
-  function change(next: CommercialConfigVersion) { setConfig(next); setDirty(true); setMessage(''); }
+  const locked = !editable || !draft || pending || status === 'conflict';
+  function change(next: CommercialConfigVersion) { setConfig(next); setDirty(true); setStatus('unsynced'); setMessage(''); }
   function updateRule(index: number, rule: CommercialVariantRule) {
     if (config) change({ ...config, variantRules: config.variantRules.map((current, i) => i === index ? rule : current) });
   }
@@ -31,37 +33,70 @@ export function CommercialConfigEditor({ product, initialDraft, editable, onPubl
     setPending(true);
     try {
       const result = await loadCommercialDraftAction(String(product.id));
-      if (!result.ok) { setMessage(result.message); return; }
-      setDraft(result.value); setConfig(commercialDraftConfig(result.value)); setDirty(false); setMessage('Đã mở bản nháp. Giá đang bán chưa thay đổi.');
-    } catch { setMessage('Chưa thể tải cấu hình sản phẩm.'); }
+      if (!result.ok) { setMessage(result.message); setStatus(result.code === 'REVISION_CONFLICT' ? 'conflict' : 'error'); return; }
+      setDraft(result.value); setConfig(commercialDraftConfig(result.value)); setDirty(false); setStatus('saved'); setMessage('Đã mở bản nháp. Giá đang bán chưa thay đổi.');
+    } catch { setMessage('Chưa thể tải cấu hình sản phẩm.'); setStatus('error'); }
     finally { setPending(false); }
   }
   async function save() {
     if (!draft || !config) return;
     setPending(true);
+    setStatus('saving');
     try {
       const result = await saveCommercialDraftAction({ productId: String(product.id), draftId: draft.id, expectedRevision: draft.revision, payload: config, requestId: crypto.randomUUID() });
-      if (!result.ok) { setMessage(result.message); return; }
-      setDraft(result.value); setConfig(commercialDraftConfig(result.value)); setDirty(false); setMessage('Đã lưu bản nháp. Giá đang bán chưa thay đổi.');
-    } catch { setMessage('Chưa thể áp dụng giá mới.'); }
+      if (!result.ok) {
+        setMessage(result.message);
+        setStatus(result.code === 'REVISION_CONFLICT' ? 'conflict' : 'error');
+        return;
+      }
+      setDraft(result.value); setConfig(commercialDraftConfig(result.value)); setDirty(false); setStatus('saved'); setMessage('Đã lưu bản nháp. Giá đang bán chưa thay đổi.');
+    } catch (err) {
+      const isConflict = err instanceof Error && err.message.includes('REVISION_CONFLICT');
+      setStatus(isConflict ? 'conflict' : 'error');
+      setMessage(isConflict ? 'Cấu hình đã thay đổi ở tab khác. Tải lại trước khi chỉnh sửa tiếp.' : 'Chưa thể áp dụng giá mới.');
+    }
     finally { setPending(false); }
   }
   async function publish() {
     if (!draft || dirty) return;
     setPending(true);
+    setStatus('saving');
     setPublishError(null);
     try {
       const result = await publishCommercialConfigAction({ productId: String(product.id), draftId: draft.id, expectedDraftRevision: draft.revision, expectedProductRevision: product.revision, requestId: crypto.randomUUID() });
-      if (!result.ok) { setPublishError(result.message); setMessage(result.message); return; }
-      setDraft(null); setConfig(result.value); setPublishOpen(false); setPublishError(null); setMessage('Đã xuất bản cấu hình. Orders hiện có không thay đổi.'); onPublished();
-    } catch { const text = 'Chưa thể áp dụng giá mới.'; setPublishError(text); setMessage(text); }
+      if (!result.ok) {
+        setPublishError(result.message);
+        setMessage(result.message);
+        setStatus(result.code === 'REVISION_CONFLICT' ? 'conflict' : 'error');
+        return;
+      }
+      setDraft(null); setConfig(result.value); setPublishOpen(false); setPublishError(null); setStatus('saved'); setMessage('Đã xuất bản cấu hình. Orders hiện có không thay đổi.'); onPublished();
+    } catch (err) {
+      const text = 'Chưa thể áp dụng giá mới.';
+      const isConflict = err instanceof Error && err.message.includes('REVISION_CONFLICT');
+      setStatus(isConflict ? 'conflict' : 'error');
+      setPublishError(text); setMessage(text);
+    }
     finally { setPending(false); }
   }
   return <div className="flex flex-col gap-6" aria-busy={pending}>
     <div className="flex flex-wrap items-center gap-3">
-      <Badge variant={draft ? 'honey' : 'sage'}>{draft ? dirty ? 'Bản nháp · chưa lưu' : `Bản nháp đã lưu · revision ${draft.revision}` : config ? `Đã xuất bản · phiên bản ${config.versionNumber}` : 'Chưa xuất bản'}</Badge>
+      <Badge variant={status === 'conflict' ? 'destructive' : draft ? (status === 'unsynced' || dirty ? 'honey' : 'sage') : 'sage'}>
+        {status === 'conflict' ? 'Xung đột phiên bản' : draft ? dirty || status === 'unsynced' ? 'Bản nháp · chưa lưu' : `Bản nháp đã lưu · revision ${draft.revision}` : config ? `Đã xuất bản · phiên bản ${config.versionNumber}` : 'Chưa xuất bản'}
+      </Badge>
       {editable && !draft && <Button className="min-h-11" disabled={pending} onClick={openDraft}>Mở bản nháp giá</Button>}
     </div>
+    {status === 'conflict' && (
+      <div role="alert" className="flex items-center justify-between gap-4 rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-800">
+        <div>
+          <p className="font-semibold">Thiết kế đã được cập nhật ở nơi khác.</p>
+          <p className="text-xs text-red-700 mt-0.5">Cấu hình đã thay đổi ở nơi khác. Vui lòng tải lại trước khi tiếp tục chỉnh sửa.</p>
+        </div>
+        <Button variant="outline" className="min-h-11 border-red-300 bg-white hover:bg-red-50 text-red-900 shrink-0" onClick={openDraft}>
+          Tải phiên bản mới
+        </Button>
+      </div>
+    )}
     {message && <p role="status" className="text-sm">{message}</p>}
     {config ? <>
       <section id="pricing" className="flex flex-col gap-4">
