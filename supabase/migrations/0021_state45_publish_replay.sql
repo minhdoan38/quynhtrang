@@ -123,7 +123,7 @@ $$;
 revoke all on function public.publish_product_commercial_config(text, uuid, bigint, bigint, text) from public, anon;
 grant execute on function public.publish_product_commercial_config(text, uuid, bigint, bigint, text) to authenticated;
 
-drop function public.confirm_order_payment(uuid, text, text, uuid);
+drop function if exists public.confirm_order_payment(uuid, text, text, uuid);
 create function public.confirm_order_payment(
   p_order_id uuid, p_expected_state text, p_purpose text, p_payment_id uuid, p_request_id text
 ) returns jsonb language plpgsql security definer set search_path = '' as $$
@@ -187,6 +187,30 @@ end;
 $$;
 revoke all on function public.confirm_order_payment(uuid, text, text, uuid, text) from public, anon, authenticated;
 grant execute on function public.confirm_order_payment(uuid, text, text, uuid, text) to authenticated;
+
+create or replace function public.confirm_order_payment(
+  p_order_id uuid,
+  p_expected_state text,
+  p_purpose text,
+  p_payment_id uuid
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = ''
+as $$
+begin
+  return public.confirm_order_payment(
+    p_order_id,
+    p_expected_state,
+    p_purpose,
+    p_payment_id,
+    concat('legacy-', p_order_id::text, '-', clock_timestamp()::text)
+  );
+end;
+$$;
+revoke all on function public.confirm_order_payment(uuid, text, text, uuid) from public, anon, authenticated;
+grant execute on function public.confirm_order_payment(uuid, text, text, uuid) to authenticated;
 
 
 drop function public.hold_order(uuid, text);

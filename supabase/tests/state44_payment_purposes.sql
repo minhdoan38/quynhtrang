@@ -253,6 +253,108 @@ begin
   if v_event_count <> 1 or (v_last_event_payload->>'purpose') <> 'full_order_payment' or (v_last_event_payload->>'amount')::numeric <> 300000 then
     raise exception 'Assertion failed: Full payment event mismatch: count %, payload %', v_event_count, v_last_event_payload;
   end if;
+
+  -- 9. Test replay behavior with explicit p_request_id
+  declare
+    v_replay_order_id uuid := 'e0000000-0000-4000-8000-000000000095'::uuid;
+    v_replay_payment_id uuid := 'e0000000-0000-4000-8000-000000000096'::uuid;
+    v_initial_res jsonb;
+    v_replay_res jsonb;
+  begin
+    insert into public.orders (
+      id,
+      public_order_code,
+      quantity,
+      unit_price,
+      subtotal,
+      total,
+      currency,
+      customer_full_name,
+      customer_phone,
+      customer_phone_normalized,
+      shipping_address,
+      payment_policy,
+      deposit_amount,
+      amount_due_now,
+      remaining_amount,
+      payment_status,
+      design_status,
+      fulfillment_status
+    )
+    values (
+      v_replay_order_id,
+      'QT-TEST-REPLAY-9',
+      1,
+      300000,
+      300000,
+      300000,
+      'VND',
+      'Khách Hàng Replay',
+      '0903333333',
+      '0903333333',
+      '789 Đường 3',
+      '{"kind":"full_payment"}'::jsonb,
+      null,
+      300000,
+      0,
+      'payment_reported',
+      'awaiting_review',
+      'unprocessed'
+    );
+
+    insert into public.order_payments (
+      id,
+      order_id,
+      provider,
+      amount,
+      currency,
+      reference,
+      status,
+      purpose
+    )
+    values (
+      v_replay_payment_id,
+      v_replay_order_id,
+      'vietqr-demo',
+      300000,
+      'VND',
+      'QT-TEST-REPLAY-9',
+      'payment_reported',
+      'full_order_payment'
+    );
+
+    -- Initial confirmation with explicit request ID
+    v_initial_res := public.confirm_order_payment(
+      v_replay_order_id,
+      'payment_reported',
+      'full_order_payment',
+      v_replay_payment_id,
+      'test-replay-req-1'
+    );
+    if (v_initial_res->>'code') <> 'confirmed' then
+      raise exception 'Assertion failed: Initial confirmation with request ID must succeed, got %', v_initial_res;
+    end if;
+
+    -- Replay confirmation with identical request ID returns exact original result without duplicate effects
+    v_replay_res := public.confirm_order_payment(
+      v_replay_order_id,
+      'payment_reported',
+      'full_order_payment',
+      v_replay_payment_id,
+      'test-replay-req-1'
+    );
+    if v_replay_res <> v_initial_res then
+      raise exception 'Assertion failed: Replay confirmation must return exact original result, got % instead of %', v_replay_res, v_initial_res;
+    end if;
+
+    select count(*) into v_event_count
+    from public.order_events
+    where order_id = v_replay_order_id and event_type = 'payment_confirmed';
+
+    if v_event_count <> 1 then
+      raise exception 'Assertion failed: Replay confirmation must not append events, got %', v_event_count;
+    end if;
+  end;
 end;
 $$;
 

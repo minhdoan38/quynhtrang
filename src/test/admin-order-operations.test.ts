@@ -1,5 +1,7 @@
-import { describe, it } from 'node:test';
+import { describe, it, test } from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import {
   confirmOrderPayment,
   placeOrderHold,
@@ -258,4 +260,47 @@ describe('admin-order-operations service', () => {
       }
     });
   });
+});
+
+test('order detail retires cached hold mutation IDs after authoritative lifecycle completion', () => {
+  const source = readFileSync(
+    resolve(process.cwd(), 'src/app/admin/orders/[id]/order-detail-client.tsx'),
+    'utf8'
+  );
+
+  assert.match(source, /function retireHoldMutationIds\(\)/);
+  assert.match(source, /json\.detail\.activeHold[\s\S]*retireHoldMutationIds\(\)/);
+  assert.match(source, /handleReleaseHold[\s\S]*finally\s*\{[\s\S]*retireHoldMutationIds\(\)/);
+});
+
+test('migration 0021 preserves 4-argument confirm_order_payment overload forwarding with legacy request ID', () => {
+  const migration = readFileSync(
+    resolve(process.cwd(), 'supabase/migrations/0021_state45_publish_replay.sql'),
+    'utf8'
+  );
+
+  assert.match(
+    migration,
+    /create or replace function public\.confirm_order_payment\(\s*p_order_id uuid,\s*p_expected_state text,\s*p_purpose text,\s*p_payment_id uuid\s*\)[\s\S]*public\.confirm_order_payment\(\s*p_order_id,\s*p_expected_state,\s*p_purpose,\s*p_payment_id,\s*concat\('legacy-', p_order_id::text, '-', clock_timestamp\(\)::text\)\s*\);/
+  );
+  assert.match(
+    migration,
+    /grant execute on function public\.confirm_order_payment\(uuid, text, text, uuid\) to authenticated;/
+  );
+});
+
+test('state44_payment_purposes.sql asserts exact replay behavior when p_request_id is provided', () => {
+  const sqlTest = readFileSync(
+    resolve(process.cwd(), 'supabase/tests/state44_payment_purposes.sql'),
+    'utf8'
+  );
+
+  assert.match(
+    sqlTest,
+    /public\.confirm_order_payment\([\s\S]*'test-replay-req-1'[\s\S]*\)/
+  );
+  assert.match(
+    sqlTest,
+    /Assertion failed: Replay confirmation must return exact original result/
+  );
 });

@@ -30,6 +30,17 @@ import type {
 } from '@/lib/domain/design-revision.ts';
 import type { DesignState } from '@/lib/product-state.ts';
 
+
+const DEFINITIVE_CUSTOMER_APPROVAL_ERRORS = new Set<string>([
+  'PREFLIGHT_STALE',
+  'ACTIVE_DRAFT_EXISTS',
+  'ORDER_LOCKED',
+  'PRODUCTION_CHANGED',
+  'PREFLIGHT_BLOCKED',
+  'WARNINGS_UNACKNOWLEDGED',
+  'INVALID_DOCUMENT',
+  'REVISION_CONFLICT',
+]);
 export interface DesignReviewClientProps {
   orderId: string;
   publicOrderCode: string;
@@ -226,8 +237,14 @@ export function DesignReviewClient({
     startTransition(async () => {
       if (customerApproval.current) {
         const replay = await approveCustomerAsIsAction(customerApproval.current);
-        if (replay.ok) router.push(`/admin/orders/${orderId}`);
-        else alert(replay.message);
+        if (replay.ok) {
+          router.push(`/admin/orders/${orderId}`);
+        } else {
+          if (DEFINITIVE_CUSTOMER_APPROVAL_ERRORS.has(replay.code)) {
+            customerApproval.current = null;
+          }
+          alert(replay.message);
+        }
         return;
       }
       const preflightRes = await runCustomerPreflightAction({
@@ -259,6 +276,9 @@ export function DesignReviewClient({
       if (res.ok) {
         router.push(`/admin/orders/${orderId}`);
       } else {
+        if (DEFINITIVE_CUSTOMER_APPROVAL_ERRORS.has(res.code)) {
+          customerApproval.current = null;
+        }
         alert(res.message);
       }
     });

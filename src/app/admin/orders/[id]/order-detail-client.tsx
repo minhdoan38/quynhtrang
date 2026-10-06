@@ -64,6 +64,19 @@ export function OrderDetailClient({
     return id;
   }
 
+  function retireHoldMutationIds() {
+    for (const key of Array.from(mutationIds.current.keys())) {
+      try {
+        const parsed = JSON.parse(key);
+        if (Array.isArray(parsed) && (parsed[0] === 'hold' || parsed[0] === 'release')) {
+          mutationIds.current.delete(key);
+        }
+      } catch {
+        // Ignore non-JSON keys
+      }
+    }
+  }
+
   // Dialog states
   const [isPaymentDialogOpen, setIsPaymentDialogOpen] = useState(false);
   const [paymentError, setPaymentError] = useState<string | null>(null);
@@ -87,6 +100,9 @@ export function OrderDetailClient({
         const json = await res.json();
         if (json.detail) {
           setDetail(json.detail);
+          if (json.detail.activeHold) {
+            retireHoldMutationIds();
+          }
         }
       }
     } catch {
@@ -167,7 +183,7 @@ export function OrderDetailClient({
     });
 
     if (result.ok) {
-      mutationIds.current.delete(JSON.stringify(['hold', detail.id, trimmed]));
+      retireHoldMutationIds();
       await refetchDetail();
       setIsHoldDialogOpen(false);
       setHoldReason('');
@@ -176,6 +192,7 @@ export function OrderDetailClient({
     } else {
       setHoldError(result.message);
       if (result.code === 'state_conflict') {
+        retireHoldMutationIds();
         await refetchDetail();
       }
     }
@@ -187,21 +204,26 @@ export function OrderDetailClient({
     if (isSubmitting || !detail.activeHold) return;
     setIsSubmitting(true);
 
-    const result = await releaseHoldAction({
-      orderId: detail.id,
-      expectedHoldId: detail.activeHold.id,
-      requestId: requestId(JSON.stringify(['release', detail.id, detail.activeHold.id])),
-    });
+    try {
+      const result = await releaseHoldAction({
+        orderId: detail.id,
+        expectedHoldId: detail.activeHold.id,
+        requestId: requestId(JSON.stringify(['release', detail.id, detail.activeHold.id])),
+      });
 
-    if (result.ok) {
-      await refetchDetail();
-      setNoticeMessage('Đã bỏ tạm giữ đơn hàng.');
-      setTimeout(() => setNoticeMessage(null), 4000);
-    } else {
-      setNoticeMessage(result.message);
-      await refetchDetail();
+      if (result.ok) {
+        retireHoldMutationIds();
+        await refetchDetail();
+        setNoticeMessage('Đã bỏ tạm giữ đơn hàng.');
+        setTimeout(() => setNoticeMessage(null), 4000);
+      } else {
+        setNoticeMessage(result.message);
+        await refetchDetail();
+      }
+    } finally {
+      retireHoldMutationIds();
+      setIsSubmitting(false);
     }
-    setIsSubmitting(false);
   };
 
   const handleStartProduction = async () => {
@@ -282,6 +304,7 @@ export function OrderDetailClient({
           setIsPaymentDialogOpen(true);
         }}
         onHoldIntent={() => {
+          retireHoldMutationIds();
           setHoldReason('');
           setHoldError(null);
           setIsHoldDialogOpen(true);
