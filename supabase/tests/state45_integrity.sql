@@ -13,6 +13,8 @@ declare
   v_rule_id uuid;
   v_existing_template_draft uuid;
   v_existing_product_draft uuid;
+  v_other_project_id uuid;
+  v_other_design_version_id uuid;
   v_failed boolean;
 begin
   -- Active staff draft: second editing row for same order must fail.
@@ -98,9 +100,25 @@ begin
   end;
   if not v_failed then raise exception 'duplicate pricing tier minimum was not rejected'; end if;
 
+  -- Products.current_commercial_config_version_id cannot point to an invalid / nonexistent commercial version.
+  v_failed := false;
+  begin
+    update public.products
+    set current_commercial_config_version_id = gen_random_uuid()
+    where id = v_product_id;
+    raise exception 'invalid current commercial config version unexpectedly accepted';
+  exception when foreign_key_violation then
+    v_failed := true;
+  end;
+  if not v_failed then raise exception 'invalid current commercial config version was not rejected'; end if;
+
   -- Orders cannot point to a design version that does not exist.
-  select id into v_order_id from public.orders limit 1;
-  if v_order_id is null then raise exception 'Integrity fixture missing order'; end if;
+  select id, project_id into v_order_id, v_project_id
+  from public.orders
+  where project_id is not null
+  limit 1;
+  if v_order_id is null then raise exception 'Integrity fixture missing order with project_id'; end if;
+
   v_failed := false;
   begin
     update public.orders
@@ -111,6 +129,35 @@ begin
     v_failed := true;
   end;
   if not v_failed then raise exception 'nonexistent order design version was not rejected'; end if;
+
+  -- Cross-project FK rejection: update public.orders with mismatched project_id and production_design_version_id.
+  select p.id, dv.id into v_other_project_id, v_other_design_version_id
+  from public.projects p
+  join public.design_versions dv on dv.project_id = p.id
+  where p.id <> v_project_id
+  limit 1;
+
+  if v_other_project_id is null then
+    insert into public.projects (product_id, status)
+    values (v_product_id, 'editing')
+    returning id into v_other_project_id;
+
+    insert into public.design_versions (project_id, version_number, source, design_document)
+    values (v_other_project_id, 1, 'customizer', '{}'::jsonb)
+    returning id into v_other_design_version_id;
+  end if;
+
+  v_failed := false;
+  begin
+    update public.orders
+    set project_id = v_project_id,
+        production_design_version_id = v_other_design_version_id
+    where id = v_order_id;
+    raise exception 'cross-project order design version unexpectedly accepted';
+  exception when foreign_key_violation then
+    v_failed := true;
+  end;
+  if not v_failed then raise exception 'cross-project order design version was not rejected'; end if;
 end;
 $$;
 
