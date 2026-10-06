@@ -12,6 +12,10 @@ export class AuthorizationError extends Error {
   }
 }
 
+export function isTestStaffBypassAllowed(): boolean {
+  return process.env.NODE_ENV !== 'production' && process.env.ENABLE_TEST_STAFF_BYPASS === '1';
+}
+
 export interface StaffAuthOptions {
   supabaseClient?: SupabaseClient;
 }
@@ -57,26 +61,28 @@ export async function getOptionalStaff(
   _request?: Request,
   options?: StaffAuthOptions
 ): Promise<(StaffIdentity & { email?: string }) | null> {
-  if (process.env.SMOKE_TEST_STAFF_ROLE) {
-    const role = (process.env.SMOKE_TEST_STAFF_ROLE as StaffRole) || 'admin';
-    return {
-      userId: '43000000-0000-0000-0000-0000000000a1',
-      role,
-      email: `${role}@quynhtrang.test`,
-    };
-  }
-  try {
-    const cookieStore = await cookies();
-    const smokeRole = cookieStore.get('smoke_staff_role')?.value;
-    if (smokeRole === 'admin' || smokeRole === 'editor') {
+  if (isTestStaffBypassAllowed()) {
+    if (process.env.SMOKE_TEST_STAFF_ROLE) {
+      const role = (process.env.SMOKE_TEST_STAFF_ROLE as StaffRole) || 'admin';
       return {
         userId: '43000000-0000-0000-0000-0000000000a1',
-        role: smokeRole,
-        email: `${smokeRole}@quynhtrang.test`,
+        role,
+        email: `${role}@quynhtrang.test`,
       };
     }
-  } catch {
-    // outside Next.js request context
+    try {
+      const cookieStore = await cookies();
+      const smokeRole = cookieStore.get('smoke_staff_role')?.value;
+      if (smokeRole === 'admin' || smokeRole === 'editor') {
+        return {
+          userId: '43000000-0000-0000-0000-0000000000a1',
+          role: smokeRole,
+          email: `${smokeRole}@quynhtrang.test`,
+        };
+      }
+    } catch {
+      // outside Next.js request context
+    }
   }
   try {
     const supabase = options?.supabaseClient ?? (await createServerSupabaseClient());
@@ -92,32 +98,34 @@ export async function requireStaff(
   requiredRole?: StaffRole,
   options?: StaffAuthOptions
 ): Promise<StaffIdentity & { email?: string }> {
-  if (process.env.SMOKE_TEST_STAFF_ROLE) {
-    const role = (process.env.SMOKE_TEST_STAFF_ROLE as StaffRole) || 'admin';
-    if (requiredRole === 'admin' && role !== 'admin') {
-      throw new AuthorizationError('Yêu cầu quyền quản trị viên', 403);
-    }
-    return {
-      userId: '43000000-0000-0000-0000-0000000000a1',
-      role,
-      email: `${role}@quynhtrang.test`,
-    };
-  }
-  try {
-    const cookieStore = await cookies();
-    const smokeRole = cookieStore.get('smoke_staff_role')?.value;
-    if (smokeRole === 'admin' || smokeRole === 'editor') {
-      if (requiredRole === 'admin' && smokeRole !== 'admin') {
+  if (isTestStaffBypassAllowed()) {
+    if (process.env.SMOKE_TEST_STAFF_ROLE) {
+      const role = (process.env.SMOKE_TEST_STAFF_ROLE as StaffRole) || 'admin';
+      if (requiredRole === 'admin' && role !== 'admin') {
         throw new AuthorizationError('Yêu cầu quyền quản trị viên', 403);
       }
       return {
         userId: '43000000-0000-0000-0000-0000000000a1',
-        role: smokeRole,
-        email: `${smokeRole}@quynhtrang.test`,
+        role,
+        email: `${role}@quynhtrang.test`,
       };
     }
-  } catch (err) {
-    if (err instanceof AuthorizationError) throw err;
+    try {
+      const cookieStore = await cookies();
+      const smokeRole = cookieStore.get('smoke_staff_role')?.value;
+      if (smokeRole === 'admin' || smokeRole === 'editor') {
+        if (requiredRole === 'admin' && smokeRole !== 'admin') {
+          throw new AuthorizationError('Yêu cầu quyền quản trị viên', 403);
+        }
+        return {
+          userId: '43000000-0000-0000-0000-0000000000a1',
+          role: smokeRole,
+          email: `${smokeRole}@quynhtrang.test`,
+        };
+      }
+    } catch (err) {
+      if (err instanceof AuthorizationError) throw err;
+    }
   }
   let supabase: SupabaseClient;
   try {

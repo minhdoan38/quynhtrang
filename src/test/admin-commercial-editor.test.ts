@@ -75,8 +75,10 @@ describe('Admin commercial editor contracts', () => {
     if (!conflict.ok) assert.equal(conflict.status, 409);
   });
   it('every server mutation returns 403 for Editor without touching Supabase', async () => {
-    const previous = process.env.SMOKE_TEST_STAFF_ROLE;
+    const previousSmoke = process.env.SMOKE_TEST_STAFF_ROLE;
+    const previousBypass = process.env.ENABLE_TEST_STAFF_BYPASS;
     process.env.SMOKE_TEST_STAFF_ROLE = 'editor';
+    process.env.ENABLE_TEST_STAFF_BYPASS = '1';
     try {
       const input = { productId: 'card', expectedRevision: 1, variantId: 'horizontal' };
       const results = await Promise.all([
@@ -88,7 +90,10 @@ describe('Admin commercial editor contracts', () => {
         publishCommercialConfigAction({ productId: 'card', draftId: 'd1', expectedDraftRevision: 1, expectedProductRevision: 1, requestId: 'r' }),
       ]);
       for (const result of results) { assert.equal(result.ok, false); if (!result.ok) { assert.equal(result.code, 'FORBIDDEN'); assert.equal(result.status, 403); } }
-    } finally { if (previous === undefined) delete process.env.SMOKE_TEST_STAFF_ROLE; else process.env.SMOKE_TEST_STAFF_ROLE = previous; }
+    } finally {
+      if (previousSmoke === undefined) delete process.env.SMOKE_TEST_STAFF_ROLE; else process.env.SMOKE_TEST_STAFF_ROLE = previousSmoke;
+      if (previousBypass === undefined) delete process.env.ENABLE_TEST_STAFF_BYPASS; else process.env.ENABLE_TEST_STAFF_BYPASS = previousBypass;
+    }
   });
   it('keeps editor identity and dirty pricing/payment across unrelated product revision refresh', async () => {
     let product = { id: 'card', revision: 1, variants: [{ id: 'horizontal', revision: 1 }], currentConfig: null };

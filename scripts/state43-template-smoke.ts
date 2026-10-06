@@ -49,7 +49,7 @@ export async function runAdminSmoke(options: SmokeOptions = {}) {
   if (!isAlreadyRunning) {
     console.log(`[State43Smoke] No running server detected at ${baseUrl}. Starting Next.js dev server...`);
     serverProc = spawn('cmd.exe', ['/c', 'npx', 'next', 'dev', '-p', '3000'], {
-      env: { ...process.env, PORT: '3000', SMOKE_TEST_STAFF_ROLE: 'admin' },
+      env: { ...process.env, PORT: '3000', ENABLE_TEST_STAFF_BYPASS: '1', SMOKE_TEST_STAFF_ROLE: 'admin' },
       stdio: 'ignore',
     });
 

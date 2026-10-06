@@ -1,12 +1,48 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import type { SupabaseClient } from '@supabase/supabase-js';
+import { NextRequest } from 'next/server.js';
 
 import {
   AuthorizationError,
   getOptionalStaff,
+  isTestStaffBypassAllowed,
   requireStaff,
 } from '../lib/admin/authorization.ts';
+import { proxy } from '../proxy.ts';
+
+const SYNTHETIC_STAFF_ENV_KEYS = [
+  'NODE_ENV',
+  'ENABLE_TEST_STAFF_BYPASS',
+  'SMOKE_TEST_STAFF_ROLE',
+  'NEXT_PUBLIC_SUPABASE_URL',
+  'NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY',
+] as const;
+
+async function withSyntheticStaffEnv(
+  values: Partial<Record<(typeof SYNTHETIC_STAFF_ENV_KEYS)[number], string>>,
+  run: () => Promise<void>
+): Promise<void> {
+  const previous = Object.fromEntries(
+    SYNTHETIC_STAFF_ENV_KEYS.map((key) => [key, process.env[key]])
+  );
+  try {
+    const env = process.env as Record<string, string | undefined>;
+    for (const key of SYNTHETIC_STAFF_ENV_KEYS) {
+      const value = values[key];
+      if (value === undefined) delete env[key];
+      else env[key] = value;
+    }
+    await run();
+  } finally {
+    const env = process.env as Record<string, string | undefined>;
+    for (const key of SYNTHETIC_STAFF_ENV_KEYS) {
+      const value = previous[key];
+      if (value === undefined) delete env[key];
+      else env[key] = value;
+    }
+  }
+}
 
 interface MockSupabaseOptions {
   user?: { id: string; email?: string } | null;
@@ -48,6 +84,188 @@ function createMockSupabase(options: MockSupabaseOptions): SupabaseClient {
     },
   } as unknown as SupabaseClient;
 }
+
+describe('Synthetic staff bypass isolation', () => {
+  it('ignores synthetic environment role in production and requires real authentication', async () => {
+    await withSyntheticStaffEnv(
+      {
+        NODE_ENV: 'production',
+        ENABLE_TEST_STAFF_BYPASS: '1',
+        SMOKE_TEST_STAFF_ROLE: 'admin',
+      },
+      async () => {
+        const client = createMockSupabase({ user: null });
+        await assert.rejects(
+          () => requireStaff(undefined, undefined, { supabaseClient: client }),
+          (error: unknown) => {
+            assert(error instanceof AuthorizationError);
+            assert.equal(error.status, 401);
+            return true;
+          }
+        );
+      }
+    );
+  });
+
+  it('ignores smoke_staff_role cookie in production proxy routing', async () => {
+    await withSyntheticStaffEnv(
+      {
+        NODE_ENV: 'production',
+        ENABLE_TEST_STAFF_BYPASS: '1',
+        NEXT_PUBLIC_SUPABASE_URL: 'https://example.supabase.co',
+        NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: 'test-publishable-key',
+      },
+      async () => {
+        const request = new NextRequest('https://quynhtrang.vn/admin/orders', {
+          headers: { cookie: 'smoke_staff_role=admin' },
+        });
+        const response = await proxy(request);
+        assert.equal(response.status, 307);
+        assert.equal(response.headers.get('location'), 'https://quynhtrang.vn/admin/login?next=%2Fadmin%2Forders');
+      }
+    );
+  });
+
+  it('requires explicit opt-in before honoring synthetic staff role outside production', async () => {
+    await withSyntheticStaffEnv(
+      { NODE_ENV: 'test', SMOKE_TEST_STAFF_ROLE: 'admin' },
+      async () => {
+        const client = createMockSupabase({ user: null });
+        await assert.rejects(
+          () => requireStaff(undefined, undefined, { supabaseClient: client }),
+          (error: unknown) => {
+            assert(error instanceof AuthorizationError);
+            assert.equal(error.status, 401);
+            return true;
+          }
+        );
+      }
+    );
+  });
+
+  it('honors synthetic staff role when non-production test bypass is explicitly enabled', async () => {
+    await withSyntheticStaffEnv(
+      {
+        NODE_ENV: 'test',
+        ENABLE_TEST_STAFF_BYPASS: '1',
+        SMOKE_TEST_STAFF_ROLE: 'admin',
+      },
+      async () => {
+        const staff = await requireStaff(undefined, 'admin', {
+          supabaseClient: createMockSupabase({ user: null }),
+        });
+        assert.equal(staff.role, 'admin');
+        assert.equal(staff.email, 'admin@quynhtrang.test');
+      }
+    );
+  });
+
+  it('denies synthetic editor role for Admin-only operations', async () => {
+    await withSyntheticStaffEnv(
+      {
+        NODE_ENV: 'test',
+        ENABLE_TEST_STAFF_BYPASS: '1',
+        SMOKE_TEST_STAFF_ROLE: 'editor',
+      },
+      async () => {
+        await assert.rejects(
+          () => requireStaff(undefined, 'admin'),
+          (error: unknown) => {
+            assert(error instanceof AuthorizationError);
+            assert.equal(error.status, 403);
+            return true;
+          }
+        );
+      }
+    );
+  });
+
+  it('ignores synthetic environment role in getOptionalStaff in production', async () => {
+    await withSyntheticStaffEnv(
+      {
+        NODE_ENV: 'production',
+        ENABLE_TEST_STAFF_BYPASS: '1',
+        SMOKE_TEST_STAFF_ROLE: 'admin',
+      },
+      async () => {
+        const client = createMockSupabase({ user: null });
+        const staff = await getOptionalStaff(undefined, { supabaseClient: client });
+        assert.equal(staff, null);
+      }
+    );
+  });
+
+  it('isTestStaffBypassAllowed returns false in production regardless of flag', async () => {
+    await withSyntheticStaffEnv(
+      {
+        NODE_ENV: 'production',
+        ENABLE_TEST_STAFF_BYPASS: '1',
+      },
+      async () => {
+        assert.equal(isTestStaffBypassAllowed(), false);
+      }
+    );
+  });
+
+  it('isTestStaffBypassAllowed returns false in development when flag is absent', async () => {
+    await withSyntheticStaffEnv(
+      {
+        NODE_ENV: 'development',
+      },
+      async () => {
+        assert.equal(isTestStaffBypassAllowed(), false);
+      }
+    );
+  });
+
+  it('isTestStaffBypassAllowed returns true in non-production only when flag is 1', async () => {
+    await withSyntheticStaffEnv(
+      {
+        NODE_ENV: 'development',
+        ENABLE_TEST_STAFF_BYPASS: '1',
+      },
+      async () => {
+        assert.equal(isTestStaffBypassAllowed(), true);
+      }
+    );
+  });
+
+  it('ignores smoke_staff_role cookie in non-production proxy routing when flag is absent', async () => {
+    await withSyntheticStaffEnv(
+      {
+        NODE_ENV: 'development',
+        NEXT_PUBLIC_SUPABASE_URL: 'https://example.supabase.co',
+        NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: 'test-publishable-key',
+      },
+      async () => {
+        const request = new NextRequest('https://quynhtrang.vn/admin/orders', {
+          headers: { cookie: 'smoke_staff_role=admin' },
+        });
+        const response = await proxy(request);
+        assert.equal(response.status, 307);
+        assert.equal(response.headers.get('location'), 'https://quynhtrang.vn/admin/login?next=%2Fadmin%2Forders');
+      }
+    );
+  });
+
+  it('allows smoke_staff_role cookie in non-production proxy routing when bypass is enabled', async () => {
+    await withSyntheticStaffEnv(
+      {
+        NODE_ENV: 'development',
+        ENABLE_TEST_STAFF_BYPASS: '1',
+        NEXT_PUBLIC_SUPABASE_URL: 'https://example.supabase.co',
+        NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: 'test-publishable-key',
+      },
+      async () => {
+        const request = new NextRequest('https://quynhtrang.vn/admin/orders', {
+          headers: { cookie: 'smoke_staff_role=admin' },
+        });
+        const response = await proxy(request);
+        assert.equal(response.status, 200);
+      }
+    );
+  });
+});
 
 describe('Admin Authorization', () => {
   describe('getOptionalStaff', () => {

@@ -68,7 +68,9 @@ export async function proxy(request: NextRequest): Promise<NextResponse> {
     return supabaseResponse;
   }
 
-  if (process.env.SMOKE_TEST_STAFF_ROLE || request.cookies.get('smoke_staff_role')?.value) {
+  const isTestBypassAllowed =
+    process.env.NODE_ENV !== 'production' && process.env.ENABLE_TEST_STAFF_BYPASS === '1';
+  if (isTestBypassAllowed && (process.env.SMOKE_TEST_STAFF_ROLE || request.cookies.get('smoke_staff_role')?.value)) {
     return supabaseResponse;
   }
 

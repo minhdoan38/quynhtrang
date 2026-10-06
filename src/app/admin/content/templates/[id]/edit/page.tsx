@@ -1,5 +1,5 @@
 import { notFound } from 'next/navigation';
-import { requireStaff } from '@/lib/admin/authorization';
+import { isTestStaffBypassAllowed, requireStaff } from '@/lib/admin/authorization';
 import { createServerSupabaseClient } from '@/lib/supabase/server';
 import { TemplateRepository } from '@/lib/repositories/template-repository';
 import { TemplateManagementService } from '@/lib/services/template-management';
@@ -23,13 +23,13 @@ export default async function AdminTemplateEditPage({ params }: PageProps) {
     const service = new TemplateManagementService(repo);
     detail = await service.getTemplateDetail(id);
   } catch {
-    if (!process.env.SMOKE_TEST_STAFF_ROLE) {
+    if (!isTestStaffBypassAllowed() || !process.env.SMOKE_TEST_STAFF_ROLE) {
       notFound();
     }
   }
 
   if (!detail || !detail.template || !detail.draft) {
-    if (process.env.SMOKE_TEST_STAFF_ROLE) {
+    if (isTestStaffBypassAllowed() && process.env.SMOKE_TEST_STAFF_ROLE) {
       detail = {
         template: {
           id,
