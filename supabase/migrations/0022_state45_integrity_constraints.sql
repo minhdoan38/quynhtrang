@@ -54,7 +54,7 @@ begin
     where id = v_dup.id;
   end loop;
 
-  -- 2. Deduplicate template drafts: keep newest, reparent dependents, delete duplicate.
+  -- 2. Quarantine duplicate template drafts and reparent mutable assets.
   for v_dup in
     with ranked as (
       select
@@ -82,12 +82,6 @@ begin
     set draft_id = v_dup.keeper_id
     where draft_id = v_dup.id;
 
-    update public.template_validation_runs
-    set draft_id = v_dup.keeper_id
-    where draft_id = v_dup.id;
-
-    delete from public.template_drafts
-    where id = v_dup.id;
   end loop;
 
   -- 3. Deduplicate product commercial drafts: keep newest, delete duplicate.
