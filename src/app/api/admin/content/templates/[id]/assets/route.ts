@@ -40,6 +40,7 @@ export async function POST(
     let fileBuffer: Buffer | Uint8Array;
     let filename: string | undefined;
     let mimeType: string | undefined;
+    let fileRequestId: string | undefined;
 
     const contentType = request.headers.get('content-type') || '';
     if (contentType.includes('multipart/form-data')) {
@@ -52,14 +53,30 @@ export async function POST(
       if (files.length === 0) {
         throw new InvalidRouteInput('Missing file in form data');
       }
+      const requestIds = formData.getAll('requestIds').map((v) => (typeof v === 'string' ? v.trim() : '')).filter(Boolean);
+      const statuses = formData.getAll('statuses').map((v) => (typeof v === 'string' ? (v.trim() as TemplateAssetUploadStatus) : undefined));
+
       if (files.length > 1) {
         const items = await Promise.all(
-          files.map(async (f) => ({
-            requestId: randomUUID(),
-            bytes: Buffer.from(await f.arrayBuffer()),
-            filename: f.name,
-            mimeType: f.type,
-          })),
+          files.map(async (f, index) => {
+            const indexedId = formData.get(`requestId_${index}`);
+            const indexedStatus = formData.get(`status_${index}`);
+            const requestId = (typeof indexedId === 'string' && indexedId.trim())
+              || requestIds[index]
+              || (index === 0 && typeof formData.get('requestId') === 'string' && (formData.get('requestId') as string).trim())
+              || randomUUID();
+            const status = (typeof indexedStatus === 'string' && indexedStatus.trim())
+              ? (indexedStatus.trim() as TemplateAssetUploadStatus)
+              : statuses[index];
+
+            return {
+              requestId,
+              status,
+              bytes: Buffer.from(await f.arrayBuffer()),
+              filename: f.name,
+              mimeType: f.type,
+            };
+          }),
         );
         const results = await bulkUploadTemplateAssets(
           staff,
@@ -73,6 +90,11 @@ export async function POST(
       fileBuffer = Buffer.from(await singleFile.arrayBuffer());
       filename = singleFile.name;
       mimeType = singleFile.type;
+      const singleIndexedId = formData.get('requestId_0');
+      fileRequestId = (typeof singleIndexedId === 'string' && singleIndexedId.trim())
+        || requestIds[0]
+        || (typeof formData.get('requestId') === 'string' && (formData.get('requestId') as string).trim())
+        || undefined;
     } else if (contentType.includes('application/json')) {
       const body = await readJsonObject(request);
       if (Array.isArray(body.items) || Array.isArray(body.files)) {
@@ -102,12 +124,13 @@ export async function POST(
       }
       const cleanBase64 = rawData.replace(/^data:[^;]+;base64,/, '');
       fileBuffer = Buffer.from(cleanBase64, 'base64');
-      filename = typeof body.filename === 'string' ? body.filename : undefined;
       mimeType = typeof body.mimeType === 'string' ? body.mimeType : undefined;
+      fileRequestId = typeof body.requestId === 'string' && body.requestId.trim() ? body.requestId.trim() : undefined;
     } else {
       fileBuffer = Buffer.from(await request.arrayBuffer());
       filename = request.headers.get('x-file-name') || undefined;
       mimeType = request.headers.get('content-type') || undefined;
+      fileRequestId = request.headers.get('x-request-id') || undefined;
     }
     if (!fileBuffer || fileBuffer.byteLength === 0) {
       throw new InvalidRouteInput('Image data cannot be empty');
@@ -116,7 +139,7 @@ export async function POST(
     const uploaded = await uploadTemplateAsset(
       staff,
       { templateId: id, draftId: draft.id },
-      { bytes: fileBuffer, filename, mimeType },
+      { bytes: fileBuffer, filename, mimeType, requestId: fileRequestId },
       { repo },
     );
 

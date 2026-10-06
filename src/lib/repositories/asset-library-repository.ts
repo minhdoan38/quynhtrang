@@ -333,6 +333,15 @@ export class AssetLibraryRepository {
     if (!data) return null;
     return mapStickerRow(data as unknown as DatabaseStickerRow);
   }
+  async getStickersByStoragePath(_bucket: string, storagePath: string): Promise<StickerRecord[]> {
+    const { data, error } = await this.client
+      .from('sticker_assets')
+      .select('*')
+      .eq('storage_path', storagePath);
+    if (error) throw new Error(error.message);
+    return ((data ?? []) as unknown as DatabaseStickerRow[]).map(mapStickerRow);
+  }
+
 
   async listValidationRuns(kind: LibraryKind, assetId: string): Promise<ValidationReceipt[]> {
     const { data, error } = await this.client

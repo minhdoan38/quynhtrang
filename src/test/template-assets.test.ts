@@ -91,6 +91,8 @@ function createMockRepository() {
   const projects = new Map<string, SourceProjectDetail>();
   const versionAssets = new Set<string>(); // `${versionId}:${assetId}`
 
+  let nextAttachedAssetId: string | null = null;
+  let storageUploadCount = 0;
   const repo = {
     async getTemplate(id: string) {
       return templates.get(id) ?? null;
@@ -150,7 +152,7 @@ function createMockRepository() {
         return { ok: false, code: 'NOT_FOUND', message: 'Template not found' };
       }
       const asset: TemplateAssetRecord = {
-        id: input.storagePath.split('/')[1]?.split('.')[0] || 'mock-asset-id',
+        id: nextAttachedAssetId ?? (input.storagePath.split('/')[1]?.split('.')[0] || 'mock-asset-id'),
         templateId: input.templateId,
         draftId: input.draftId ?? null,
         storageBucket: input.storageBucket,
@@ -165,6 +167,7 @@ function createMockRepository() {
         createdAt: new Date().toISOString(),
         createdBy: actor,
       };
+      nextAttachedAssetId = null;
       assets.set(asset.id, asset);
       return { ok: true, value: asset };
     },
@@ -194,10 +197,14 @@ function createMockRepository() {
     async getAsset(assetId: string) {
       return assets.get(assetId) ?? null;
     },
+    async getAssetByStoragePath(bucket: string, path: string) {
+      return Array.from(assets.values()).find((asset) => asset.storageBucket === bucket && asset.storageKey === path) ?? null;
+    },
     async listAssetsForTemplate(templateId: string) {
       return Array.from(assets.values()).filter((a) => a.templateId === templateId);
     },
     async uploadStorageObject(bucket: string, path: string, bytes: Uint8Array) {
+      storageUploadCount += 1;
       storage.set(`${bucket}/${path}`, bytes);
     },
     async downloadStorageObject(bucket: string, path: string) {
@@ -250,6 +257,8 @@ function createMockRepository() {
     storage,
     projects,
     versionAssets,
+    setNextAttachedAssetId(id: string) { nextAttachedAssetId = id; },
+    get storageUploadCount() { return storageUploadCount; },
   };
 }
 
@@ -473,6 +482,34 @@ describe('State 43 Task 10: Template Assets, Safe Delivery, and Source Cloning',
       assert.equal(retryResults[0]?.ok, true);
       assert.equal(retryResults[1]?.status, 'uploaded');
       assert.equal(retryResults[1]?.ok, true);
+    });
+
+    it('verifies uploaded claims and reconciles retries by persisted storage identity', async () => {
+      const mock = createMockRepository();
+      const editor = createMockEditor();
+      await mock.repo.createTemplate(editor.userId, buildCreateRepoInput({ id: 'tmpl-retry', name: 'Retry' }));
+      const pngBytes = await createTestImage('png', 100, 100);
+      const persistedAssetId = '43000000-0000-4000-8000-000000000099';
+      mock.setNextAttachedAssetId(persistedAssetId);
+
+      const first = await bulkUploadTemplateAssets(
+        editor,
+        { templateId: 'tmpl-retry', draftId: 'draft-tmpl-retry' },
+        [{ requestId: 'stable-template-upload', bytes: pngBytes, status: 'uploaded' }],
+        { repo: mock.repo },
+      );
+      assert.equal(first[0]?.ok, true);
+      assert.equal(first[0]?.asset?.assetId, persistedAssetId);
+      assert.equal(mock.storageUploadCount, 1);
+
+      const retry = await uploadTemplateAsset(
+        editor,
+        { templateId: 'tmpl-retry', draftId: 'draft-tmpl-retry' },
+        { requestId: 'stable-template-upload', bytes: pngBytes },
+        { repo: mock.repo },
+      );
+      assert.equal(retry.assetId, persistedAssetId);
+      assert.equal(mock.storageUploadCount, 1);
     });
   });
 
@@ -841,6 +878,37 @@ describe('State 43 Task 10: Template Assets, Safe Delivery, and Source Cloning',
       assert.equal(json.ok, true);
       assert.ok(json.asset.assetId);
       assert.equal(json.asset.storageBucket, 'template-drafts');
+    });
+
+    it('preserves multipart request IDs across retries', async () => {
+      const mock = createMockRepository();
+      const editor = createMockEditor();
+      await mock.repo.createTemplate(editor.userId, buildCreateRepoInput({ id: 'route-tmpl-bulk', name: 'Bulk Route' }));
+      const pngBytes = await createTestImage('png', 32, 32);
+      const deps = { requireStaff: async () => editor, repo: mock.repo };
+
+      const send = async (indexed: boolean) => {
+        const form = new FormData();
+        form.append('files', new File([new Uint8Array(pngBytes)], 'one.png', { type: 'image/png' }));
+        form.append('files', new File([new Uint8Array(pngBytes)], 'two.png', { type: 'image/png' }));
+        if (indexed) {
+          form.append('requestId_0', 'multipart-one');
+          form.append('requestId_1', 'multipart-two');
+        } else {
+          form.append('requestIds', 'multipart-one');
+          form.append('requestIds', 'multipart-two');
+        }
+        return uploadAssetRoute(new Request('http://localhost:3000/api/admin/content/templates/route-tmpl-bulk/assets', {
+          method: 'POST', body: form, headers: { origin: 'http://localhost:3000' },
+        }), { params: Promise.resolve({ id: 'route-tmpl-bulk' }) }, deps);
+      };
+
+      assert.equal((await send(false)).status, 201);
+      assert.equal(mock.assets.size, 2);
+      assert.equal(mock.storageUploadCount, 2);
+      assert.equal((await send(true)).status, 201);
+      assert.equal(mock.assets.size, 2);
+      assert.equal(mock.storageUploadCount, 2);
     });
 
     it('GET /api/admin/content/templates/[id]/assets/[assetId] serves draft asset to staff', async () => {

@@ -245,11 +245,17 @@ export async function uploadTemplateAsset(
   const repo = resolveRepository(options);
   const validated = await validateTemplateRasterImage(file.bytes);
 
-  const assetId = file.requestId ? stableTemplateAssetId(file.requestId) : randomUUID();
-  const existingAsset = await repo.getAsset(assetId);
+  const storageBucket = 'template-drafts';
+  const fileKey = file.requestId ? stableTemplateAssetId(file.requestId) : randomUUID();
+  const storagePath = `${guard.templateId}/${fileKey}.${validated.ext}`;
+
+  const existingAsset = (typeof repo.getAssetByStoragePath === 'function'
+    ? await repo.getAssetByStoragePath(storageBucket, storagePath).catch(() => null)
+    : null) ?? (file.requestId ? await repo.getAsset(fileKey).catch(() => null) : null);
+
   if (existingAsset?.checksum) {
     return {
-      assetId,
+      assetId: existingAsset.id,
       templateId: existingAsset.templateId,
       draftId: existingAsset.draftId ?? undefined,
       storageBucket: existingAsset.storageBucket,
@@ -259,12 +265,10 @@ export async function uploadTemplateAsset(
       byteSize: existingAsset.byteSize,
       pixelWidth: existingAsset.widthPx ?? 0,
       pixelHeight: existingAsset.heightPx ?? 0,
-      canonicalLocator: `template-asset://${assetId}`,
-      viewUrl: `/api/admin/content/templates/${guard.templateId}/assets/${assetId}`,
+      canonicalLocator: `template-asset://${existingAsset.id}`,
+      viewUrl: `/api/admin/content/templates/${guard.templateId}/assets/${existingAsset.id}`,
     };
   }
-  const storageBucket = 'template-drafts';
-  const storagePath = `${guard.templateId}/${assetId}.${validated.ext}`;
 
   await repo.uploadStorageObject(storageBucket, storagePath, validated.canonicalBytes, validated.mimeType);
 
@@ -283,15 +287,28 @@ export async function uploadTemplateAsset(
 
   const attachResult = await repo.attachAsset(actor.userId, attachInput);
   if (!attachResult.ok) {
-    await repo.deleteStorageObject(storageBucket, storagePath).catch(() => { });
+    let isReferenced = false;
+    if (typeof repo.getAssetByStoragePath === 'function') {
+      try {
+        const existing = await repo.getAssetByStoragePath(storageBucket, storagePath);
+        isReferenced = Boolean(existing);
+      } catch {
+        isReferenced = true;
+      }
+    }
+    if (!isReferenced) {
+      await repo.deleteStorageObject(storageBucket, storagePath).catch(() => { });
+    }
     throw new TemplateServiceError(attachResult.code, attachResult.message);
   }
 
-  const canonicalLocator = `template-asset://${assetId}`;
-  const viewUrl = `/api/admin/content/templates/${guard.templateId}/assets/${assetId}`;
+  const attached = attachResult.value;
+  const canonicalAssetId = attached.id;
+  const canonicalLocator = `template-asset://${canonicalAssetId}`;
+  const viewUrl = `/api/admin/content/templates/${guard.templateId}/assets/${canonicalAssetId}`;
 
   return {
-    assetId,
+    assetId: canonicalAssetId,
     templateId: guard.templateId,
     draftId: guard.draftId,
     storageBucket,
@@ -315,11 +332,43 @@ export async function bulkUploadTemplateAssets(
   if (files.length === 0 || files.length > 50) {
     throw new TemplateServiceError('INVALID_INPUT', 'Template asset batch size must be between 1 and 50 items', 400);
   }
+  const repo = resolveRepository(options);
   const results: TemplateAssetUploadResult[] = new Array(files.length);
   await Promise.all(files.map(async (file, index) => {
     if (file.status === 'uploaded') {
-      results[index] = { requestId: file.requestId, status: 'uploaded', ok: true };
-      return;
+      try {
+        const validated = await validateTemplateRasterImage(file.bytes);
+        const fileKey = stableTemplateAssetId(file.requestId);
+        const storagePath = `${guard.templateId}/${fileKey}.${validated.ext}`;
+        const existing = (typeof repo.getAssetByStoragePath === 'function'
+          ? await repo.getAssetByStoragePath('template-drafts', storagePath).catch(() => null)
+          : null) ?? (await repo.getAsset(fileKey).catch(() => null));
+
+        if (existing?.checksum) {
+          results[index] = {
+            requestId: file.requestId,
+            status: 'uploaded',
+            ok: true,
+            asset: {
+              assetId: existing.id,
+              templateId: existing.templateId,
+              draftId: existing.draftId ?? undefined,
+              storageBucket: existing.storageBucket,
+              storagePath: existing.storageKey,
+              checksum: existing.checksum,
+              mimeType: existing.mimeType,
+              byteSize: existing.byteSize,
+              pixelWidth: existing.widthPx ?? 0,
+              pixelHeight: existing.heightPx ?? 0,
+              canonicalLocator: `template-asset://${existing.id}`,
+              viewUrl: `/api/admin/content/templates/${guard.templateId}/assets/${existing.id}`,
+            },
+          };
+          return;
+        }
+      } catch {
+        // Fall through to normal upload if verification check fails
+      }
     }
     try {
       results[index] = {

@@ -1124,6 +1124,19 @@ export class TemplateRepository {
     if (!data) return null;
     return mapAssetRow(data as DatabaseAssetRow);
   }
+  async getAssetByStoragePath(bucket: string, storagePath: string): Promise<TemplateAssetRecord | null> {
+    const { data, error } = await this.client
+      .from('template_assets')
+      .select('*')
+      .eq('storage_bucket', bucket)
+      .eq('storage_path', storagePath)
+      .maybeSingle();
+
+    if (error) throw new Error(error.message);
+    if (!data) return null;
+    return mapAssetRow(data as DatabaseAssetRow);
+  }
+
 
   async listAssetsForTemplate(templateId: string): Promise<TemplateAssetRecord[]> {
     const { data, error } = await this.client

@@ -132,6 +132,8 @@ class FakeRepository {
     if (this.failCreate) throw new Error('database unavailable');
     if (this.record) {
       this.record = { ...this.record, ref: { ...this.record.ref, id } } as LibraryRecord;
+    } else {
+      this.record = sticker({ ref: { kind: 'sticker', id, checksum: 'test' } });
     }
     return { ok: true, item: { id } };
   }
@@ -182,6 +184,10 @@ class FakeRepository {
       this.familyRecord = { ...this.familyRecord, status: status as never, revision: this.familyRecord.revision + 1 };
     }
     return this.familyRecord!;
+  }
+  async getStickersByStoragePath(bucket: string, storagePath: string): Promise<StickerRecord[]> {
+    const records = [this.record].filter((item): item is StickerRecord => Boolean(item && item.ref.kind === 'sticker'));
+    return records.filter((r) => r.binary.bucket === bucket && r.binary.key === storagePath);
   }
 }
 
@@ -453,4 +459,43 @@ test('bulk sticker upload preserves uploaded item and skips it on retry', async 
   const retry = await bulkUploadStickers([{ bytes, filename: 'one.svg', metadata: {}, requestId, status: 'uploaded' }], actor, repo);
   assert.equal(retry[0]?.status, 'uploaded');
   assert.equal(repoInstance.calls.filter((call) => call.name === 'createDraft').length, callsAfterFirst);
+});
+
+test('bulk sticker upload verifies uploaded claim against canonical repository', async () => {
+  const bytes = new Uint8Array(await readFile(join(fixtures, 'safe-sticker.svg')));
+  const repoInstance = new FakeRepository();
+  const repo = repoInstance as unknown as AssetLibraryRepository;
+  const requestId = '10000000-0000-4000-8000-000000000002';
+  repoInstance.record = null;
+
+  // Claiming uploaded without canonical database record processes normally instead of fabricating record
+  const result = await bulkUploadStickers([{ bytes, filename: 'one.svg', metadata: {}, requestId, status: 'uploaded' }], actor, repo);
+  assert.equal(result[0]?.status, 'uploaded');
+  assert.equal(repoInstance.calls.filter((call) => call.name === 'createDraft').length, 1);
+});
+
+test('sticker upload failure preserves storage path when referenced by existing record', async () => {
+  const bytes = new Uint8Array(await readFile(join(fixtures, 'safe-sticker.svg')));
+  const repoInstance = new FakeRepository();
+  const repo = repoInstance as unknown as AssetLibraryRepository;
+  const existingSticker = sticker({
+    binary: {
+      bucket: 'library-drafts',
+      key: 'drafts/10000000-0000-4000-8000-000000000001/shared-id/shared-checksum.svg',
+      checksum: 'shared-checksum',
+      byteSize: 10,
+      mimeType: 'image/svg+xml',
+    },
+  });
+  repoInstance.record = existingSticker;
+  repoInstance.failCreate = true;
+
+  // Make repo report that the storage path is already referenced
+  repoInstance.getStickersByStoragePath = async () => [existingSticker];
+
+  await assert.rejects(
+    createStickerDraft({ bytes, filename: 'rose.svg', metadata: {}, requestId: key.requestId }, actor, repo),
+    /database unavailable/,
+  );
+  assert.equal(repoInstance.removals.length, 0);
 });

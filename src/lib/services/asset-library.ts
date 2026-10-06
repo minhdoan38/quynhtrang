@@ -163,7 +163,33 @@ export async function createStickerDraft(
     return record;
   } catch (error) {
     if (uploadedKeys.length > 0) {
-      await repo.removeObjects('library-drafts', uploadedKeys).catch(() => { });
+      const keysToDelete: string[] = [];
+      for (const uploadedKey of uploadedKeys) {
+        let isReferenced = false;
+        if (typeof repo.getStickersByStoragePath === 'function') {
+          try {
+            const existing = await repo.getStickersByStoragePath('library-drafts', uploadedKey);
+            isReferenced = existing.length > 0;
+          } catch {
+            isReferenced = true;
+          }
+        } else {
+          try {
+            const existing = await repo.getSticker(id);
+            if (existing && (existing.binary.key === uploadedKey || existing.thumbnail?.key === uploadedKey)) {
+              isReferenced = true;
+            }
+          } catch {
+            isReferenced = true;
+          }
+        }
+        if (!isReferenced) {
+          keysToDelete.push(uploadedKey);
+        }
+      }
+      if (keysToDelete.length > 0) {
+        await repo.removeObjects('library-drafts', keysToDelete).catch(() => { });
+      }
     }
     throw normalizeServiceError(error);
   }
@@ -735,12 +761,17 @@ export async function bulkUploadStickers(
   }
 
   return runWithConcurrency(items, options?.concurrency ?? 3, async (item) => {
+    const assetId = stableAssetId(item.requestId);
     if (item.status === 'uploaded') {
-      return {
-        ref: { kind: 'sticker', id: stableAssetId(item.requestId), checksum: '' },
-        ok: true,
-        status: 'uploaded' as const,
-      };
+      const existing = await repo.getSticker(assetId).catch(() => null);
+      if (existing) {
+        return {
+          ref: existing.ref,
+          ok: true,
+          status: 'uploaded' as const,
+          revision: existing.revision,
+        };
+      }
     }
     try {
       const record = await createStickerDraft(item, actor, repo);
