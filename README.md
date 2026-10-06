@@ -121,6 +121,10 @@ Chi tiết về mô hình phân tầng Template/Draft/Version, khóa thành ph�
 Chi tiết về ranh giới Code-owned Registry vs DB Catalog, tính bất biến cấu trúc (structural immutability), vòng đời draft/active/archived, phiên bản thương mại bất biến, bậc giá số lượng nguyên VND, chính sách thanh toán cọc/trả thẳng, điều kiện sẵn sàng sản xuất và cẩm nang xử lý sự cố:
 [State 44 Product Catalog & Pricing Runbook](docs/superpowers/state44-product-catalog-pricing-runbook.md).
 
+### State 45 Recovery Runbook & Operations Manual
+Chi tiết về cơ chế phục hồi lưu trữ cục bộ khách (IndexedDB/quarantine), tự động lưu đám mây, chuyển trạng thái sản xuất bất biến, tạo artifact, xử lý lỗi đặt hàng & thanh toán và 18 kịch bản kiểm thử thủ công:
+[State 45 Recovery Runbook](docs/operations/state45-recovery-runbook.md).
+
 Mở <http://localhost:3000/> trên trình duyệt.
 
 ## Project Structure (Standard shadcn)
