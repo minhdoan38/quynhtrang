@@ -69,18 +69,16 @@ test.describe('Golden Journey 6: Commercial Versioning & Historical Immutability
     const openDraftBtn = page.getByRole('button', {
       name: 'Mở bản nháp giá',
     });
-    if (await openDraftBtn.isVisible().catch(() => false)) {
-      await openDraftBtn.click();
-      await expect(page.getByText(/Bản nháp/i)).toBeVisible();
+    await expect(openDraftBtn).toBeVisible();
+    await openDraftBtn.click();
+    await expect(page.getByText(/Bản nháp/i)).toBeVisible();
 
-      // Publish v2
-      const publishBtn = page.getByRole('button', {
-        name: 'Xuất bản giá',
-      });
-      if (await publishBtn.isVisible().catch(() => false)) {
-        await publishBtn.click();
-      }
-    }
+    // Publish v2
+    const publishBtn = page.getByRole('button', {
+      name: 'Xuất bản giá',
+    });
+    await expect(publishBtn).toBeVisible();
+    await publishBtn.click();
 
     // 5. Customer initiates a new quote/checkout under v2
     await page.goto('/checkout');

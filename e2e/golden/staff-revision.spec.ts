@@ -18,16 +18,11 @@ test.describe('Golden Journey 3: Staff Revision Lifecycle', () => {
     // 2. Navigate to an existing order's design review page
     await page.goto('/admin/orders');
     const orderLink = page.getByRole('link', { name: /#QT-|Chi tiết đơn/ }).first();
-    const hasOrder = await orderLink.isVisible().catch(() => false);
-
-    let orderId = '';
-    if (hasOrder) {
-      const href = await orderLink.getAttribute('href');
-      orderId = href?.split('/admin/orders/')[1]?.split('?')[0]?.split('/')[0] ?? '';
-      await page.goto(`/admin/orders/${orderId}/design`);
-    } else {
-      await page.goto('/admin/orders');
-    }
+    await expect(orderLink).toBeVisible();
+    const href = await orderLink.getAttribute('href');
+    const orderId = href?.split('/admin/orders/')[1]?.split('?')[0]?.split('/')[0] ?? '';
+    expect(orderId).not.toBe('');
+    await page.goto(`/admin/orders/${orderId}/design`);
 
     // 3. Verify Customer Version v1 indicator is present
     await expect(page.getByText(/Khách duyệt v1|Bản khách/i)).toBeVisible();
@@ -37,60 +32,55 @@ test.describe('Golden Journey 3: Staff Revision Lifecycle', () => {
       name: 'Tạo bản chỉnh sửa',
     });
 
-    if (await createRevisionBtn.isVisible().catch(() => false)) {
-      await createRevisionBtn.click();
+    await expect(createRevisionBtn).toBeVisible();
+    await createRevisionBtn.click();
+    // Modal: enter revision reason
+    await expect(
+      page.getByRole('heading', { name: 'Tạo bản chỉnh sửa thiết kế' }),
+    ).toBeVisible();
+    await page
+      .getByLabel(/Lý do chỉnh sửa/)
+      .fill('Căn chỉnh lề an toàn 3mm và kiểm tra độ phân giải in ấn');
+    await page.getByRole('button', { name: 'Bắt đầu chỉnh sửa' }).click();
 
-      // Modal: enter revision reason
-      await expect(
-        page.getByRole('heading', { name: 'Tạo bản chỉnh sửa thiết kế' }),
-      ).toBeVisible();
-      await page
-        .getByLabel(/Lý do chỉnh sửa/)
-        .fill('Căn chỉnh lề an toàn 3mm và kiểm tra độ phân giải in ấn');
-      await page.getByRole('button', { name: 'Bắt đầu chỉnh sửa' }).click();
+    // 5. Staff Editing mode
+    await expect(page.getByText(/Bản chỉnh sửa #/)).toBeVisible();
 
-      // 5. Staff Editing mode
-      await expect(page.getByText(/Bản chỉnh sửa #/)).toBeVisible();
+    // Complete editing & run preflight check
+    const completeEditingBtn = page.getByRole('button', {
+      name: /Hoàn tất|Xem lại/i,
+    });
+    await expect(completeEditingBtn).toBeVisible();
+    await completeEditingBtn.click();
 
-      // Complete editing & run preflight check
-      const completeEditingBtn = page.getByRole('button', {
-        name: /Hoàn tất|Xem lại/i,
-      });
-      if (await completeEditingBtn.isVisible().catch(() => false)) {
-        await completeEditingBtn.click();
-      }
+    // 6. Compare & Approval Mode
+    await expect(
+      page.getByText(/So sánh & duyệt sản xuất|Bản sửa mới • Chờ duyệt/i),
+    ).toBeVisible();
+    await expect(
+      page.getByText(
+        /Bản khách duyệt ban đầu v1 vẫn được giữ nguyên không đổi\./i,
+      ),
+    ).toBeVisible();
 
-      // 6. Compare & Approval Mode
-      await expect(
-        page.getByText(/So sánh & duyệt sản xuất|Bản sửa mới • Chờ duyệt/i),
-      ).toBeVisible();
-      await expect(
-        page.getByText(
-          /Bản khách duyệt ban đầu v1 vẫn được giữ nguyên không đổi\./i,
-        ),
-      ).toBeVisible();
+    // Approve revised version as production
+    const approveRevisionBtn = page.getByRole('button', {
+      name: 'Duyệt bản sửa',
+    });
+    await expect(approveRevisionBtn).toBeVisible();
+    await approveRevisionBtn.click();
+    // Confirmation dialog
+    await expect(
+      page.getByRole('heading', {
+        name: 'Dùng bản chỉnh sửa này để sản xuất?',
+      }),
+    ).toBeVisible();
+    await page
+      .getByRole('button', { name: 'Xác nhận duyệt sản xuất' })
+      .click();
 
-      // Approve revised version as production
-      const approveRevisionBtn = page.getByRole('button', {
-        name: 'Duyệt bản sửa',
-      });
-      if (await approveRevisionBtn.isVisible().catch(() => false)) {
-        await approveRevisionBtn.click();
-
-        // Confirmation dialog
-        await expect(
-          page.getByRole('heading', {
-            name: 'Dùng bản chỉnh sửa này để sản xuất?',
-          }),
-        ).toBeVisible();
-        await page
-          .getByRole('button', { name: 'Xác nhận duyệt sản xuất' })
-          .click();
-
-        // Navigates back to Order Detail or Review
-        await page.waitForURL(/\/admin\/orders/);
-      }
-    }
+    // Navigates back to Order Detail or Review
+    await page.waitForURL(/\/admin\/orders/);
 
     // 7. Canonical Backend / Database Assertions
     if (orderId) {

@@ -19,8 +19,7 @@ test.describe('Golden Journey 5: Content Asset & Template Lifecycle', () => {
 
     // Verify existing published stickers or upload button
     const stickerItem = page.getByRole('button', { name: /Chi tiết|Xem/i }).first();
-    const hasStickers = await stickerItem.isVisible().catch(() => false);
-
+    await expect(stickerItem).toBeVisible();
     // 3. Staff views templates library and opens template authoring
     await page.goto('/admin/content/templates');
     await expect(
@@ -30,18 +29,16 @@ test.describe('Golden Journey 5: Content Asset & Template Lifecycle', () => {
     const createTemplateBtn = page.getByRole('button', {
       name: /\+ Tạo mẫu|Tạo mẫu thiết kế mới/i,
     });
-    if (await createTemplateBtn.isVisible().catch(() => false)) {
-      await createTemplateBtn.click();
-      await expect(
-        page.getByRole('heading', { name: 'Tạo mẫu thiết kế mới' }),
-      ).toBeVisible();
+    await expect(createTemplateBtn).toBeVisible();
+    await createTemplateBtn.click();
+    await expect(
+      page.getByRole('heading', { name: 'Tạo mẫu thiết kế mới' }),
+    ).toBeVisible();
 
-      // Close modal
-      const cancelBtn = page.getByRole('button', { name: /Hủy|Đóng/i }).first();
-      if (await cancelBtn.isVisible().catch(() => false)) {
-        await cancelBtn.click();
-      }
-    }
+    // Close modal
+    const cancelBtn = page.getByRole('button', { name: /Hủy|Đóng/i }).first();
+    await expect(cancelBtn).toBeVisible();
+    await cancelBtn.click();
 
     // 4. Customer opens editor using an existing template
     await page.goto('/?view=editor&template=class-card-vertical');
@@ -53,21 +50,18 @@ test.describe('Golden Journey 5: Content Asset & Template Lifecycle', () => {
 
     // 5. Staff archives asset in sticker library
     await page.goto('/admin/content/stickers');
-    if (hasStickers) {
-      await stickerItem.click();
-      const archiveBtn = page.getByRole('button', {
-        name: /Lưu trữ sticker|Xác nhận lưu trữ/i,
-      });
-      if (await archiveBtn.isVisible().catch(() => false)) {
-        await archiveBtn.click();
-        const confirmArchive = page.getByRole('button', {
-          name: 'Xác nhận lưu trữ',
-        });
-        if (await confirmArchive.isVisible().catch(() => false)) {
-          await confirmArchive.click();
-        }
-      }
-    }
+    await expect(stickerItem).toBeVisible();
+    await stickerItem.click();
+    const archiveBtn = page.getByRole('button', {
+      name: /Lưu trữ sticker|Xác nhận lưu trữ/i,
+    });
+    await expect(archiveBtn).toBeVisible();
+    await archiveBtn.click();
+    const confirmArchive = page.getByRole('button', {
+      name: 'Xác nhận lưu trữ',
+    });
+    await expect(confirmArchive).toBeVisible();
+    await confirmArchive.click();
 
     // 6. Customer returns to existing project: project still loads without error
     await page.goto('/?view=editor&template=class-card-vertical');

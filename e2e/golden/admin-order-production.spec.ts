@@ -21,83 +21,72 @@ test.describe('Golden Journey 2: Admin Order Production Lifecycle', () => {
       page.getByRole('heading', { name: /Đơn hàng cần xử lý|Đơn hàng/i }),
     ).toBeVisible();
 
-    // 3. Open first pending order in inbox or navigate to targeted order
+    // 3. Open first pending order in inbox
     const orderLink = page.getByRole('link', { name: /#QT-|Chi tiết đơn/ }).first();
-    const hasOrder = await orderLink.isVisible().catch(() => false);
-
-    let orderId = '';
-
-    if (hasOrder) {
-      const href = await orderLink.getAttribute('href');
-      orderId = href?.split('/admin/orders/')[1]?.split('?')[0]?.split('/')[0] ?? '';
-      await orderLink.click();
-    } else {
-      // Direct navigation fallback if inbox empty in fresh test DB
-      await page.goto('/admin/orders');
-    }
+    await expect(orderLink).toBeVisible();
+    const href = await orderLink.getAttribute('href');
+    const orderId = href?.split('/admin/orders/')[1]?.split('?')[0]?.split('/')[0] ?? '';
+    expect(orderId).not.toBe('');
+    await orderLink.click();
 
     // 4. Order Detail View: Confirm Payment
     const confirmPaymentBtn = page.getByRole('button', {
       name: /Xác nhận đã nhận tiền|Xác nhận đã nhận cọc/i,
     });
 
-    if (await confirmPaymentBtn.isVisible().catch(() => false)) {
-      await confirmPaymentBtn.click();
-      const confirmDialogBtn = page.getByRole('button', {
-        name: /Xác nhận|Đồng ý/i,
-      }).last();
-      await confirmDialogBtn.click();
-      await expect(
-        page.getByText(/Đã xác nhận thanh toán thành công|Đã thanh toán|Đã xác nhận cọc/),
-      ).toBeVisible();
-    }
+    await expect(confirmPaymentBtn).toBeVisible();
+    await confirmPaymentBtn.click();
+    const confirmDialogBtn = page.getByRole('button', {
+      name: /Xác nhận|Đồng ý/i,
+    }).last();
+    await expect(confirmDialogBtn).toBeVisible();
+    await confirmDialogBtn.click();
+    await expect(
+      page.getByText(/Đã xác nhận thanh toán thành công|Đã thanh toán|Đã xác nhận cọc/),
+    ).toBeVisible();
 
     // 5. Design Review: Approve as-is
     const reviewDesignBtn = page.getByRole('link', {
       name: /Kiểm tra thiết kế|Xem thiết kế/i,
     });
-    if (await reviewDesignBtn.isVisible().catch(() => false)) {
-      await reviewDesignBtn.click();
-      await expect(page.getByText(/Khách duyệt v1/)).toBeVisible();
+    await expect(reviewDesignBtn).toBeVisible();
+    await reviewDesignBtn.click();
+    await expect(page.getByText(/Khách duyệt v1/)).toBeVisible();
 
-      // Approve as-is
-      page.on('dialog', (dialog) => dialog.accept());
-      const approveAsIsBtn = page.getByRole('button', {
-        name: /Duyệt không cần sửa|Duyệt v1/i,
-      });
-      if (await approveAsIsBtn.isVisible().catch(() => false)) {
-        await approveAsIsBtn.click();
-      }
-      await page.waitForURL(/\/admin\/orders/);
-    }
+    // Approve as-is
+    page.on('dialog', (dialog) => dialog.accept());
+    const approveAsIsBtn = page.getByRole('button', {
+      name: /Duyệt không cần sửa|Duyệt v1/i,
+    });
+    await expect(approveAsIsBtn).toBeVisible();
+    await approveAsIsBtn.click();
+    await page.waitForURL(/\/admin\/orders/);
 
     // 6. Production Readiness Verified & Start Production
     const startProdBtn = page.getByRole('button', {
       name: 'Bắt đầu sản xuất',
     });
-    if (await startProdBtn.isVisible().catch(() => false)) {
-      await startProdBtn.click();
-      // Dialog confirmation
-      await expect(
-        page.getByRole('heading', { name: /vào sản xuất\?/ }),
-      ).toBeVisible();
-      await page.getByRole('button', { name: 'Bắt đầu sản xuất' }).last().click();
-      await expect(page.getByText('Đang sản xuất')).toBeVisible();
-    }
+    await expect(startProdBtn).toBeVisible();
+    await startProdBtn.click();
+    // Dialog confirmation
+    await expect(
+      page.getByRole('heading', { name: /vào sản xuất\?/ }),
+    ).toBeVisible();
+    await page.getByRole('button', { name: 'Bắt đầu sản xuất' }).last().click();
+    await expect(page.getByText('Đang sản xuất')).toBeVisible();
 
     // 7. Complete Production
     const completeProdBtn = page.getByRole('button', {
       name: 'Hoàn tất sản xuất',
     });
-    if (await completeProdBtn.isVisible().catch(() => false)) {
-      await completeProdBtn.click();
-      // Dialog confirmation
-      await expect(
-        page.getByRole('heading', { name: /Hoàn tất sản xuất đơn/ }),
-      ).toBeVisible();
-      await page.getByRole('button', { name: 'Hoàn tất sản xuất' }).last().click();
-      await expect(page.getByText('Hoàn tất')).toBeVisible();
-    }
+    await expect(completeProdBtn).toBeVisible();
+    await completeProdBtn.click();
+    // Dialog confirmation
+    await expect(
+      page.getByRole('heading', { name: /Hoàn tất sản xuất đơn/ }),
+    ).toBeVisible();
+    await page.getByRole('button', { name: 'Hoàn tất sản xuất' }).last().click();
+    await expect(page.getByText('Hoàn tất')).toBeVisible();
 
     // 8. Backend Database & Audit Event Assertions
     if (orderId) {

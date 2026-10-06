@@ -79,11 +79,9 @@ test.describe('Golden Journey 4: Guest Account Claim & Project Migration', () =>
 
     // Enter test OTP
     const otpInput = page.getByLabel('Mã xác thực (OTP)');
-    if (await otpInput.isVisible().catch(() => false)) {
-      await otpInput.fill('123456');
-      await page.getByRole('button', { name: /Xác nhận|Lưu đơn hàng/ }).click();
-    }
-
+    await expect(otpInput).toBeVisible();
+    await otpInput.fill('123456');
+    await page.getByRole('button', { name: /Xác nhận|Lưu đơn hàng/ }).click();
     // Confirmation shows successfully attached status
     await expect(
       page.getByText(/Đã lưu đơn hàng vào tài khoản của bạn|Đã liên kết/i),
