@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server.js';
+import { toSafeRouteResponse } from '../../../lib/reliability/error-contract.ts';
 import { getGuestOrderAccessTokenFromRequest, setGuestOrderAccessCookie } from '../../../lib/guest-order-access.ts';
 import { validateCustomerInfo } from '../../../lib/customer-info.ts';
 import { DEFAULT_BANK_DETAILS } from '../../../lib/payment-qr-provider.ts';
@@ -130,6 +131,6 @@ export async function POST(request: Request) {
     return response;
   } catch (error) {
     console.error('Lỗi tạo đơn hàng:', error);
-    return Response.json({ error: 'Có lỗi xảy ra khi tạo đơn hàng.' }, { status: 500 });
+    return toSafeRouteResponse(error, 500);
   }
 }

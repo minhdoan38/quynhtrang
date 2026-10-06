@@ -1,15 +1,27 @@
 import type { CommercialDraft } from '../domain/catalog.ts';
 import { calculatePrice, type CommercialConfigVersion, type CatalogStatus } from '../domain/commercial-config.ts';
 import type { AdminProduct } from '../repositories/admin-catalog-repository.ts';
+import { toSafeOperationError } from '../reliability/error-contract.ts';
 
 export type CatalogActionResult<T> =
   | { ok: true; value: T }
-  | { ok: false; code: string; status: number; message: string };
+  | {
+    ok: false;
+    code: string;
+    status: number;
+    message: string;
+    operationId?: string;
+    retryable?: boolean;
+  };
 
 export const CATALOG_STATUS_LABEL: Record<CatalogStatus, string> = { active: 'Đang bán', draft: 'Bản nháp', archived: 'Đã lưu trữ' };
 export const CATALOG_STATUS_BADGE: Record<CatalogStatus, 'sage' | 'honey' | 'slate'> = { active: 'sage', draft: 'honey', archived: 'slate' };
 
 export function catalogActionError(error: unknown): CatalogActionResult<never> {
+  const safe = toSafeOperationError(error, {
+    operation: 'catalogAction',
+    defaultMessage: 'Chưa thể áp dụng giá mới.',
+  });
   const code = error instanceof Error ? error.message.split(':')[0] : 'INTERNAL_ERROR';
   const messages: Record<string, string> = {
     FORBIDDEN: 'Bạn không có quyền thực hiện thao tác này.',
@@ -27,7 +39,21 @@ export function catalogActionError(error: unknown): CatalogActionResult<never> {
     CATALOG_READ_FAILED: 'Chưa thể tải cấu hình sản phẩm.',
   };
   const known = Object.hasOwn(messages, code);
-  return { ok: false, code: known ? code : 'INTERNAL_ERROR', status: code === 'FORBIDDEN' ? 403 : code === 'UNAUTHENTICATED' ? 401 : code === 'REVISION_CONFLICT' ? 409 : known ? 400 : 500, message: messages[code] ?? 'Chưa thể áp dụng giá mới.' };
+  const status =
+    code === 'FORBIDDEN' ? 403 :
+      code === 'UNAUTHENTICATED' ? 401 :
+        code === 'REVISION_CONFLICT' ? 409 :
+          known ? 400 : 500;
+  const message = known ? messages[code] : safe.userMessage;
+
+  return {
+    ok: false,
+    code: known ? code : (safe.code === 'UNEXPECTED_ERROR' ? 'INTERNAL_ERROR' : safe.code),
+    status,
+    message,
+    operationId: safe.operationId,
+    retryable: safe.retryable,
+  };
 }
 
 export function commercialDraftConfig(draft: CommercialDraft): CommercialConfigVersion {

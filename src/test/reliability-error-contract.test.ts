@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {
   classifyRetry,
   toSafeOperationError,
+  toSafeRouteResponse,
 } from '../lib/reliability/error-contract.ts';
 import {
   createOperationId,
@@ -74,6 +75,34 @@ test('toSafeOperationError maps network drops to safe retryable copy', () => {
   assert.equal(result.safeMessageKey, 'reliability.network_error');
   assert.equal(result.userMessage, 'Mất kết nối. Hãy kiểm tra mạng và thử lại.');
   assert.doesNotMatch(JSON.stringify(result), /fetch failed|socket hang up/i);
+});
+
+test('toSafeOperationError keeps ordinary TypeErrors terminal and unexpected', () => {
+  const result = toSafeOperationError(new TypeError('Cannot read properties of null'), {
+    operation: 'createOrder',
+    operationId: 'op_type_error',
+  });
+
+  assert.equal(result.code, 'UNEXPECTED_ERROR');
+  assert.equal(result.retryable, false);
+  assert.equal(result.retryPolicy, 'nonRetryable');
+  assert.doesNotMatch(JSON.stringify(result), /Cannot read properties/i);
+});
+
+test('toSafeRouteResponse returns only standardized safe JSON fields', async () => {
+  const response = toSafeRouteResponse(
+    new Error('duplicate key value violates unique constraint "orders_pkey"'),
+    503,
+  );
+
+  assert.equal(response.status, 503);
+  const data = await response.json();
+  assert.equal(data.ok, false);
+  assert.equal(data.code, 'UNEXPECTED_ERROR');
+  assert.equal(data.userMessage, 'Không thể hoàn tất thao tác. Vui lòng thử lại sau.');
+  assert.equal(data.retryable, false);
+  assert.match(data.operationId, /^op_[A-Za-z0-9_-]{20,}$/);
+  assert.deepEqual(Object.keys(data).sort(), ['code', 'ok', 'operationId', 'retryable', 'userMessage']);
 });
 
 test('operation IDs are opaque URL-safe values and support codes are short and stable', () => {

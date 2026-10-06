@@ -1,5 +1,5 @@
+import { NextResponse } from 'next/server.js';
 import { createOperationId } from './operation-id.ts';
-
 export type ReliabilityErrorCode =
   | 'EXPECTED_VALIDATION_ERROR'
   | 'BUSINESS_CONFLICT'
@@ -50,11 +50,12 @@ export type OperationErrorResult = {
 export type OperationResult<T> = OperationSuccessResult<T> | OperationErrorResult;
 
 const SENSITIVE_PATTERN =
-  /syntax error|relation\s+"?\w+"?|column\s+"?\w+"?|insert into|select\s+.*from|pg_|42p01|pgrst|postgrest|customer-assets|approved-renders|\/storage\/v1|bearer\s+|service_role|eyJ[a-zA-Z0-9_-]+|\b[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}\b|\b0\d{9,10}\b|\bat\s+.*:\d+:\d+|c:\\|\/home\/|\/app\//i;
+  /syntax error|relation\s+"?\w+"?|column\s+"?\w+"?|insert into|select\s+.*from|pg_|42p01|pgrst|postgrest|duplicate key|unique constraint|foreign key|violates\s+\w+|check constraint|null value in column|customer-assets|approved-renders|\/storage\/v1|bearer\s+|service_role|eyJ[a-zA-Z0-9_-]+|\b[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}\b|\b0\d{9,10}\b|\bat\s+.*:\d+:\d+|c:\\|\/home\/|\/app\//i;
 
 const NETWORK_ERROR_PATTERN =
-  /fetch failed|socket hang up|network|timeout|timed out|aborted|econnreset|etimedout/i;
+  /failed to fetch|fetch failed|socket hang up|network|timeout|timed out|aborted|econnreset|etimedout/i;
 
+const TYPE_ERROR_NETWORK_PATTERN = /fetch|network|failed to fetch/i;
 const SAFE_MESSAGES: Record<string, { key: string; message: string }> = {
   STALE_REVISION: {
     key: 'reliability.stale_revision',
@@ -194,7 +195,11 @@ export function toSafeOperationError(
     code = rawCode;
   } else if (/^[A-Z][A-Z0-9_]{2,49}$/.test(rawMsg) && !SENSITIVE_PATTERN.test(rawMsg) && !/^[0-9A-Z]{5}$/.test(rawMsg)) {
     code = rawMsg;
-  } else if (error instanceof TypeError || NETWORK_ERROR_PATTERN.test(rawMsg)) {
+  } else if (
+    error instanceof TypeError
+      ? TYPE_ERROR_NETWORK_PATTERN.test(rawMsg)
+      : NETWORK_ERROR_PATTERN.test(rawMsg)
+  ) {
     code = 'NETWORK_ERROR';
   }
 
@@ -228,4 +233,36 @@ export function toSafeOperationError(
     operationId: opId,
     ...(currentState ? { currentState } : {}),
   };
+}
+
+export function toSafeRouteResponse(
+  error: unknown,
+  status?: number,
+): NextResponse {
+  const safe = toSafeOperationError(error);
+  const rawStatus =
+    error && typeof error === 'object' && 'status' in error && typeof error.status === 'number'
+      ? error.status
+      : undefined;
+
+  let resolvedStatus = status ?? rawStatus;
+  if (resolvedStatus === undefined) {
+    if (safe.code === 'NOT_FOUND') resolvedStatus = 404;
+    else if (safe.code === 'UNAUTHENTICATED') resolvedStatus = 401;
+    else if (safe.code === 'FORBIDDEN') resolvedStatus = 403;
+    else if (safe.code === 'STALE_REVISION' || safe.code === 'REVISION_CONFLICT') resolvedStatus = 409;
+    else if (safe.code === 'INVALID_INPUT' || safe.code === 'EXPECTED_VALIDATION_ERROR') resolvedStatus = 400;
+    else resolvedStatus = 500;
+  }
+
+  return NextResponse.json(
+    {
+      ok: false,
+      code: safe.code,
+      userMessage: safe.userMessage,
+      operationId: safe.operationId,
+      retryable: safe.retryable,
+    },
+    { status: resolvedStatus },
+  );
 }

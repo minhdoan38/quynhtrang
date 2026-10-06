@@ -70,9 +70,16 @@ describe('Admin commercial editor contracts', () => {
   it('redacts raw database errors and exposes conflict recovery', () => {
     const error = catalogActionError(new Error('relation private.secret does not exist'));
     assert.equal(error.ok, false);
-    if (!error.ok) assert.equal(error.message, 'Chưa thể áp dụng giá mới.');
+    if (!error.ok) {
+      assert.equal(error.message, 'Chưa thể áp dụng giá mới.');
+      assert.match(error.operationId || '', /^catalogaction_[A-Za-z0-9_-]{20,}$/);
+      assert.equal(error.retryable, false);
+    }
     const conflict = catalogActionError(new Error('REVISION_CONFLICT'));
-    if (!conflict.ok) assert.equal(conflict.status, 409);
+    if (!conflict.ok) {
+      assert.equal(conflict.status, 409);
+      assert.equal(conflict.retryable, false);
+    }
   });
   it('every server mutation returns 403 for Editor without touching Supabase', async () => {
     const previousSmoke = process.env.SMOKE_TEST_STAFF_ROLE;

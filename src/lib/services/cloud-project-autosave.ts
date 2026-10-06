@@ -37,20 +37,23 @@ export function handleAutosaveResponse(
   const operationId = options?.operationId || createOperationId('autosave');
 
   if (res?.error === 'STALE_REVISION' || res?.success === false) {
+    const isStale = res?.error === 'STALE_REVISION';
     const safeErr = toSafeOperationError(
       {
-        code: res?.error || 'STALE_REVISION',
+        code: res?.error || (isStale ? 'STALE_REVISION' : 'UNEXPECTED_ERROR'),
         current_revision: res?.current_revision,
       },
       {
         operation: 'cloudProjectAutosave',
         operationId,
-        defaultMessage: 'Thiết kế này vừa được cập nhật trên thiết bị khác. Vui lòng tải lại phiên bản mới nhất.',
+        defaultMessage: isStale
+          ? 'Thiết kế này vừa được cập nhật trên thiết bị khác. Vui lòng tải lại phiên bản mới nhất.'
+          : undefined,
       },
     );
 
     return {
-      conflict: true,
+      conflict: isStale,
       serverRevision: res?.current_revision,
       userMessage: safeErr.userMessage,
       operationId: safeErr.operationId,
@@ -128,9 +131,21 @@ export async function saveCustomerProjectRevision(
   });
 
   if (error) {
+    const errorRecord = typeof error === 'object' && error !== null ? error : null;
+    const rawCode = errorRecord && 'code' in errorRecord && typeof errorRecord.code === 'string'
+      ? errorRecord.code.trim()
+      : '';
+    const isPostgresCode = /^[0-9A-Z]{5}$/.test(rawCode);
+    const isDomainCode = /^[A-Z][A-Z0-9_]{2,49}$/.test(error.message?.trim() || '') && !isPostgresCode;
+    const isDbError =
+      isPostgresCode ||
+      !isDomainCode ||
+      /(?:syntax error|relation|column|duplicate key|unique constraint|foreign key|check constraint|null value|pgrst|postgrest|pg_|42[a-z0-9]{3}|23[a-z0-9]{3})/i.test(
+        error.message || '',
+      );
     const safeErr = toSafeOperationError(error, {
       operation: 'cloudProjectAutosave',
-      defaultMessage: error.message,
+      defaultMessage: isDbError ? 'Lỗi lưu trữ đám mây' : error.message,
     });
     return {
       conflict: false,
