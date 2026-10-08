@@ -16,6 +16,7 @@ next-env.d.ts
 *.log
 .superpowers/
 skills-lock.json
+.worktrees/
 
 # Environment
 .env
