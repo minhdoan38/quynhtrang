@@ -9,6 +9,7 @@ export default [
       'node_modules/**',
       'dist/**',
       '.superpowers/**',
+      'legacy/**',
       'test-*.ts',
       'test-*.js',
       '**/*.d.ts',

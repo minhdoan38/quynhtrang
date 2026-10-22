@@ -1,6 +1,5 @@
 import type { DesignState, ProductId, ImageState, CanvasElement } from './product-state';
 import type { TemplateProvenance } from './domain/template';
-import type { DemoOrder } from '@/components/customizer/confirmation-panel';
 import { loadCheckoutDraft } from './checkout-draft.ts';
 import {
   saveGuestProject,
@@ -9,7 +8,6 @@ import {
 } from './browser-storage/guest-project-store.ts';
 
 const STATE_KEY = 'print-customizer-state-v1';
-const ORDER_KEY = 'print-customizer-order-v1';
 const RECENT_PROJECTS_KEY = 'quynhtrang-recent-projects-v1';
 export const RECENT_PROJECT_RETENTION_MS = 30 * 24 * 60 * 60 * 1000;
 export interface RecentProject {
@@ -142,31 +140,6 @@ export function loadState(): Partial<DesignState> | null {
     return raw ? JSON.parse(raw) : null;
   } catch (err) {
     console.error('Failed to load state from sessionStorage:', err);
-    return null;
-  }
-}
-export function saveOrder(order: DemoOrder | null): boolean {
-  if (typeof window === 'undefined') return true;
-  try {
-    if (order) {
-      sessionStorage.setItem(ORDER_KEY, JSON.stringify(order));
-    } else {
-      sessionStorage.removeItem(ORDER_KEY);
-    }
-    return true;
-  } catch (err) {
-    console.error('Failed to save order to sessionStorage:', err);
-    return false;
-  }
-}
-
-export function loadOrder(): DemoOrder | null {
-  if (typeof window === 'undefined') return null;
-  try {
-    const raw = sessionStorage.getItem(ORDER_KEY);
-    return raw ? JSON.parse(raw) : null;
-  } catch (err) {
-    console.error('Failed to load order from sessionStorage:', err);
     return null;
   }
 }

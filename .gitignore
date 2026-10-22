@@ -18,6 +18,7 @@ next-env.d.ts
 skills-lock.json
 .worktrees/
 
+.serena/
 # Environment
 .env
 .env*.local

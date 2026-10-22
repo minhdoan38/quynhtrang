@@ -139,12 +139,16 @@ Mở <http://localhost:3000/> trên trình duyệt.
 │   ├── app/
 │   │   ├── globals.css          # Tailwind v4 theme & product styling
 │   │   ├── layout.tsx           # Root layout
-│   │   └── page.tsx             # Entry page
+│   │   ├── page.tsx             # Entry page
+│   │   └── checkout/page.tsx    # Luồng thanh toán & đặt in chính thức
 │   ├── components/
+│   │   ├── checkout/            # Luồng đặt hàng & QR thanh toán
+│   │   │   ├── payment-qr-panel.tsx
+│   │   │   ├── order-confirmation-panel.tsx
+│   │   │   ├── order-summary-card.tsx
+│   │   │   └── quantity-stepper.tsx
 │   │   ├── customizer/          # Customizer domain views
 │   │   │   ├── bottom-navigation.tsx
-│   │   │   ├── checkout-sheet.tsx
-│   │   │   ├── confirmation-panel.tsx
 │   │   │   ├── customizer-shell.tsx
 │   │   │   ├── design-canvas.tsx
 │   │   │   ├── preflight-panel.tsx
@@ -170,6 +174,7 @@ Mở <http://localhost:3000/> trên trình duyệt.
 │   │   └── utils.ts             # cn helper
 │   └── test/
 │       └── product-state.test.ts # Unit tests
+├── legacy/                      # Kho lưu trữ tham khảo chỉ đọc (xem legacy/README.md)
 └── .agents/skills/              # Local skills (shadcn, gsap, impeccable)
 ```
 
